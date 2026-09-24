@@ -1,0 +1,285 @@
+/**
+ * Esquema de la base de datos de una instancia (data-model.md).
+ * Una BD por instancia: ninguna tabla lleva identificador de cliente.
+ */
+import { sql } from 'drizzle-orm';
+import {
+  boolean,
+  char,
+  check,
+  date,
+  integer,
+  pgEnum,
+  pgTable,
+  primaryKey,
+  smallint,
+  text,
+  time,
+  timestamp,
+  unique,
+  uniqueIndex,
+  uuid,
+} from 'drizzle-orm/pg-core';
+
+export const businessStatus = pgEnum('business_status', ['draft', 'active']);
+export const priceType = pgEnum('price_type', ['fixed', 'from', 'on_request']);
+export const addressForm = pgEnum('address_form', ['informal', 'formal']);
+export const handoffChannelType = pgEnum('handoff_channel_type', ['phone', 'whatsapp', 'email']);
+
+/** `updated_at` con reloj real (no el inicio de la transacción) y en texto para no perder microsegundos. */
+const updatedAt = () =>
+  timestamp('updated_at', { withTimezone: true, mode: 'string' })
+    .notNull()
+    .default(sql`clock_timestamp()`);
+
+const localTime = (name: string) => time(name, { precision: 0 });
+const isoDate = (name: string) => date(name, { mode: 'string' });
+
+export const business = pgTable(
+  'business',
+  {
+    id: smallint('id').primaryKey().default(1),
+    name: text('name').notNull().default(''),
+    address: text('address'),
+    directions: text('directions'),
+    phone: text('phone'),
+    email: text('email'),
+    timezone: text('timezone').notNull(),
+    currency: char('currency', { length: 3 }).notNull(),
+    status: businessStatus('status').notNull().default('draft'),
+    updatedAt: updatedAt(),
+  },
+  (t) => [check('business_singleton', sql`${t.id} = 1`)],
+);
+
+export const businessHours = pgTable(
+  'business_hours',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    weekday: smallint('weekday').notNull(),
+    startTime: localTime('start_time').notNull(),
+    endTime: localTime('end_time').notNull(),
+    updatedAt: updatedAt(),
+  },
+  (t) => [
+    check('business_hours_weekday', sql`${t.weekday} between 1 and 7`),
+    check('business_hours_range', sql`${t.endTime} > ${t.startTime}`),
+  ],
+);
+
+export const closure = pgTable(
+  'closure',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    startDate: isoDate('start_date').notNull(),
+    endDate: isoDate('end_date').notNull(),
+    startTime: localTime('start_time'),
+    endTime: localTime('end_time'),
+    reason: text('reason'),
+    updatedAt: updatedAt(),
+  },
+  (t) => [
+    check('closure_dates', sql`${t.endDate} >= ${t.startDate}`),
+    check('closure_both_times', sql`(${t.startTime} is null) = (${t.endTime} is null)`),
+    check('closure_times', sql`${t.startTime} is null or ${t.endTime} > ${t.startTime}`),
+  ],
+);
+
+export const service = pgTable(
+  'service',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    name: text('name').notNull(),
+    description: text('description'),
+    priceType: priceType('price_type').notNull(),
+    priceCents: integer('price_cents'),
+    durationMinutes: integer('duration_minutes'),
+    bookable: boolean('bookable').notNull().default(false),
+    active: boolean('active').notNull().default(true),
+    sortOrder: integer('sort_order').notNull().default(0),
+    updatedAt: updatedAt(),
+  },
+  (t) => [
+    uniqueIndex('service_name_lower_idx').on(sql`lower(${t.name})`),
+    check('service_price', sql`${t.priceCents} is null or ${t.priceCents} >= 0`),
+    check(
+      'service_duration',
+      sql`${t.durationMinutes} is null or ${t.durationMinutes} between 1 and 1440`,
+    ),
+  ],
+);
+
+export const resource = pgTable(
+  'resource',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    name: text('name').notNull(),
+    active: boolean('active').notNull().default(true),
+    sortOrder: integer('sort_order').notNull().default(0),
+    updatedAt: updatedAt(),
+  },
+  (t) => [uniqueIndex('resource_name_lower_idx').on(sql`lower(${t.name})`)],
+);
+
+/** Asociación recurso ↔ servicio. Sin precio ni duración propios (FR-011a). */
+export const resourceService = pgTable(
+  'resource_service',
+  {
+    resourceId: uuid('resource_id')
+      .notNull()
+      .references(() => resource.id, { onDelete: 'cascade' }),
+    serviceId: uuid('service_id')
+      .notNull()
+      .references(() => service.id, { onDelete: 'cascade' }),
+    updatedAt: updatedAt(),
+  },
+  (t) => [primaryKey({ columns: [t.resourceId, t.serviceId] })],
+);
+
+export const resourceHours = pgTable(
+  'resource_hours',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    resourceId: uuid('resource_id')
+      .notNull()
+      .references(() => resource.id, { onDelete: 'cascade' }),
+    weekday: smallint('weekday').notNull(),
+    startTime: localTime('start_time').notNull(),
+    endTime: localTime('end_time').notNull(),
+    updatedAt: updatedAt(),
+  },
+  (t) => [
+    check('resource_hours_weekday', sql`${t.weekday} between 1 and 7`),
+    check('resource_hours_range', sql`${t.endTime} > ${t.startTime}`),
+  ],
+);
+
+export const resourceAbsence = pgTable(
+  'resource_absence',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    resourceId: uuid('resource_id')
+      .notNull()
+      .references(() => resource.id, { onDelete: 'cascade' }),
+    startDate: isoDate('start_date').notNull(),
+    endDate: isoDate('end_date').notNull(),
+    startTime: localTime('start_time'),
+    endTime: localTime('end_time'),
+    updatedAt: updatedAt(),
+  },
+  (t) => [
+    check('resource_absence_dates', sql`${t.endDate} >= ${t.startDate}`),
+    check('resource_absence_both_times', sql`(${t.startTime} is null) = (${t.endTime} is null)`),
+    check('resource_absence_times', sql`${t.startTime} is null or ${t.endTime} > ${t.startTime}`),
+  ],
+);
+
+export const faq = pgTable('faq', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  question: text('question').notNull(),
+  answer: text('answer').notNull(),
+  sortOrder: integer('sort_order').notNull().default(0),
+  updatedAt: updatedAt(),
+});
+
+export const policies = pgTable(
+  'policies',
+  {
+    id: smallint('id').primaryKey().default(1),
+    cancellationText: text('cancellation_text'),
+    cancellationNoticeMinutes: integer('cancellation_notice_minutes'),
+    minAdvanceMinutes: integer('min_advance_minutes'),
+    maxAdvanceMinutes: integer('max_advance_minutes'),
+    paymentMethods: text('payment_methods')
+      .array()
+      .notNull()
+      .default(sql`'{}'::text[]`),
+    updatedAt: updatedAt(),
+  },
+  (t) => [
+    check('policies_singleton', sql`${t.id} = 1`),
+    check(
+      'policies_notice',
+      sql`${t.cancellationNoticeMinutes} is null or ${t.cancellationNoticeMinutes} >= 0`,
+    ),
+    check('policies_min', sql`${t.minAdvanceMinutes} is null or ${t.minAdvanceMinutes} >= 0`),
+    check('policies_max', sql`${t.maxAdvanceMinutes} is null or ${t.maxAdvanceMinutes} > 0`),
+    check(
+      'policies_min_max',
+      sql`${t.minAdvanceMinutes} is null or ${t.maxAdvanceMinutes} is null or ${t.minAdvanceMinutes} <= ${t.maxAdvanceMinutes}`,
+    ),
+  ],
+);
+
+export const tone = pgTable(
+  'tone',
+  {
+    id: smallint('id').primaryKey().default(1),
+    addressForm: addressForm('address_form').notNull(),
+    styleDescription: text('style_description'),
+    updatedAt: updatedAt(),
+  },
+  (t) => [check('tone_singleton', sql`${t.id} = 1`)],
+);
+
+export const handoffContact = pgTable(
+  'handoff_contact',
+  {
+    id: smallint('id').primaryKey().default(1),
+    updatedAt: updatedAt(),
+  },
+  (t) => [check('handoff_contact_singleton', sql`${t.id} = 1`)],
+);
+
+export const handoffChannel = pgTable(
+  'handoff_channel',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    contactId: smallint('contact_id')
+      .notNull()
+      .default(1)
+      .references(() => handoffContact.id, { onDelete: 'cascade' }),
+    type: handoffChannelType('type').notNull(),
+    value: text('value').notNull(),
+    sortOrder: integer('sort_order').notNull().default(0),
+    updatedAt: updatedAt(),
+  },
+  (t) => [unique('handoff_channel_type_value_unique').on(t.type, t.value)],
+);
+
+export const handoffHours = pgTable(
+  'handoff_hours',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    contactId: smallint('contact_id')
+      .notNull()
+      .default(1)
+      .references(() => handoffContact.id, { onDelete: 'cascade' }),
+    weekday: smallint('weekday').notNull(),
+    startTime: localTime('start_time').notNull(),
+    endTime: localTime('end_time').notNull(),
+    updatedAt: updatedAt(),
+  },
+  (t) => [
+    check('handoff_hours_weekday', sql`${t.weekday} between 1 and 7`),
+    check('handoff_hours_range', sql`${t.endTime} > ${t.startTime}`),
+  ],
+);
+
+/** Todas las tablas, en orden seguro para TRUNCATE en tests. */
+export const allTableNames = [
+  'resource_service',
+  'resource_hours',
+  'resource_absence',
+  'resource',
+  'service',
+  'business_hours',
+  'closure',
+  'faq',
+  'policies',
+  'tone',
+  'handoff_channel',
+  'handoff_hours',
+  'handoff_contact',
+  'business',
+] as const;

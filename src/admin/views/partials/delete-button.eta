@@ -1,0 +1,4 @@
+<form class="inline" method="post" action="<%= it.action %>" hx-confirm="<%= it.confirm || '¿Seguro que quieres eliminarlo? No se puede deshacer.' %>">
+  <%~ include('/partials/csrf', { token: it.csrf }) %>
+  <button type="submit" class="danger small"><%= it.label || 'Eliminar' %></button>
+</form>

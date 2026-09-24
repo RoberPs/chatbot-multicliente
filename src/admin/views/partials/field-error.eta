@@ -1,0 +1,1 @@
+<% if (it.message) { %><span class="field-error" role="alert"><%= it.message %></span><% } %>

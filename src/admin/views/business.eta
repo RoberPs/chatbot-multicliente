@@ -1,0 +1,43 @@
+<% layout('/layout') %>
+<% const v = it.values; const e = it.errors; %>
+<%~ include('/partials/general-error', { errors: it.errors, general: it.general, blocking: it.blocking, h: it.h }) %>
+<form class="stack card" method="post" action="/admin/business">
+  <%~ include('/partials/csrf', { token: it.layout.csrf }) %>
+  <label class="<%= e.name ? 'has-error' : '' %>">Nombre *
+    <input type="text" name="name" value="<%= it.h.str(v.name) %>" maxlength="200" required>
+    <%~ include('/partials/field-error', { message: e.name }) %>
+  </label>
+  <label class="<%= e.address ? 'has-error' : '' %>">Dirección
+    <input type="text" name="address" value="<%= it.h.str(v.address) %>" maxlength="500">
+    <%~ include('/partials/field-error', { message: e.address }) %>
+  </label>
+  <label class="<%= e.directions ? 'has-error' : '' %>">Cómo llegar
+    <textarea name="directions" maxlength="2000"><%= it.h.str(v.directions) %></textarea>
+    <%~ include('/partials/field-error', { message: e.directions }) %>
+  </label>
+  <div class="row">
+    <label class="<%= e.phone ? 'has-error' : '' %>">Teléfono
+      <input type="tel" name="phone" value="<%= it.h.str(v.phone) %>">
+      <%~ include('/partials/field-error', { message: e.phone }) %>
+    </label>
+    <label class="<%= e.email ? 'has-error' : '' %>">Email
+      <input type="text" name="email" value="<%= it.h.str(v.email) %>" inputmode="email">
+      <%~ include('/partials/field-error', { message: e.email }) %>
+    </label>
+  </div>
+  <div class="row">
+    <label class="<%= e.timezone ? 'has-error' : '' %>">Zona horaria *
+      <input type="text" name="timezone" value="<%= it.h.str(v.timezone) %>" required>
+      <%~ include('/partials/field-error', { message: e.timezone }) %>
+    </label>
+    <label class="<%= e.currency ? 'has-error' : '' %>">Moneda *
+      <input type="text" name="currency" value="<%= it.h.str(v.currency) %>" maxlength="3" required>
+      <%~ include('/partials/field-error', { message: e.currency }) %>
+    </label>
+  </div>
+  <p class="hint">El teléfono se guarda en formato internacional. Si no hay contacto de derivación, el bot usará este teléfono para pasar la conversación a una persona.</p>
+  <div class="actions">
+    <button type="submit">Guardar</button>
+    <span class="meta">Última modificación: <%= it.h.dateTime(it.state.business.updatedAt, it.state.business.timezone) %></span>
+  </div>
+</form>

@@ -1,0 +1,41 @@
+<% layout('/layout') %>
+<% const services = it.state.services; const currency = it.state.business.currency;
+   const ids = services.map(function (s) { return s.id; }); %>
+<%~ include('/partials/general-error', { errors: it.errors, general: it.general, blocking: it.blocking, h: it.h }) %>
+<p><a href="/admin/services/new">Añadir servicio</a></p>
+<% if (services.length === 0) { %>
+  <p class="meta">No hay servicios registrados.</p>
+<% } else { %>
+<table>
+  <thead><tr><th>Orden</th><th>Servicio</th><th>Precio</th><th>Duración</th><th>Reservable</th><th>Estado</th><th></th></tr></thead>
+  <tbody>
+  <% services.forEach(function (s, i) {
+       const own = it.warnings.filter(function (w) { return w.target.kind === 'service' && w.target.id === s.id; }); %>
+    <tr class="<%= s.active ? '' : 'inactive' %>">
+      <td>
+        <% [[i - 1, '↑', 'Subir'], [i + 1, '↓', 'Bajar']].forEach(function (move) {
+             const j = move[0]; if (j < 0 || j >= ids.length) return;
+             const order = ids.slice(); order[i] = ids[j]; order[j] = ids[i]; %>
+          <form class="inline" method="post" action="/admin/services/reorder">
+            <%~ include('/partials/csrf', { token: it.layout.csrf }) %>
+            <% order.forEach(function (id) { %><input type="hidden" name="ids" value="<%= id %>"><% }) %>
+            <button type="submit" class="secondary small" title="<%= move[2] %>" aria-label="<%= move[2] %> <%= s.name %>"><%= move[1] %></button>
+          </form>
+        <% }) %>
+      </td>
+      <td>
+        <a href="/admin/services/<%= s.id %>"><%= s.name %></a>
+        <% if (own.length > 0) { %>
+          <%~ include('/partials/warnings-list', { warnings: own, h: it.h, links: false }) %>
+        <% } %>
+      </td>
+      <td><%= s.priceType === 'on_request' ? 'A consultar' : (s.priceType === 'from' ? 'Desde ' : '') + it.h.money(s.priceCents, currency) %></td>
+      <td><%= s.durationMinutes === null ? '—' : s.durationMinutes + ' min' %></td>
+      <td><%= s.bookable ? 'Sí' : 'No' %></td>
+      <td><%= s.active ? 'Activo' : 'Inactivo' %></td>
+      <td><%~ include('/partials/delete-button', { action: '/admin/services/' + s.id + '/delete', csrf: it.layout.csrf, confirm: '¿Eliminar «' + s.name + '»? También se quitará de los recursos que lo prestan.' }) %></td>
+    </tr>
+  <% }) %>
+  </tbody>
+</table>
+<% } %>

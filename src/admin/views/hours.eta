@@ -1,0 +1,54 @@
+<% layout('/layout') %>
+<% const tz = it.state.business.timezone;
+   const hoursErrors = it.errorsFor === 'hours' ? it.errors : {};
+   const closureErrors = it.errorsFor === 'closure' ? it.errors : {}; %>
+<%~ include('/partials/general-error', { errors: it.errors, general: it.general, blocking: it.blocking, h: it.h }) %>
+
+<section>
+  <h2>Horario semanal</h2>
+  <form class="card" method="post" action="/admin/hours">
+    <%~ include('/partials/csrf', { token: it.layout.csrf }) %>
+    <%~ include('/partials/weekly-slots', { prefix: 'slots', slots: it.slots, errors: hoursErrors, h: it.h }) %>
+    <div class="actions">
+      <button type="submit">Guardar horario</button>
+      <% if (it.state.businessHoursUpdatedAt) { %><span class="meta">Última modificación: <%= it.h.dateTime(it.state.businessHoursUpdatedAt, tz) %></span><% } %>
+    </div>
+  </form>
+</section>
+
+<section>
+  <h2>Cierres puntuales</h2>
+  <p class="hint">Festivos, vacaciones o cierres parciales. Prevalecen sobre el horario semanal.</p>
+  <% if (it.state.closures.length === 0) { %>
+    <p class="meta">No hay cierres registrados.</p>
+  <% } else { %>
+  <table>
+    <thead><tr><th>Fechas</th><th>Horas</th><th>Motivo</th><th>Modificado</th><th></th></tr></thead>
+    <tbody>
+    <% it.state.closures.forEach(function (c) { %>
+      <tr>
+        <td><%= it.h.date(c.startDate) %><% if (c.endDate !== c.startDate) { %> – <%= it.h.date(c.endDate) %><% } %></td>
+        <td><%= c.startTime ? c.startTime + '–' + c.endTime : 'Día completo' %></td>
+        <td><%= c.reason || '' %></td>
+        <td class="meta"><%= it.h.dateTime(c.updatedAt, tz) %></td>
+        <td>
+          <a href="/admin/closures/<%= c.id %>">Editar</a>
+          <%~ include('/partials/delete-button', { action: '/admin/closures/' + c.id + '/delete', csrf: it.layout.csrf }) %>
+        </td>
+      </tr>
+    <% }) %>
+    </tbody>
+  </table>
+  <% } %>
+
+  <h2><%= it.editing ? 'Editar cierre' : 'Añadir cierre' %></h2>
+  <%~ include('/partials/date-range-form', {
+    action: it.editing ? '/admin/closures/' + it.editing.id : '/admin/closures',
+    values: it.closureForm,
+    errors: closureErrors,
+    csrf: it.layout.csrf,
+    withReason: true,
+    submitLabel: it.editing ? 'Guardar cierre' : 'Añadir cierre',
+    cancelUrl: it.editing ? '/admin/hours' : null,
+  }) %>
+</section>

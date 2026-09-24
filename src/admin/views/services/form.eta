@@ -1,0 +1,42 @@
+<% layout('/layout') %>
+<% const v = it.values; const e = it.errors; const s = it.service;
+   const own = s ? it.warnings.filter(function (w) { return w.target.kind === 'service' && w.target.id === s.id; }) : []; %>
+<%~ include('/partials/general-error', { errors: it.errors, general: it.general, blocking: it.blocking, h: it.h }) %>
+<% if (own.length > 0) { %><%~ include('/partials/warnings-list', { warnings: own, h: it.h, links: false }) %><% } %>
+<form class="stack card" method="post" action="<%= s ? '/admin/services/' + s.id : '/admin/services' %>">
+  <%~ include('/partials/csrf', { token: it.layout.csrf }) %>
+  <label class="<%= e.name ? 'has-error' : '' %>">Nombre *
+    <input type="text" name="name" value="<%= it.h.str(v.name) %>" maxlength="200" required>
+    <%~ include('/partials/field-error', { message: e.name }) %>
+  </label>
+  <label class="<%= e.description ? 'has-error' : '' %>">Descripción
+    <textarea name="description" maxlength="4000"><%= it.h.str(v.description) %></textarea>
+    <%~ include('/partials/field-error', { message: e.description }) %>
+  </label>
+  <div class="row">
+    <label class="<%= e.price_type ? 'has-error' : '' %>">Tipo de precio *
+      <select name="price_type">
+        <option value="fixed"<% if (v.price_type === 'fixed') { %> selected<% } %>>Fijo</option>
+        <option value="from"<% if (v.price_type === 'from') { %> selected<% } %>>Desde</option>
+        <option value="on_request"<% if (v.price_type === 'on_request') { %> selected<% } %>>A consultar</option>
+      </select>
+      <%~ include('/partials/field-error', { message: e.price_type }) %>
+    </label>
+    <label class="<%= e.price ? 'has-error' : '' %>">Importe (<%= it.state.business.currency %>)
+      <input type="text" name="price" value="<%= it.h.str(v.price) %>" inputmode="decimal" placeholder="20,50">
+      <%~ include('/partials/field-error', { message: e.price }) %>
+    </label>
+    <label class="<%= e.duration ? 'has-error' : '' %>">Duración (minutos)
+      <input type="number" name="duration" value="<%= it.h.str(v.duration) %>" min="1" max="1440" step="1">
+      <%~ include('/partials/field-error', { message: e.duration }) %>
+    </label>
+  </div>
+  <p class="hint">Con "A consultar" no se guarda importe y el bot no dará ninguna cifra.</p>
+  <label class="checkbox"><input type="checkbox" name="bookable"<% if (v.bookable) { %> checked<% } %>> Se puede reservar</label>
+  <label class="checkbox"><input type="checkbox" name="active"<% if (v.active) { %> checked<% } %>> Activo (si no, el bot no lo ve)</label>
+  <div class="actions">
+    <button type="submit">Guardar</button>
+    <a href="/admin/services">Volver a la lista</a>
+    <% if (s) { %><span class="meta">Última modificación: <%= it.h.dateTime(s.updatedAt, it.state.business.timezone) %></span><% } %>
+  </div>
+</form>

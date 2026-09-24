@@ -1,0 +1,14 @@
+<% const fields = Object.keys(it.errors || {}); %>
+<% if (it.general) { %>
+<div class="general-error" role="alert">
+  <p><%= it.general %></p>
+  <% if (fields.length > 0) { %>
+  <ul class="error-summary">
+    <% fields.forEach(function (f) { %><li data-field="<%= f %>"><%= it.errors[f] %></li><% }) %>
+  </ul>
+  <% } %>
+  <% if (it.blocking && it.blocking.length > 0) { %>
+    <%~ include('/partials/warnings-list', { warnings: it.blocking, h: it.h }) %>
+  <% } %>
+</div>
+<% } %>

@@ -1,0 +1,77 @@
+<% layout('/layout') %>
+<% const r = it.resource; const v = it.values; const tz = it.state.business.timezone;
+   const e = it.errorsFor === 'resource' ? it.errors : {};
+   const hoursErrors = it.errorsFor === 'hours' ? it.errors : {};
+   const absenceErrors = it.errorsFor === 'absence' ? it.errors : {};
+   const selected = Array.isArray(v.service_ids) ? v.service_ids : (v.service_ids ? [v.service_ids] : []);
+   const own = r ? it.warnings.filter(function (w) { return w.target.kind === 'resource' && w.target.id === r.id; }) : []; %>
+<%~ include('/partials/general-error', { errors: it.errors, general: it.general, blocking: it.blocking, h: it.h }) %>
+<% if (own.length > 0) { %><%~ include('/partials/warnings-list', { warnings: own, h: it.h, links: false }) %><% } %>
+
+<form class="stack card" method="post" action="<%= r ? '/admin/resources/' + r.id : '/admin/resources' %>">
+  <%~ include('/partials/csrf', { token: it.layout.csrf }) %>
+  <label class="<%= e.name ? 'has-error' : '' %>">Nombre *
+    <input type="text" name="name" value="<%= it.h.str(v.name) %>" maxlength="200" required>
+    <%~ include('/partials/field-error', { message: e.name }) %>
+  </label>
+  <fieldset class="<%= e.service_ids ? 'has-error' : '' %>">
+    <legend>Servicios que presta</legend>
+    <% const services = it.state.services.filter(function (s) { return s.active || selected.indexOf(s.id) >= 0; }); %>
+    <% if (services.length === 0) { %><p class="meta">No hay servicios activos.</p><% } %>
+    <% services.forEach(function (s) { %>
+      <label class="checkbox"><input type="checkbox" name="service_ids" value="<%= s.id %>"<% if (selected.indexOf(s.id) >= 0) { %> checked<% } %>> <%= s.name %><% if (!s.active) { %> (inactivo)<% } %></label>
+    <% }) %>
+    <%~ include('/partials/field-error', { message: e.service_ids }) %>
+  </fieldset>
+  <label class="checkbox"><input type="checkbox" name="active"<% if (v.active) { %> checked<% } %>> Activo (si no, el bot no lo ve; se conservan sus datos)</label>
+  <div class="actions">
+    <button type="submit">Guardar</button>
+    <a href="/admin/resources">Volver a la lista</a>
+    <% if (r) { %><span class="meta">Última modificación: <%= it.h.dateTime(r.updatedAt, tz) %></span><% } %>
+  </div>
+</form>
+
+<% if (r) { %>
+<section>
+  <h2>Horario de <%= r.name %></h2>
+  <form class="card" method="post" action="/admin/resources/<%= r.id %>/hours">
+    <%~ include('/partials/csrf', { token: it.layout.csrf }) %>
+    <%~ include('/partials/weekly-slots', { prefix: 'slots', slots: it.slots, errors: hoursErrors, h: it.h }) %>
+    <div class="actions"><button type="submit">Guardar horario</button></div>
+  </form>
+</section>
+
+<section>
+  <h2>Ausencias</h2>
+  <% if (r.absences.length === 0) { %>
+    <p class="meta">No hay ausencias registradas.</p>
+  <% } else { %>
+  <table>
+    <thead><tr><th>Fechas</th><th>Horas</th><th>Modificado</th><th></th></tr></thead>
+    <tbody>
+    <% r.absences.forEach(function (a) { %>
+      <tr>
+        <td><%= it.h.date(a.startDate) %><% if (a.endDate !== a.startDate) { %> – <%= it.h.date(a.endDate) %><% } %></td>
+        <td><%= a.startTime ? a.startTime + '–' + a.endTime : 'Día completo' %></td>
+        <td class="meta"><%= it.h.dateTime(a.updatedAt, tz) %></td>
+        <td>
+          <a href="/admin/resources/<%= r.id %>/absences/<%= a.id %>">Editar</a>
+          <%~ include('/partials/delete-button', { action: '/admin/resources/' + r.id + '/absences/' + a.id + '/delete', csrf: it.layout.csrf }) %>
+        </td>
+      </tr>
+    <% }) %>
+    </tbody>
+  </table>
+  <% } %>
+  <h2><%= it.editingAbsence ? 'Editar ausencia' : 'Añadir ausencia' %></h2>
+  <%~ include('/partials/date-range-form', {
+    action: it.editingAbsence ? '/admin/resources/' + r.id + '/absences/' + it.editingAbsence.id : '/admin/resources/' + r.id + '/absences',
+    values: it.absenceForm,
+    errors: absenceErrors,
+    csrf: it.layout.csrf,
+    withReason: false,
+    submitLabel: it.editingAbsence ? 'Guardar ausencia' : 'Añadir ausencia',
+    cancelUrl: it.editingAbsence ? '/admin/resources/' + r.id : null,
+  }) %>
+</section>
+<% } %>

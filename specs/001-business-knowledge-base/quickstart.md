@@ -119,3 +119,24 @@ condicional.
 
 Registra un negocio típico (datos, horario, 10 servicios, 3 recursos, 10 FAQ, políticas, tono
 y contacto) cronometrando. **Esperado**: menos de 30 minutos.
+
+## Resultado de la validación (2026-09-24)
+
+Escenarios 1–6 recorridos contra `pnpm dev` con un script que envía los formularios del panel
+como un navegador sin JavaScript y comprueba cada paso con `pnpm kb:snapshot` y la portada:
+29/29 comprobaciones correctas.
+
+| Escenario | Resultado |
+|-----------|-----------|
+| 1. Instancia nueva | Correcto: "En preparación", dos avisos, activación rechazada con `409` |
+| 2. Datos, horario y servicios | Correcto: `+34600123456`, errores en `slots[0].end` y `price`, C "a consultar" |
+| 3. Modificar datos | Correcto: 2500 céntimos y B eliminado sin reiniciar |
+| 4. Recursos | Correcto: modos, `RESOURCE_HOURS_OUTSIDE_BUSINESS` (sáb 16:00–18:00), desactivar y reactivar |
+| 5. FAQ, políticas, tono y derivación | Correcto: antelación 31 días rechazada en `min_advance` |
+| 6. Activación y protección | Correcto: `409` al borrar el teléfono con el negocio activo; tras desactivar, `HANDOFF_UNREACHABLE` |
+| 7. Neutralidad sectorial | Correcto: `pnpm test -- sector-neutrality` en verde |
+| 8. Tiempo de alta (SC-001) | Pendiente: lo tiene que cronometrar una persona en el panel |
+
+Rendimiento medido con `tests/integration/performance.test.ts` (Docker Desktop en Windows):
+`getSnapshot()` p95 ≈ 25–31 ms con la suite completa en paralelo (objetivo < 50 ms; el estado se carga en una sola consulta) y guardado de servicio p95 ≈ 60–70 ms
+(objetivo < 300 ms).

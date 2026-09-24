@@ -1,0 +1,12 @@
+<% const key = it.prefix + '[' + it.index + ']';
+   const rowError = (it.errors || {})[key] || '';
+   const startError = (it.errors || {})[key + '.start'] || '';
+   const endError = (it.errors || {})[key + '.end'] || '';
+   const weekdayError = (it.errors || {})[key + '.weekday'] || ''; %>
+<div class="slot-row<%= rowError || startError || endError || weekdayError ? ' has-error' : '' %>">
+  <input type="hidden" name="<%= key %>.weekday" value="<%= it.weekday %>">
+  <input type="time" name="<%= key %>.start" value="<%= it.start || '' %>" aria-label="Desde">
+  –
+  <input type="time" name="<%= key %>.end" value="<%= it.end || '' %>" aria-label="Hasta">
+  <%~ include('/partials/field-error', { message: rowError || startError || endError || weekdayError }) %>
+</div>

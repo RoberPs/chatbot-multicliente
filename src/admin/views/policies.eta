@@ -1,0 +1,41 @@
+<% layout('/layout') %>
+<% const v = it.values; const e = it.errors;
+   const units = [['minutes', 'minutos'], ['hours', 'horas'], ['days', 'días']];
+   const methods = (Array.isArray(v.payment_methods) ? v.payment_methods : []).concat(['', '']); %>
+<%~ include('/partials/general-error', { errors: it.errors, general: it.general, blocking: it.blocking, h: it.h }) %>
+<form class="stack card" method="post" action="/admin/policies">
+  <%~ include('/partials/csrf', { token: it.layout.csrf }) %>
+  <label class="<%= e.cancellation_text ? 'has-error' : '' %>">Política de cancelación
+    <textarea name="cancellation_text" maxlength="4000"><%= it.h.str(v.cancellation_text) %></textarea>
+    <%~ include('/partials/field-error', { message: e.cancellation_text }) %>
+  </label>
+  <% [
+       ['cancellation_notice', 'Plazo para cancelar sin penalización'],
+       ['min_advance', 'Antelación mínima para reservar'],
+       ['max_advance', 'Antelación máxima para reservar'],
+     ].forEach(function (field) { const name = field[0]; %>
+  <div class="row <%= e[name] ? 'has-error' : '' %>">
+    <label><%= field[1] %>
+      <input type="number" name="<%= name %>" value="<%= it.h.str(v[name]) %>" min="0" step="1">
+    </label>
+    <label>Unidad
+      <select name="<%= name %>_unit">
+        <% units.forEach(function (u) { %><option value="<%= u[0] %>"<% if (v[name + '_unit'] === u[0]) { %> selected<% } %>><%= u[1] %></option><% }) %>
+      </select>
+    </label>
+    <%~ include('/partials/field-error', { message: e[name] || e[name + '_unit'] }) %>
+  </div>
+  <% }) %>
+  <fieldset>
+    <legend>Formas de pago</legend>
+    <p class="hint">Una por casilla (por ejemplo, Efectivo, Tarjeta, Bizum). Las vacías se ignoran.</p>
+    <% methods.forEach(function (m) { %>
+      <input type="text" name="payment_methods" value="<%= m %>" maxlength="100">
+    <% }) %>
+    <%~ include('/partials/field-error', { message: e.payment_methods }) %>
+  </fieldset>
+  <div class="actions">
+    <button type="submit">Guardar</button>
+    <% if (it.state.policies) { %><span class="meta">Última modificación: <%= it.h.dateTime(it.state.policies.updatedAt, it.state.business.timezone) %></span><% } %>
+  </div>
+</form>

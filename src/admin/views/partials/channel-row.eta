@@ -1,0 +1,11 @@
+<% const key = 'channels[' + it.index + ']'; const e = it.errors || {};
+   const error = e[key + '.value'] || e[key + '.type'] || ''; %>
+<div class="slot-row<%= error ? ' has-error' : '' %>">
+  <select name="<%= key %>.type" aria-label="Tipo de medio">
+    <option value="phone"<% if (it.type === 'phone') { %> selected<% } %>>Teléfono</option>
+    <option value="whatsapp"<% if (it.type === 'whatsapp') { %> selected<% } %>>WhatsApp</option>
+    <option value="email"<% if (it.type === 'email') { %> selected<% } %>>Email</option>
+  </select>
+  <input type="text" name="<%= key %>.value" value="<%= it.value || '' %>" aria-label="Número o email">
+  <%~ include('/partials/field-error', { message: error }) %>
+</div>

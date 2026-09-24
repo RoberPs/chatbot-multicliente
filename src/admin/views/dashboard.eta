@@ -1,0 +1,41 @@
+<% layout('/layout') %>
+<% const status = it.state.business.status; %>
+<%~ include('/partials/general-error', { errors: it.errors, general: it.general, blocking: it.blocking, h: it.h }) %>
+
+<section class="card">
+  <h2>Estado del negocio</h2>
+  <% if (status === 'active') { %>
+    <p><strong>Activo.</strong> El bot atiende a los clientes con la información registrada.</p>
+    <form method="post" action="/admin/status/deactivate" hx-confirm="El bot dejará de atender a los clientes. ¿Continuar?">
+      <%~ include('/partials/csrf', { token: it.layout.csrf }) %>
+      <button type="submit" class="secondary">Pasar a "En preparación"</button>
+    </form>
+  <% } else { %>
+    <p><strong>En preparación.</strong> El bot todavía no atiende a los clientes.
+      Se puede activar cuando no quede ningún aviso crítico; los avisos normales no lo impiden.</p>
+    <form method="post" action="/admin/status/activate">
+      <%~ include('/partials/csrf', { token: it.layout.csrf }) %>
+      <button type="submit">Activar</button>
+    </form>
+  <% } %>
+</section>
+
+<section class="card" id="avisos">
+  <h2>Avisos (<%= it.warnings.length %>)</h2>
+  <%~ include('/partials/warnings-list', { warnings: it.warnings, h: it.h, id: 'warnings-list', emptyText: 'No hay avisos: la información registrada está completa.' }) %>
+</section>
+
+<section class="card">
+  <h2>Secciones</h2>
+  <ul>
+    <li><a href="/admin/business">Datos del negocio</a></li>
+    <li><a href="/admin/hours">Horario y cierres</a> · <%= it.state.businessHours.length %> franjas, <%= it.state.closures.length %> cierres</li>
+    <li><a href="/admin/services">Servicios</a> · <%= it.state.services.length %></li>
+    <li><a href="/admin/resources">Recursos</a> · <%= it.state.resources.length %></li>
+    <li><a href="/admin/faqs">Preguntas frecuentes</a> · <%= it.state.faqs.length %></li>
+    <li><a href="/admin/policies">Políticas</a></li>
+    <li><a href="/admin/tone">Tono</a></li>
+    <li><a href="/admin/handoff">Contacto de derivación</a></li>
+  </ul>
+  <p class="meta">Última modificación de la información: <%= it.h.dateTime(it.state.maxUpdatedAt, it.state.business.timezone) %></p>
+</section>
