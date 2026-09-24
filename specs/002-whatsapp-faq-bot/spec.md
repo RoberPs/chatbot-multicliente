@@ -18,6 +18,24 @@
   atienden texto y audio (el audio se convierte en texto y se responde por escrito). Al resto
   de tipos (imágenes, stickers, vídeos, documentos…) el bot responde que solo atiende texto y
   audios.
+- Q: Cuando el cliente envía varios mensajes seguidos en pocos segundos, ¿el bot espera y los
+  responde juntos o responde cada uno por separado? → A: Espera unos segundos sin mensajes
+  nuevos del cliente y contesta todo lo recibido en una sola respuesta; cada pregunta se
+  contesta una sola vez. La duración de la espera se fija en el plan.
+- Q: Si un mismo número envía muchísimos mensajes en poco tiempo, ¿debe el bot limitar cuántos
+  atiende? → A: Sí. Se limitan los mensajes por número en un periodo; al superar el límite, el
+  bot envía una única vez un aviso breve con el contacto del negocio y deja de responder hasta
+  que termina el periodo. Las cifras se fijan en el plan.
+- Q: ¿Durante cuánto tiempo se guardan las conversaciones y los números de los clientes
+  finales, y cuándo se borran? → A: Borrado automático de la conversación completa (mensajes y
+  número) 30 días después de su último mensaje.
+- Q: Si un mensaje del cliente se procesa con retraso o llega con el negocio "en
+  preparación", ¿debe contestarse más tarde? → A: Los recibidos en preparación no se guardan
+  ni se contestan nunca; los retrasados se contestan solo si siguen dentro de la ventana de 24
+  horas de WhatsApp, y si no se descartan sin respuesta.
+- Q: ¿Qué debe quedar registrado de la actividad del bot para detectar fallos? → A: Registros
+  técnicos sin el texto de los mensajes y con el número enmascarado o seudonimizado: mensajes
+  procesados, tipo, tiempo de respuesta, fallos, límites superados y mensajes descartados.
 
 ## User Scenarios & Testing *(mandatory)*
 
@@ -200,20 +218,29 @@ contesta y que todas reciben una reconducción hacia lo que el bot puede atender
   de derivación del negocio (o su teléfono general, según la spec 001), sea cual sea el punto
   de la conversación (Principio V).
 - **Negocio no activo** ("en preparación"): el bot no responde a los mensajes recibidos
-  (FR-029 de la spec 001).
+  (FR-029 de la spec 001), no los guarda y no los contesta cuando el negocio pasa a activo.
+- **Mensaje procesado con retraso** (caída o reinicio del sistema, reentrega tardía del
+  canal): si sigue dentro de la ventana de 24 horas desde el último mensaje del cliente, el
+  bot lo contesta con los datos y la hora del momento de responder; si no, lo descarta sin
+  responder (FR-002a).
 - **La información del negocio cambia durante la conversación**: cada respuesta usa los datos
   vigentes en el momento de generarla.
 - **La base de conocimiento no se puede leer o la respuesta no puede generarse** (fallo
   temporal): el bot no responde con datos de memoria ni inventados; envía un mensaje breve de
   disculpa pidiendo que vuelva a escribir más tarde.
-- **Varios mensajes seguidos en pocos segundos**: el bot puede contestarlos juntos en una sola
-  respuesta, pero cada pregunta recibe respuesta una sola vez.
+- **Varios mensajes seguidos en pocos segundos**: el bot espera a que el cliente deje de
+  escribir unos segundos y contesta todos los mensajes recibidos en una sola respuesta; cada
+  pregunta recibe respuesta una sola vez (FR-004).
 - **Mensaje en otro idioma**: el bot responde en el idioma de atención del negocio.
 - **Mensaje vacío o ininteligible**: el bot pide amablemente que el cliente reformule su
   consulta y recuerda qué puede atender.
 - **Mensaje reenviado o duplicado por el canal** (el mismo mensaje entregado dos veces): el
   cliente recibe una sola respuesta.
 - **Mensajes desde grupos de WhatsApp**: el bot solo atiende conversaciones individuales.
+- **Un número envía un volumen excesivo de mensajes** (abuso, otro bot o un envío
+  automatizado): al superar el límite del periodo, el bot envía una sola vez un aviso breve con
+  el contacto del negocio y no responde a los mensajes siguientes hasta que termina el periodo
+  (FR-004a).
 
 ## Requirements *(mandatory)*
 
@@ -224,11 +251,26 @@ contesta y que todas reciben una reconducción hacia lo que el bot puede atender
 - **FR-001**: El sistema MUST recibir los mensajes que los clientes finales envían al número de
   WhatsApp del negocio y responder en esa misma conversación.
 - **FR-002**: El bot MUST responder solo cuando el negocio está activo; con el negocio "en
-  preparación" MUST NOT enviar respuestas.
+  preparación" MUST NOT enviar respuestas. Los mensajes recibidos mientras el negocio está en
+  preparación MUST NOT guardarse ni contestarse después, aunque el negocio pase a activo.
+- **FR-002a**: Un mensaje que se procesa con retraso MUST contestarse solo si sigue dentro de
+  la ventana de 24 horas desde el último mensaje del cliente final; fuera de ella MUST
+  descartarse sin respuesta. La respuesta tardía MUST usar la información y la hora del momento
+  en que se genera (FR-007, FR-008).
 - **FR-003**: El bot MUST responder a cualquier hora y cualquier día, con independencia del
   horario de apertura y de los cierres puntuales del negocio.
-- **FR-004**: Cada mensaje del cliente MUST recibir exactamente una respuesta; los mensajes
-  duplicados por el canal MUST NOT generar respuestas duplicadas.
+- **FR-004**: Antes de responder, el bot MUST esperar un breve intervalo sin mensajes nuevos
+  del mismo cliente final y MUST contestar en una sola respuesta todos los mensajes recibidos
+  en ese intervalo. Cada mensaje del cliente MUST quedar cubierto por exactamente una
+  respuesta, y cada pregunta MUST contestarse una sola vez. Los mensajes duplicados por el
+  canal MUST NOT generar respuestas duplicadas. La duración del intervalo se fija en el plan
+  y MUST ser compatible con SC-003.
+- **FR-004a**: El sistema MUST limitar el número de mensajes que atiende de cada cliente final
+  en un periodo. Al superar el límite, el bot MUST enviar una sola vez un aviso breve que
+  incluya el contacto del negocio según FR-016 (y así cumpla el Principio V), y MUST NOT
+  responder a más mensajes de ese número hasta que termine el periodo. El límite y el periodo
+  se fijan en el plan y MUST ser holgados para una conversación normal. Mientras un número no
+  supera el límite, FR-004 se aplica sin cambios.
 - **FR-005**: El bot MUST atender solo conversaciones individuales iniciadas por el cliente
   final; MUST NOT iniciar conversaciones ni responder en grupos.
 
@@ -314,8 +356,14 @@ contesta y que todas reciben una reconducción hacia lo que el bot puede atender
   el bot MUST NOT responder con datos no verificados; MUST enviar un mensaje breve pidiendo al
   cliente que vuelva a escribir más tarde.
 - **FR-030**: Las conversaciones y los números de los clientes finales MUST ser accesibles solo
-  desde la instancia del negocio y MUST conservarse solo el tiempo necesario para el
-  funcionamiento de esta feature.
+  desde la instancia del negocio. El sistema MUST borrar automáticamente cada conversación
+  completa (sus mensajes y, si no le quedan otras conversaciones, el número del cliente final)
+  cuando pasen 30 días desde su último mensaje, entrante o saliente.
+- **FR-030a**: El sistema MUST registrar la actividad técnica del bot: cada mensaje procesado
+  (tipo y tiempo de respuesta), los fallos de lectura de la información, de generación de la
+  respuesta, de conversión de audio y de envío, los límites superados (FR-004a) y los mensajes
+  descartados (FR-002, FR-002a). Estos registros MUST NOT contener el texto de los mensajes ni
+  de las respuestas, y el número del cliente final MUST aparecer enmascarado o seudonimizado.
 - **FR-031**: Ningún texto, regla ni comportamiento del bot MUST depender del sector o del
   cliente concreto; todo lo que varía entre negocios MUST salir de su información registrada.
 
@@ -328,8 +376,8 @@ contesta y que todas reciben una reconducción hacia lo que el bot puede atender
   contexto se usa para interpretar las preguntas.
 - **Mensaje**: cada mensaje recibido o enviado dentro de una conversación. Contiene dirección
   (entrante o saliente), tipo (texto, audio u otro), contenido (en los audios, el texto
-  obtenido de ellos) y momento. Un mensaje entrante tiene
-  una sola respuesta.
+  obtenido de ellos) y momento. Cada mensaje entrante queda cubierto por una sola respuesta,
+  que puede cubrir varios mensajes entrantes seguidos (FR-004).
 - **Base de conocimiento del negocio** (definida en la spec 001): fuente única de la
   información con la que responde el bot, incluidos el tono, el contacto de derivación y el
   estado del negocio.
@@ -344,8 +392,9 @@ contesta y que todas reciben una reconducción hacia lo que el bot puede atender
 - **SC-002**: En un juego de pruebas de al menos 30 preguntas sobre información no registrada o
   con precio "a consultar", el 0 % de las respuestas contiene un dato del negocio inventado y
   el 100 % ofrece el contacto del negocio.
-- **SC-003**: El 95 % de los mensajes recibe respuesta en menos de 10 segundos, a cualquier hora
-  del día y cualquier día de la semana.
+- **SC-003**: El 95 % de los mensajes recibe respuesta en menos de 10 segundos, contados desde
+  el último mensaje del grupo que se contesta junto (FR-004) e incluida la espera, a cualquier
+  hora del día y cualquier día de la semana.
 - **SC-004**: Al menos el 90 % de las preguntas escritas con faltas de ortografía o lenguaje
   coloquial obtiene la misma respuesta que su versión bien escrita, y el resto recibe una
   petición de reformular, nunca un dato erróneo.
@@ -364,6 +413,8 @@ contesta y que todas reciben una reconducción hacia lo que el bot puede atender
   se atienden texto y audios.
 - **SC-010**: Negocios de al menos tres sectores distintos se atienden con el mismo
   comportamiento del bot, sin cambios de código.
+- **SC-011**: El 100 % de las conversaciones cuyo último mensaje tiene más de 30 días (más el
+  margen de ejecución del borrado que fije el plan) no existe en la instancia, ni sus mensajes.
 
 ## Assumptions
 
@@ -384,8 +435,9 @@ contesta y que todas reciben una reconducción hacia lo que el bot puede atender
 - Una conversación caduca tras 24 horas sin mensajes del cliente, en línea con la ventana de
   atención habitual de WhatsApp.
 - El bot atiende en un único idioma, el de atención del negocio (spec 001).
-- Las conversaciones se conservan como máximo 30 días, salvo que el plan justifique otro plazo
-  compatible con la normativa de protección de datos.
+- El plazo de 30 días de FR-030 cubre con margen el contexto de la conversación (24 horas), la
+  detección de duplicados y el límite por número, y deja margen para investigar incidencias; se
+  considera compatible con la normativa de protección de datos.
 - El operador no revisa ni responde conversaciones desde el panel en esta versión; esa
   funcionalidad, si se necesita, irá en una spec posterior.
 - La calidad de las respuestas depende de que la información registrada sea completa; los
