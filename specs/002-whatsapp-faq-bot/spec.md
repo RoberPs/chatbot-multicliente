@@ -40,6 +40,14 @@
   por instancia según decisiones de negocio y viene desactivada. Mientras está desactivada,
   los audios se tratan como cualquier otro tipo no atendido y el bot indica que solo atiende
   mensajes de texto.
+- Q: Si la información del negocio no puede leerse, ¿cómo se garantiza la salida a una
+  persona (Principio V) si no se conoce el contacto registrado? → A: Cada instancia tiene un
+  contacto de emergencia (un teléfono) que el operador configura fuera de la base de
+  conocimiento; el mensaje de fallo lo incluye solo en ese caso (FR-029).
+- Q: En el límite por número, ¿el periodo es fijo o deslizante y cuentan los mensajes no
+  atendidos? → A: Ventana deslizante; cuentan todos los mensajes recibidos del número, también
+  los no atendidos. Si el exceso continúa, el aviso se repite como mucho una vez por periodo
+  (FR-004a).
 
 ## User Scenarios & Testing *(mandatory)*
 
@@ -232,7 +240,8 @@ contesta y que todas reciben una reconducción hacia lo que el bot puede atender
   vigentes en el momento de generarla.
 - **La base de conocimiento no se puede leer o la respuesta no puede generarse** (fallo
   temporal): el bot no responde con datos de memoria ni inventados; envía un mensaje breve de
-  disculpa pidiendo que vuelva a escribir más tarde.
+  disculpa pidiendo que vuelva a escribir más tarde. Si lo que falla es la lectura de la
+  información, el mensaje incluye el contacto de emergencia de la instancia (FR-029).
 - **Varios mensajes seguidos en pocos segundos**: el bot espera a que el cliente deje de
   escribir unos segundos y contesta todos los mensajes recibidos en una sola respuesta; cada
   pregunta recibe respuesta una sola vez (FR-004).
@@ -244,8 +253,9 @@ contesta y que todas reciben una reconducción hacia lo que el bot puede atender
 - **Mensajes desde grupos de WhatsApp**: el bot solo atiende conversaciones individuales.
 - **Un número envía un volumen excesivo de mensajes** (abuso, otro bot o un envío
   automatizado): al superar el límite del periodo, el bot envía una sola vez un aviso breve con
-  el contacto del negocio y no responde a los mensajes siguientes hasta que termina el periodo
-  (FR-004a).
+  el contacto del negocio y no responde a los mensajes siguientes hasta que su volumen en el
+  periodo vuelve a estar por debajo del límite; si el exceso continúa, el aviso se repite como
+  mucho una vez por periodo (FR-004a).
 
 ## Requirements *(mandatory)*
 
@@ -273,8 +283,11 @@ contesta y que todas reciben una reconducción hacia lo que el bot puede atender
 - **FR-004a**: El sistema MUST limitar el número de mensajes que atiende de cada cliente final
   en un periodo. Al superar el límite, el bot MUST enviar una sola vez un aviso breve que
   incluya el contacto del negocio según FR-016 (y así cumpla el Principio V), y MUST NOT
-  responder a más mensajes de ese número hasta que termine el periodo. El límite y el periodo
-  se fijan en el plan y MUST ser holgados para una conversación normal. Mientras un número no
+  responder a más mensajes de ese número hasta que los mensajes recibidos de ese número en el
+  periodo (una ventana deslizante, contando también los no atendidos) vuelvan a estar por
+  debajo del límite. Si el exceso continúa, el aviso MUST NOT repetirse más de una vez por
+  periodo. El límite y el periodo se fijan en el plan y MUST ser holgados para una
+  conversación normal. Mientras un número no
   supera el límite, FR-004 se aplica sin cambios.
 - **FR-005**: El bot MUST atender solo conversaciones individuales iniciadas por el cliente
   final; MUST NOT iniciar conversaciones ni responder en grupos.
@@ -363,7 +376,9 @@ contesta y que todas reciben una reconducción hacia lo que el bot puede atender
 
 - **FR-029**: Si la información del negocio no puede leerse o la respuesta no puede generarse,
   el bot MUST NOT responder con datos no verificados; MUST enviar un mensaje breve pidiendo al
-  cliente que vuelva a escribir más tarde.
+  cliente que vuelva a escribir más tarde. Si la información no puede leerse, el mensaje MUST
+  incluir el contacto de emergencia de la instancia, que el operador configura fuera de la base
+  de conocimiento solo para este caso (Principio V).
 - **FR-030**: Las conversaciones y los números de los clientes finales MUST ser accesibles solo
   desde la instancia del negocio. El sistema MUST borrar automáticamente cada conversación
   completa (sus mensajes y, si no le quedan otras conversaciones, el número del cliente final)

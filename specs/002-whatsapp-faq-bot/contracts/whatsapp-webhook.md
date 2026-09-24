@@ -26,6 +26,7 @@ sha256=<hex>` = HMAC-SHA256 del cuerpo en bruto con `WHATSAPP_APP_SECRET`.
 | Mensaje de grupo | `200` | Se ignora (FR-005); evento `message_discarded{reason: group}` |
 | Negocio no activo | `200` | **No se guarda**; evento `message_discarded{reason: not_active}` (FR-002) |
 | Mensaje con `id` ya guardado | `200` | Nada (deduplicación, FR-004) |
+| Error al leer el snapshot o al guardar (BD) | `503` | No se guarda nada; `knowledge_read_failed{errorClass, stage: "intake"}` si falló el snapshot. Meta reintenta y la deduplicación hace inocuos los reintentos |
 | Mensaje nuevo | `200` | Se guarda como `pending` (o `rate_limited`, R6) en una transacción **antes** de responder; se despierta el procesador |
 
 El `200` se devuelve en cuanto los mensajes están persistidos; generar y enviar la respuesta

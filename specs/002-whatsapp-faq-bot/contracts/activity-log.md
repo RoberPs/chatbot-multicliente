@@ -25,7 +25,7 @@ cualquier evento nuevo se añade aquí.
 | `rate_limit_exceeded` | warn | `count`, `windowMinutes`, `noticeSent` | FR-004a |
 | `reply_sent` | info | `messagesCovered`, `kinds`, `latencyMs` (desde el último entrante hasta la confirmación de envío), `waitMs`, `modelMs?`, `greeting`, `contactBlock`, `template?` | Cada respuesta enviada |
 | `transcription_failed` | warn | `reason`: `too_large` \| `too_long` \| `language` \| `empty` \| `timeout` \| `provider_error` | FR-028 |
-| `knowledge_read_failed` | error | `errorClass` | FR-029 |
+| `knowledge_read_failed` | error | `errorClass`, `stage`: `intake` \| `processor` | FR-029; en `intake` el webhook responde `503` |
 | `generation_failed` | error | `reason`: `timeout` \| `refusal` \| `invalid_output` \| `api_error`, `status?` | FR-029 |
 | `grounding_rejected` | warn | `attempt`, `offendingCount` | R8 |
 | `send_failed` | error | `attempts`, `status?`, `finalFailure` | Envío a la Graph API |

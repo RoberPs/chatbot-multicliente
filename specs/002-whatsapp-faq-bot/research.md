@@ -24,6 +24,9 @@ contra la constitución, en especial los Principios IV (solo información regist
     inicia conversaciones, FR-005).
   - Las cinco variables van juntas: si falta alguna, la instancia arranca sin canal (el panel
     de la 001 sigue funcionando) y el arranque lo registra como aviso.
+  - Con el canal configurado es obligatorio `EMERGENCY_CONTACT_PHONE` (E.164): contacto de
+    emergencia de la instancia, que el operador fija fuera de la base de conocimiento y que
+    solo se usa en la disculpa cuando el snapshot no se puede leer (FR-029, Principio V).
 - **Rationale**: es la API oficial, sin coste de intermediario y con webhooks firmados
   (HMAC-SHA256 con el app secret). Las credenciales por variable de entorno siguen el mismo
   patrón que la credencial del operador y cumplen la asunción de la spec ("la configura el
@@ -48,6 +51,8 @@ contra la constitución, en especial los Principios IV (solo información regist
     (decisión de la 001).
   - Notificaciones de estado (`sent`, `delivered`, `read`), mensajes de grupos y eventos que
     no son mensajes se aceptan con `200` y se ignoran.
+  - Si la recepción falla (snapshot ilegible o error al guardar), se responde `503` para que
+    Meta reintente; nunca se devuelve `200` sin haber guardado.
 - **Rationale**: Meta reintenta si el webhook tarda o falla; persistir antes del `200`
   garantiza que no se pierde nada y la clave única del id de WhatsApp convierte los
   reintentos y duplicados del canal en no-operaciones (edge case "mensaje duplicado", FR-004).
@@ -121,6 +126,9 @@ contra la constitución, en especial los Principios IV (solo información regist
   límite. Los mensajes por encima del límite se guardan con estado `rate_limited` (cuentan
   para la retención de 30 días) y no se contestan nunca. El aviso se marca en
   `customer.rate_limit_notified_at` para no repetirlo dentro de la misma ventana.
+  La cuenta incluye todos los entrantes del número en la ventana, cualquiera que sea su
+  estado (también los `rate_limited`): un envío que no para sigue bloqueado hasta que baja su
+  ritmo, y recibe como mucho un aviso cada 15 minutos.
 - **Rationale**: una conversación normal (preguntas, aclaraciones, cortesías) no pasa de 10–15
   mensajes en 15 minutos; 30 es holgado y corta bucles con otros bots y envíos masivos. La
   cuenta sale de la tabla de mensajes, sin estado adicional.
@@ -143,7 +151,10 @@ contra la constitución, en especial los Principios IV (solo información regist
     (`handoffRequested`, `offerContact`, `bookingRequested`, `needsRephrase`…). El código,
     no el modelo, decide el saludo, el bloque de contacto y los avisos fijos (R9).
   - `max_tokens` 4000 (incluye el pensamiento), petición sin streaming, `timeout` 12 s y
-    1 reintento del SDK, con un plazo total de 20 s; si se agota, se aplica FR-029.
+    1 reintento del SDK por llamada. Hay un **plazo total de 20 s por respuesta**, compartido
+    por el primer intento y el que sigue a un rechazo del verificador (mismo `AbortSignal`);
+    el segundo intento solo se hace si quedan al menos 5 s, y si no se envía R-SAFE. Si se
+    agota el plazo, se aplica FR-029.
   - Rechazos de seguridad: `stop_reason: "refusal"` se trata como fallo de generación
     (FR-029, disculpa con contacto). No se usan fallbacks a otro modelo en esta versión.
 - **Rationale**: interpretar faltas de ortografía, coloquialismos, preguntas encadenadas
@@ -198,12 +209,13 @@ contra la constitución, en especial los Principios IV (solo información regist
     citado tiene precio "a consultar" o sin importe, o si el **detector determinista** de
     petición de persona encuentra expresiones genéricas ("hablar con una persona", "con
     alguien", "un humano", "atención al cliente"…). El detector es una red de seguridad: basta
-    con que uno de los dos lo detecte.
+    con que uno de los dos lo detecte. La petición de persona prevalece sobre
+    `needsRephrase`: si se detecta, el contacto se añade aunque se pida reformular.
   - **Saludo** (FR-020): lo pone el código en la primera respuesta de cada conversación, con
     el nombre del negocio y la forma de trato; el modelo recibe la indicación de no saludar.
   - **Mensajes fijos sin modelo**: aviso de límite superado (con contacto), solo texto y
-    audios, audio no entendido, disculpa por fallo (FR-029; incluye el contacto si el
-    snapshot se pudo leer).
+    audios, audio no entendido, disculpa por fallo (FR-029; incluye el contacto del snapshot
+    si se pudo leer y, si no, el contacto de emergencia `EMERGENCY_CONTACT_PHONE`).
 - **Rationale**: SC-005 y SC-008 piden el 100 %; con un modelo solo se alcanza de forma
   probabilística. El código lo garantiza y se prueba con tests unitarios.
 - **Alternatives considered**: dejar que el modelo escriba el contacto (puede omitirlo,

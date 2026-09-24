@@ -78,7 +78,7 @@ mensajes / 15 min (R6); audio ≤ 2 MB y ≤ 120 s (R10); margen de borrado 24 h
 | **II. Configuración antes que código** | Nombre, horario, servicios, precios, FAQ, tono y contacto salen de la BD vía `KnowledgeReader`; cambiarlos no requiere desplegar y se aplica en la siguiente respuesta. Credenciales del canal, del modelo y de la transcripción son variables de instancia. | ✅ |
 | **III. Personalizaciones aisladas** | Sin extensiones. Los puertos `ChatModel`, `SpeechToText`, `ChannelSender` y `MediaFetcher` son genéricos y permiten cambiar de proveedor sin tocar el dominio. | ✅ (N/A) |
 | **IV. Solo información registrada** | Contexto cerrado al snapshot; hechos de horario y precios calculados por código; verificador determinista de cifras con respuesta segura; FAQ subordinadas a datos estructurados; tests unitarios del verificador y suite `eval` para SC-001/002/004. | ✅ |
-| **V. Siempre hay salida a una persona** | El bloque de contacto lo compone el código desde `snapshot.handoff`; se añade si el modelo lo marca **o** si el detector determinista reconoce la petición; también en el aviso de límite, en la respuesta segura y en la disculpa por fallo de generación. Tests unitarios (SC-008 al 100 %). | ✅ |
+| **V. Siempre hay salida a una persona** | El bloque de contacto lo compone el código desde `snapshot.handoff`; se añade si el modelo lo marca **o** si el detector determinista reconoce la petición; también en el aviso de límite, en la respuesta segura y en la disculpa por fallo de generación. La petición de persona prevalece sobre `needsRephrase`. Con el snapshot ilegible, la disculpa lleva el contacto de emergencia de la instancia (`EMERGENCY_CONTACT_PHONE`, FR-029). Durante el límite por número (FR-004a) no se contestan mensajes, tampoco las peticiones de persona: se justifica porque el aviso R-LIMIT ya entrega el contacto (y se repite como mucho una vez cada 15 min si el exceso continúa) y porque el límite solo salta con volúmenes que no corresponden a una conversación normal (R6). Tests unitarios (SC-008 al 100 %). | ✅ |
 | **VI. El operador registra la información** | Los clientes finales no pueden alterar la configuración: el bot solo lee el snapshot; las instrucciones incrustadas en mensajes se tratan como datos (FR-026, test en `eval`). No se añade ninguna vía para el negocio. | ✅ |
 | Restricción: canal WhatsApp | WhatsApp Cloud API oficial. | ✅ |
 | Restricción: aislamiento | Conversaciones en la BD propia de la instancia; número y credenciales de WhatsApp propios; nada compartido entre instancias. | ✅ |
@@ -99,8 +99,9 @@ Revisados [data-model.md](data-model.md) y [contracts/](contracts/):
   importe se entregan sin cifra y activan el contacto. ✅
 - **V**: el árbol de decisión de [bot-replies.md](contracts/bot-replies.md) añade CONTACTO en
   todos los caminos donde el snapshot es legible y hace falta; la 001 garantiza que en un
-  negocio activo nunca está vacío. R-ERR sin snapshot legible es el único caso sin contacto
-  (no se conoce) y se documenta. ✅
+  negocio activo nunca está vacío. Con el snapshot ilegible, R-ERR lleva el contacto de
+  emergencia de la instancia (variable obligatoria con el canal), así que no queda ningún
+  camino sin salida a una persona. ✅
 - **VI**: el único endpoint nuevo es el webhook firmado de Meta; no escribe en tablas de la
   001. ✅
 - **Privacidad** (restricción de aislamiento y FR-030/030a): audio solo en memoria; registros
@@ -132,7 +133,7 @@ specs/002-whatsapp-faq-bot/
 
 ```text
 src/
-├── config/env.ts                 # + WHATSAPP_*, ANTHROPIC_API_KEY, LLM_*, AUDIO_TRANSCRIPTION, STT_*
+├── config/env.ts                 # + WHATSAPP_*, EMERGENCY_CONTACT_PHONE, ANTHROPIC_API_KEY, LLM_*, AUDIO_TRANSCRIPTION, STT_*
 ├── db/
 │   ├── schema.ts                 # + customer, conversation, message
 │   └── migrations/0001_*.sql

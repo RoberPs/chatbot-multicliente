@@ -21,7 +21,7 @@ Separados por una línea en blanco. Un único mensaje de WhatsApp por respuesta.
 
 | Situación del lote | Cuerpo | Contacto |
 |--------------------|--------|----------|
-| Snapshot ilegible (fallo de BD) | R-ERR | no (no se conoce) |
+| Snapshot ilegible (fallo de BD) | R-ERR | CONTACTO-EMERGENCIA (el del snapshot no se conoce) |
 | Negocio no activo | — no se responde, se borran (FR-002) | — |
 | Fuera de ventana 24 h | — no se responde, `discarded` (FR-002a) | — |
 | Solo `other` sin pie | R-MEDIA | no |
@@ -35,7 +35,9 @@ Separados por una línea en blanco. Un único mensaje de WhatsApp por respuesta.
 `missing`; el detector determinista de petición de persona encuentra una expresión en algún
 mensaje del lote; el cuerpo es R-SAFE o R-ERR con snapshot legible.
 
-Si `needsRephrase` es true, el cuerpo del modelo ya pide reformular; no se añade nada más.
+Si `needsRephrase` es true, el cuerpo del modelo ya pide reformular y no se añade CONTACTO por
+`offerContact`, `bookingRequested` ni por los precios. **Sí se añade** si `handoffRequested` es
+true o si el detector determinista encuentra una petición de persona (Principio V).
 
 ## Plantillas
 
@@ -54,6 +56,7 @@ verbales y pronombres.
 | R-SAFE | No dispongo de esa información. |
 | R-ERR | Ahora mismo no puedo responder. Por favor, vuelve a escribirme en unos minutos. |
 | R-LIMIT | Has enviado muchos mensajes seguidos y voy a dejar de responder durante un rato. {CONTACTO} |
+| CONTACTO-EMERGENCIA | Si necesitas hablar con una persona: teléfono {EMERGENCY_CONTACT_PHONE}. |
 
 - `{canales}`: canales de `snapshot.handoff.channels` en su orden, con etiqueta genérica
   ("teléfono", "WhatsApp", "correo") y el valor tal cual (teléfonos en formato
@@ -61,6 +64,9 @@ verbales y pronombres.
 - `{horario}`: `snapshot.handoff.hours` agrupadas por días con el mismo horario
   ("lunes a viernes de 9:00 a 14:00"). Sin horario registrado, se omite la frase.
 - R-LIMIT se envía una sola vez por ventana (R6) y no lleva saludo.
+- CONTACTO-EMERGENCIA solo acompaña a R-ERR cuando el snapshot no se pudo leer. No lleva
+  nombre de negocio, horario ni variante tú/usted, porque nada de eso se conoce; el teléfono
+  sale de `EMERGENCY_CONTACT_PHONE` en formato internacional legible.
 - Las respuestas R-MEDIA y R-AUDIO sí llevan saludo si abren conversación.
 
 ## Detector determinista de petición de persona
@@ -74,10 +80,12 @@ general y no contiene términos de sector (test de neutralidad).
 ## Garantías verificables (tests unitarios)
 
 1. Toda respuesta a un lote que contiene una petición de persona incluye el bloque CONTACTO
-   (SC-008), aunque el modelo no la marque.
+   (SC-008), aunque el modelo no la marque y aunque marque `needsRephrase`.
 2. La primera respuesta de cada conversación empieza por SALUDO y ninguna otra lo contiene
    (SC-005).
 3. CONTACTO aparece como máximo una vez por respuesta (FR-023).
 4. Ninguna plantilla contiene cifras del negocio que no salgan del snapshot.
 5. En un negocio activo, CONTACTO nunca queda vacío (la 001 garantiza
    `handoff.source ≠ "none"`).
+6. Ninguna respuesta queda sin forma de contactar con una persona: si el snapshot no se pudo
+   leer, R-ERR lleva CONTACTO-EMERGENCIA (FR-029).

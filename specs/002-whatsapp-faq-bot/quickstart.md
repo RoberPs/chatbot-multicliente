@@ -28,6 +28,7 @@ docker compose up -d db
 #   AUDIO_TRANSCRIPTION=off            # on + STT_API_KEY=... STT_MODEL=whisper-1 para probar audios
 #   WHATSAPP_PHONE_NUMBER_ID=...  WHATSAPP_ACCESS_TOKEN=...  WHATSAPP_APP_SECRET=...
 #   WHATSAPP_VERIFY_TOKEN=<texto aleatorio>  WHATSAPP_GRAPH_VERSION=<versión vigente>
+#   EMERGENCY_CONTACT_PHONE=+34...     # obligatorio con el canal; solo para fallos de lectura
 pnpm db:migrate          # aplica 0001 (customer, conversation, message)
 pnpm dev
 ```
@@ -89,7 +90,7 @@ pnpm test:eval -- audio   # solo al activar los audios; requiere STT_API_KEY
 |----------|--------|
 | SC-001 (≥ 50 preguntas con dato) | 100 % correctas |
 | SC-002 (≥ 30 sin dato o "a consultar") | 0 % inventadas, 100 % con contacto |
-| SC-003 | p95 de `latencyMs` < 10 s (también en la integración con modelo simulado a 5 s) |
+| SC-003 | p95 de `latencyMs` < 10 s, medido por el arnés de `eval` con el modelo real (también en la integración con modelo simulado a 5 s). Desde la máquina de desarrollo es orientativo; en producción la referencia son los eventos `reply_sent` |
 | SC-004 | ≥ 90 % igual que la versión bien escrita; el resto pide reformular |
 | SC-005, SC-008 | 100 % (además garantizados por tests unitarios) |
 | SC-006, SC-007 | 100 % |
