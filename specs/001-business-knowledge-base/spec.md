@@ -10,6 +10,16 @@
 
 **Input**: User description: "Base de conocimiento del negocio. El bot necesita la información de cada negocio para responder y gestionar citas. El negocio se la facilita al operador, que la registra en la instancia de ese cliente. Información: datos del negocio, horario y cierres puntuales, servicios, recursos que atienden citas, preguntas frecuentes, políticas, tono del bot y contacto para derivaciones. Fuera de alcance: que el negocio edite su propia información, la carga automática desde webs o documentos y los campos específicos de un sector."
 
+## Clarifications
+
+### Session 2026-09-24
+
+- Q: ¿Cómo registra y modifica el operador la información de un negocio? → A: Panel web de administración por instancia, con formularios, validación al guardar y lista de avisos.
+- Q: ¿Puede el bot atender a clientes mientras el negocio tiene avisos críticos o no tiene los datos mínimos? → A: La instancia tiene un estado (en preparación / activa); el operador la activa manualmente y la activación se bloquea solo si hay avisos críticos.
+- Q: Si la respuesta de una FAQ contradice un dato estructurado, ¿qué debe hacer el sistema? → A: Los datos estructurados prevalecen siempre sobre el texto de las FAQ; no se exige detección automática de contradicciones.
+- Q: ¿Pueden el precio o la duración de un servicio variar según el recurso que lo presta? → A: No; precio y duración son únicos por servicio y las variantes se registran como servicios distintos.
+- Q: ¿Puede el operador ocultar temporalmente un servicio o un recurso sin borrarlo? → A: Sí; servicios y recursos tienen estado activo/inactivo; lo inactivo el bot no lo ve y no genera avisos.
+
 ## User Scenarios & Testing *(mandatory)*
 
 ### User Story 1 - Registrar datos, horario y servicios de un negocio (Priority: P1)
@@ -180,7 +190,15 @@ y comprobar que el operador recibe un aviso por cada uno.
   ofrece para reserva, aunque el bot sí puede informar sobre él.
 - **Falta el contacto de derivación**: se usa el teléfono general del negocio y el sistema
   avisa al operador. Si tampoco hay teléfono, el aviso se marca como crítico, porque la salida
-  a una persona es obligatoria.
+  a una persona es obligatoria. Con un aviso crítico el negocio no puede activarse y, si ya
+  está activo, se rechaza el cambio que lo provocaría.
+- **Servicio o recurso inactivo**: el bot lo trata como inexistente. Si al desactivar un
+  recurso un servicio reservable queda sin ningún recurso activo que lo preste, se genera el
+  aviso correspondiente (FR-025). Si se desactivan todos los recursos, el negocio no pasa a
+  agenda única: el aviso se genera igual.
+- **Pregunta frecuente que contradice un dato estructurado** (p. ej. un precio antiguo en la
+  respuesta): prevalece el dato estructurado. No se genera aviso; mantener las FAQ
+  coherentes es responsabilidad del operador.
 - **Antelación mínima mayor que la máxima**: el sistema rechaza la política como dato
   inválido.
 
@@ -221,6 +239,14 @@ y comprobar que el operador recibe un aviso por cada uno.
   los servicios que presta y su horario de atención.
 - **FR-011**: Cada recurso MUST quedar asociado únicamente a los servicios que el operador le
   asigne.
+- **FR-011a**: El precio y la duración MUST pertenecer al servicio y ser los mismos sea cual
+  sea el recurso que lo presta. La asociación entre recurso y servicio MUST NOT tener precio ni
+  duración propios. Las variantes (p. ej., por nivel del profesional) se registran como
+  servicios distintos.
+- **FR-011b**: Servicios y recursos MUST tener un estado activo/inactivo que el operador puede
+  cambiar sin perder sus datos ni sus asociaciones. Un elemento inactivo MUST tratarse para el
+  bot como inexistente (no se ofrece, no se menciona, no presta servicios) y MUST NOT generar
+  avisos ni contar para ellos. Al reactivarlo, recupera sus datos y asociaciones.
 - **FR-012**: El operador MUST poder registrar ausencias puntuales de un recurso, que
   prevalecen sobre su horario durante su vigencia.
 - **FR-013**: Registrar recursos MUST ser opcional. Si un negocio no tiene recursos, MUST
@@ -231,6 +257,10 @@ y comprobar que el operador recibe un aviso por cada uno.
 
 - **FR-014**: El operador MUST poder registrar, modificar y eliminar preguntas frecuentes, cada
   una con su pregunta y su respuesta.
+- **FR-014a**: Los datos estructurados (datos del negocio, horario, cierres, servicios,
+  recursos y políticas) MUST ser la fuente de verdad y prevalecer sobre el texto de las
+  preguntas frecuentes cuando ambos traten el mismo dato. El sistema no está obligado a
+  detectar contradicciones entre ellos.
 - **FR-015**: El operador MUST poder registrar las políticas del negocio: política de
   cancelación (texto y, opcionalmente, plazo mínimo para cancelar sin penalización),
   antelación mínima y máxima para reservar y formas de pago aceptadas.
@@ -252,6 +282,10 @@ y comprobar que el operador recibe un aviso por cada uno.
   negocio.
 - **FR-023**: Solo el operador MUST poder registrar o modificar la información. El sistema
   MUST NOT ofrecer al negocio ningún medio para editarla.
+- **FR-023a**: El operador MUST registrar y modificar la información mediante un panel web de
+  administración de la instancia, con formularios por tipo de dato. La validación MUST
+  ejecutarse al guardar e indicar en el propio formulario el campo que debe corregirse, y el
+  panel MUST mostrar la lista de avisos vigentes del negocio.
 - **FR-024**: El modelo de información MUST ser genérico y válido para cualquier sector, sin
   campos propios de un sector concreto.
 
@@ -266,25 +300,41 @@ y comprobar que el operador recibe un aviso por cada uno.
   - un negocio sin contacto de derivación.
 - **FR-026**: Cada aviso MUST identificar el elemento afectado y el dato que falta o es
   incoherente.
-- **FR-027**: Los avisos MUST NOT impedir guardar la información. Un aviso MUST desaparecer
+- **FR-027**: Los avisos MUST NOT impedir guardar la información, salvo el caso de FR-032
+  (cambio que deja un negocio activo con un aviso crítico). Un aviso MUST desaparecer
   cuando se corrige el dato que lo origina.
 - **FR-028**: Si un negocio no tiene ni contacto de derivación ni teléfono general, el aviso
   MUST marcarse como crítico.
 
+**Estado de la instancia**
+
+- **FR-029**: El negocio MUST tener un estado: "en preparación" (valor inicial) o "activo".
+  El bot MUST atender a clientes finales solo cuando el negocio está activo.
+- **FR-030**: Solo el operador MUST poder activar o desactivar el negocio, de forma manual
+  desde el panel de administración.
+- **FR-031**: El sistema MUST impedir la activación mientras exista algún aviso crítico e
+  indicar al operador qué avisos la bloquean. Los avisos normales MUST NOT impedir la
+  activación.
+- **FR-032**: Si un negocio activo pasa a tener un aviso crítico por una modificación, el
+  sistema MUST rechazar ese cambio mientras el negocio siga activo, para que nunca quede un
+  negocio activo sin salida a una persona.
+
 ### Key Entities *(include if feature involves data)*
 
 - **Negocio**: el cliente al que atiende la instancia. Contiene nombre, dirección,
-  indicaciones para llegar, teléfono, email y zona horaria. Hay uno por instancia.
+  indicaciones para llegar, teléfono, email, zona horaria y estado ("en preparación" o
+  "activo"). Hay uno por instancia.
 - **Horario de apertura**: franjas semanales en las que el negocio está abierto. Cada día
   puede tener cero, una o varias franjas.
 - **Cierre puntual**: periodo (fecha o rango, completo o parcial) en el que el negocio no
   atiende, con un motivo opcional. Prevalece sobre el horario de apertura.
 - **Servicio**: lo que el negocio ofrece. Contiene nombre, descripción, tipo de precio
-  (fijo, "desde" o "a consultar"), importe opcional, duración e indicación de si es
-  reservable.
+  (fijo, "desde" o "a consultar"), importe opcional, duración, indicación de si es
+  reservable y estado (activo/inactivo).
 - **Recurso**: quien atiende las citas (profesional, puesto, agente). Contiene nombre,
-  servicios que presta, horario propio y ausencias puntuales. Se relaciona con varios
-  servicios, y un servicio puede prestarlo más de un recurso.
+  servicios que presta, horario propio, ausencias puntuales y estado (activo/inactivo). Se relaciona con varios
+  servicios, y un servicio puede prestarlo más de un recurso. La asociación no modifica el
+  precio ni la duración del servicio.
 - **Pregunta frecuente**: par de pregunta y respuesta.
 - **Políticas**: política de cancelación, antelación mínima y máxima para reservar y formas de
   pago. Hay un conjunto por negocio.
@@ -315,7 +365,8 @@ y comprobar que el operador recibe un aviso por cada uno.
 ## Assumptions
 
 - Hay un único usuario de esta funcionalidad, el operador del sistema. Su identificación y
-  acceso siguen el mecanismo estándar de administración de la instancia.
+  acceso al panel web de administración siguen el mecanismo estándar de administración de la
+  instancia.
 - Cada instancia atiende a un único negocio con una única ubicación. Los negocios con varias
   sedes quedan fuera de esta versión.
 - Cada negocio opera en una única zona horaria, registrada con sus datos.
