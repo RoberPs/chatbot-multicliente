@@ -1,0 +1,108 @@
+/**
+ * Registros técnicos del bot (contracts/activity-log.md, FR-030a).
+ *
+ * Catálogo cerrado: ningún evento tiene campos de texto libre, así que no pueden llevar el
+ * texto de mensajes, respuestas ni prompts. El cliente aparece solo como seudónimo HMAC.
+ */
+import { createHmac, hkdfSync } from 'node:crypto';
+import type { MessageKind } from './types.js';
+
+export type DiscardReason = 'not_active' | 'group' | 'outside_window' | 'deactivated';
+export type TranscriptionFailure =
+  'too_large' | 'too_long' | 'language' | 'empty' | 'timeout' | 'provider_error';
+export type ReplyTemplate = 'R-SAFE' | 'R-ERR' | 'R-MEDIA' | 'R-AUDIO' | 'R-LIMIT';
+
+export type BotEvent =
+  | { event: 'message_received'; kind: MessageKind; otherType?: string }
+  | { event: 'message_discarded'; reason: DiscardReason }
+  | { event: 'duplicate_ignored' }
+  | { event: 'rate_limit_exceeded'; count: number; windowMinutes: number; noticeSent: boolean }
+  | {
+      event: 'reply_sent';
+      messagesCovered: number;
+      kinds: MessageKind[];
+      latencyMs: number;
+      waitMs: number;
+      modelMs?: number;
+      greeting: boolean;
+      contactBlock: boolean;
+      template?: ReplyTemplate;
+    }
+  | { event: 'transcription_failed'; reason: TranscriptionFailure }
+  | { event: 'knowledge_read_failed'; errorClass: string; stage: 'intake' | 'processor' }
+  | {
+      event: 'generation_failed';
+      reason: 'timeout' | 'refusal' | 'invalid_output' | 'api_error';
+      status?: number;
+    }
+  | { event: 'grounding_rejected'; attempt: number; offendingCount: number }
+  | { event: 'send_failed'; attempts: number; status?: number; finalFailure: boolean }
+  | { event: 'webhook_rejected'; reason: 'signature' | 'payload' }
+  | { event: 'retention_purged'; conversations: number; customers: number };
+
+export type BotEventName = BotEvent['event'];
+type Level = 'debug' | 'info' | 'warn' | 'error';
+
+export const eventLevels: Record<BotEventName, Level> = {
+  message_received: 'info',
+  message_discarded: 'info',
+  duplicate_ignored: 'debug',
+  rate_limit_exceeded: 'warn',
+  reply_sent: 'info',
+  transcription_failed: 'warn',
+  knowledge_read_failed: 'error',
+  generation_failed: 'error',
+  grounding_rejected: 'warn',
+  send_failed: 'error',
+  webhook_rejected: 'warn',
+  retention_purged: 'info',
+};
+
+/** Lo mínimo que se necesita de un logger (pino lo cumple). */
+export interface LoggerLike {
+  debug(obj: object, msg?: string): void;
+  info(obj: object, msg?: string): void;
+  warn(obj: object, msg?: string): void;
+  error(obj: object, msg?: string): void;
+  child?(bindings: Record<string, unknown>): LoggerLike;
+}
+
+export interface EventContext {
+  /** Teléfono E.164 del cliente; se registra solo su seudónimo. */
+  phone?: string;
+  conversationId?: string;
+}
+
+export interface ActivityLog {
+  log(event: BotEvent, context?: EventContext): void;
+  pseudonym(phone: string): string;
+}
+
+/** Clave del seudónimo derivada de SESSION_SECRET (sin secreto nuevo, research R11). */
+function pseudonymKey(sessionSecret: string): Buffer {
+  return Buffer.from(hkdfSync('sha256', Buffer.from(sessionSecret, 'hex'), '', 'bot-log', 32));
+}
+
+export function createActivityLog(logger: LoggerLike, sessionSecret: string): ActivityLog {
+  const key = pseudonymKey(sessionSecret);
+  const out = logger.child ? logger.child({ channel: 'bot' }) : logger;
+  const pseudonym = (phone: string) =>
+    createHmac('sha256', key).update(phone).digest('hex').slice(0, 12);
+
+  return {
+    pseudonym,
+    log(event, context = {}) {
+      const record: Record<string, unknown> = { ...event };
+      if (context.phone !== undefined) record.customer = pseudonym(context.phone);
+      if (context.conversationId !== undefined) record.conversationId = context.conversationId;
+      if (!logger.child) record.channel = 'bot';
+      out[eventLevels[event.event]](record, event.event);
+    },
+  };
+}
+
+/** Registro que no escribe nada (tests y herramientas). */
+export const silentActivityLog: ActivityLog = {
+  log: () => undefined,
+  pseudonym: () => '000000000000',
+};

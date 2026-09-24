@@ -1,5 +1,12 @@
+import { parsePhoneNumberFromString } from 'libphonenumber-js';
 import { z } from 'zod';
 import { isValidTimezone } from '../knowledge/schemas/common.js';
+
+/** Texto opcional: vacío o solo espacios cuenta como ausente (líneas `VAR=` de `.env`). */
+const optionalText = z
+  .string()
+  .optional()
+  .transform((v) => (v === undefined || v.trim() === '' ? undefined : v.trim()));
 
 /** Variables de la instancia. Cada cliente tiene su propio despliegue con sus valores. */
 const envSchema = z.object({
@@ -64,12 +71,111 @@ const envSchema = z.object({
         .map((x) => x.trim())
         .filter(Boolean);
     }),
+
+  // --- Atención por WhatsApp (feature 002) ---
+  WHATSAPP_PHONE_NUMBER_ID: optionalText,
+  WHATSAPP_ACCESS_TOKEN: optionalText,
+  WHATSAPP_APP_SECRET: optionalText,
+  WHATSAPP_VERIFY_TOKEN: optionalText,
+  WHATSAPP_GRAPH_VERSION: optionalText,
+  EMERGENCY_CONTACT_PHONE: optionalText,
+  ANTHROPIC_API_KEY: optionalText,
+  LLM_MODEL: optionalText.transform((v) => v ?? 'claude-sonnet-5'),
+  LLM_EFFORT: optionalText.pipe(
+    z
+      .enum(['low', 'medium', 'high'], { error: 'LLM_EFFORT debe ser low, medium o high' })
+      .default('medium'),
+  ),
+  AUDIO_TRANSCRIPTION: optionalText.pipe(
+    z.enum(['on', 'off'], { error: 'AUDIO_TRANSCRIPTION debe ser on u off' }).default('off'),
+  ),
+  STT_API_KEY: optionalText,
+  STT_MODEL: optionalText.transform((v) => v ?? 'whisper-1'),
 });
 
-export type Env = z.infer<typeof envSchema>;
+const WHATSAPP_VARS = [
+  'WHATSAPP_PHONE_NUMBER_ID',
+  'WHATSAPP_ACCESS_TOKEN',
+  'WHATSAPP_APP_SECRET',
+  'WHATSAPP_VERIFY_TOKEN',
+  'WHATSAPP_GRAPH_VERSION',
+] as const;
+
+export interface WhatsAppEnv {
+  phoneNumberId: string;
+  accessToken: string;
+  appSecret: string;
+  verifyToken: string;
+  graphVersion: string;
+}
+
+/** Normaliza un teléfono a E.164 o devuelve `null` si no es válido. */
+function toE164(value: string): string | null {
+  const phone = parsePhoneNumberFromString(value);
+  return phone?.isValid() ? phone.number : null;
+}
+
+/**
+ * Agrupa las variables del bot: el canal va entero o no va (research R1), y con él son
+ * obligatorios el contacto de emergencia y la clave del modelo.
+ */
+const botSchema = envSchema.transform((raw, ctx) => {
+  const present = WHATSAPP_VARS.filter((k) => raw[k] !== undefined);
+  let whatsapp: WhatsAppEnv | null = null;
+  if (present.length === WHATSAPP_VARS.length) {
+    whatsapp = {
+      phoneNumberId: raw.WHATSAPP_PHONE_NUMBER_ID ?? '',
+      accessToken: raw.WHATSAPP_ACCESS_TOKEN ?? '',
+      appSecret: raw.WHATSAPP_APP_SECRET ?? '',
+      verifyToken: raw.WHATSAPP_VERIFY_TOKEN ?? '',
+      graphVersion: raw.WHATSAPP_GRAPH_VERSION ?? '',
+    };
+  } else if (present.length > 0) {
+    const missing = WHATSAPP_VARS.filter((k) => raw[k] === undefined);
+    ctx.addIssue({
+      code: 'custom',
+      message: `Las variables WHATSAPP_* van juntas; faltan: ${missing.join(', ')}`,
+    });
+  }
+
+  let emergencyContactPhone: string | null = null;
+  if (raw.EMERGENCY_CONTACT_PHONE !== undefined) {
+    emergencyContactPhone = toE164(raw.EMERGENCY_CONTACT_PHONE);
+    if (emergencyContactPhone === null) {
+      ctx.addIssue({
+        code: 'custom',
+        message: 'EMERGENCY_CONTACT_PHONE debe ser un teléfono en formato E.164 (+34...)',
+      });
+    }
+  } else if (whatsapp) {
+    ctx.addIssue({
+      code: 'custom',
+      message: 'EMERGENCY_CONTACT_PHONE es obligatoria con el canal de WhatsApp',
+    });
+  }
+
+  if (whatsapp && raw.ANTHROPIC_API_KEY === undefined) {
+    ctx.addIssue({
+      code: 'custom',
+      message: 'ANTHROPIC_API_KEY es obligatoria con el canal de WhatsApp',
+    });
+  }
+
+  const audioTranscription = raw.AUDIO_TRANSCRIPTION === 'on';
+  if (audioTranscription && raw.STT_API_KEY === undefined) {
+    ctx.addIssue({
+      code: 'custom',
+      message: 'STT_API_KEY es obligatoria con AUDIO_TRANSCRIPTION=on',
+    });
+  }
+
+  return { ...raw, whatsapp, emergencyContactPhone, audioTranscription };
+});
+
+export type Env = z.infer<typeof botSchema>;
 
 export function loadEnv(source: NodeJS.ProcessEnv = process.env): Env {
-  const result = envSchema.safeParse(source);
+  const result = botSchema.safeParse(source);
   if (!result.success) {
     const detail = result.error.issues.map((i) => `- ${i.message}`).join('\n');
     throw new Error(`Configuración de la instancia no válida:\n${detail}`);

@@ -46,4 +46,76 @@ describe('variables de la instancia', () => {
   it('rechaza un hash que no es Argon2id', () => {
     expect(() => loadEnv({ ...base, OPERATOR_PASSWORD_HASH: 'plano' })).toThrow(/Argon2id/);
   });
+
+  describe('canal de WhatsApp y bot', () => {
+    const channel = {
+      WHATSAPP_PHONE_NUMBER_ID: '123456',
+      WHATSAPP_ACCESS_TOKEN: 'token',
+      WHATSAPP_APP_SECRET: 'secreto',
+      WHATSAPP_VERIFY_TOKEN: 'verificacion',
+      WHATSAPP_GRAPH_VERSION: 'v23.0',
+      EMERGENCY_CONTACT_PHONE: '+34 600 111 222',
+      ANTHROPIC_API_KEY: 'sk-ant-prueba',
+    };
+
+    it('canal completo → objeto whatsapp y valores por defecto del modelo y los audios', () => {
+      const env = loadEnv({ ...base, ...channel });
+      expect(env.whatsapp).toEqual({
+        phoneNumberId: '123456',
+        accessToken: 'token',
+        appSecret: 'secreto',
+        verifyToken: 'verificacion',
+        graphVersion: 'v23.0',
+      });
+      expect(env.emergencyContactPhone).toBe('+34600111222');
+      expect(env.LLM_MODEL).toBe('claude-sonnet-5');
+      expect(env.LLM_EFFORT).toBe('medium');
+      expect(env.audioTranscription).toBe(false);
+      expect(env.STT_MODEL).toBe('whisper-1');
+    });
+
+    it('canal ausente (o con líneas vacías) → whatsapp null', () => {
+      expect(loadEnv(base).whatsapp).toBeNull();
+      expect(
+        loadEnv({ ...base, WHATSAPP_PHONE_NUMBER_ID: '', WHATSAPP_ACCESS_TOKEN: ' ' }).whatsapp,
+      ).toBeNull();
+    });
+
+    it('canal parcial → error que nombra las que faltan', () => {
+      const { WHATSAPP_APP_SECRET: _a, WHATSAPP_GRAPH_VERSION: _b, ...partial } = channel;
+      expect(() => loadEnv({ ...base, ...partial })).toThrow(
+        /faltan: WHATSAPP_APP_SECRET, WHATSAPP_GRAPH_VERSION/,
+      );
+    });
+
+    it('EMERGENCY_CONTACT_PHONE es obligatoria con el canal y debe ser E.164', () => {
+      const { EMERGENCY_CONTACT_PHONE: _omit, ...rest } = channel;
+      expect(() => loadEnv({ ...base, ...rest })).toThrow(/EMERGENCY_CONTACT_PHONE es obligatoria/);
+      expect(() => loadEnv({ ...base, ...channel, EMERGENCY_CONTACT_PHONE: '600111222' })).toThrow(
+        /E\.164/,
+      );
+    });
+
+    it('ANTHROPIC_API_KEY es obligatoria con el canal', () => {
+      const { ANTHROPIC_API_KEY: _omit, ...rest } = channel;
+      expect(() => loadEnv({ ...base, ...rest })).toThrow(/ANTHROPIC_API_KEY/);
+    });
+
+    it('audios: off por defecto sin STT_API_KEY; on sin STT_API_KEY es un error', () => {
+      expect(loadEnv({ ...base, ...channel, AUDIO_TRANSCRIPTION: 'off' }).audioTranscription).toBe(
+        false,
+      );
+      expect(() => loadEnv({ ...base, ...channel, AUDIO_TRANSCRIPTION: 'on' })).toThrow(
+        /STT_API_KEY/,
+      );
+      expect(
+        loadEnv({ ...base, ...channel, AUDIO_TRANSCRIPTION: 'on', STT_API_KEY: 'sk' })
+          .audioTranscription,
+      ).toBe(true);
+    });
+
+    it('LLM_EFFORT inválido', () => {
+      expect(() => loadEnv({ ...base, LLM_EFFORT: 'max' })).toThrow(/LLM_EFFORT/);
+    });
+  });
 });

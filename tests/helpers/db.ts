@@ -3,7 +3,7 @@ import { sql } from 'drizzle-orm';
 import pg from 'pg';
 import { inject } from 'vitest';
 import { closeDb, createDb, type Db } from '../../src/db/client.js';
-import { allTableNames, business } from '../../src/db/schema.js';
+import { allTableNames, business, conversationTableNames } from '../../src/db/schema.js';
 import type { KnowledgeDeps } from '../../src/knowledge/services/deps.js';
 
 const TEMPLATE_DB = 'kb_template';
@@ -48,7 +48,7 @@ export async function createTestDatabase(): Promise<TestDatabase> {
 /** Vacía todas las tablas y deja el negocio vacío en "draft". */
 export async function resetDb(db: Db): Promise<void> {
   const tables = sql.join(
-    allTableNames.map((t) => sql.identifier(t)),
+    [...conversationTableNames, ...allTableNames].map((t) => sql.identifier(t)),
     sql`, `,
   );
   await db.execute(sql`truncate ${tables} restart identity cascade`);

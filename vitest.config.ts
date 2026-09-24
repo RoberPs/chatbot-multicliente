@@ -32,6 +32,18 @@ export default defineConfig({
           hookTimeout: 120_000,
         },
       },
+      {
+        // Modelo real (API de Anthropic): fuera de `pnpm test`, con coste (research R12).
+        test: {
+          name: 'eval',
+          include: ['tests/eval/**/*.test.ts'],
+          environment: 'node',
+          globalSetup: ['tests/helpers/global-setup.ts'],
+          fileParallelism: false,
+          testTimeout: 180_000,
+          hookTimeout: 120_000,
+        },
+      },
     ],
   },
 });

@@ -1,6 +1,6 @@
 import argon2 from 'argon2';
 import type { FastifyInstance, LightMyRequestResponse } from 'fastify';
-import { buildApp } from '../../src/app.js';
+import { buildApp, type BotHttp } from '../../src/app.js';
 import { loadEnv } from '../../src/config/env.js';
 import type { Db } from '../../src/db/client.js';
 
@@ -9,22 +9,26 @@ export const OPERATOR_PASSWORD = 'contraseña-de-prueba';
 
 let passwordHash: Promise<string> | undefined;
 
+export const TEST_SESSION_SECRET =
+  '3f9a1c7e5b2d4086a1e3c5f7092b4d6e8a0c2e4f6183a5c7e9b1d3f5a7c9e0b2';
+
 export async function buildTestApp(
   db: Db,
   databaseUrl = 'postgres://no-usada',
+  bot: BotHttp | null = null,
 ): Promise<FastifyInstance> {
   passwordHash ??= argon2.hash(OPERATOR_PASSWORD, { type: argon2.argon2id });
   const env = loadEnv({
     DATABASE_URL: databaseUrl,
     OPERATOR_USER,
     OPERATOR_PASSWORD_HASH: await passwordHash,
-    SESSION_SECRET: '3f9a1c7e5b2d4086a1e3c5f7092b4d6e8a0c2e4f6183a5c7e9b1d3f5a7c9e0b2',
+    SESSION_SECRET: TEST_SESSION_SECRET,
     DEFAULT_PHONE_REGION: 'ES',
     DEFAULT_TIMEZONE: 'Europe/Madrid',
     DEFAULT_CURRENCY: 'EUR',
     NODE_ENV: 'test',
   });
-  const app = await buildApp({ env, db, logger: false });
+  const app = await buildApp({ env, db, logger: false, bot });
   await app.ready();
   return app;
 }

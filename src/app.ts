@@ -5,14 +5,17 @@ import formbody from '@fastify/formbody';
 import rateLimit from '@fastify/rate-limit';
 import view from '@fastify/view';
 import { Eta } from 'eta';
-import Fastify, { type FastifyError, type FastifyInstance } from 'fastify';
+import Fastify, { type FastifyBaseLogger, type FastifyError, type FastifyInstance } from 'fastify';
 import type { CountryCode } from 'libphonenumber-js';
 import { authPlugin, csrfOnPost, requireOperator } from './admin/auth/plugin.js';
 import { authRoutes } from './admin/auth/routes.js';
 import './admin/fastify-types.js';
 import { renderNotFound } from './admin/render.js';
 import { adminRoutes } from './admin/routes/index.js';
-import type { Env } from './config/env.js';
+import { whatsappWebhook } from './channels/whatsapp/webhook.js';
+import type { Env, WhatsAppEnv } from './config/env.js';
+import type { ActivityLog } from './conversation/activity-log.js';
+import type { InboundEvent } from './conversation/types.js';
 import type { Db } from './db/client.js';
 
 const viewsDir = fileURLToPath(new URL('./admin/views', import.meta.url));
@@ -35,16 +38,30 @@ const CSP = [
   "object-src 'none'",
 ].join('; ');
 
+/** Lo que el servidor HTTP necesita del bot para montar el webhook. */
+export interface BotHttp {
+  whatsapp: WhatsAppEnv;
+  audioTranscription: boolean;
+  activityLog: ActivityLog;
+  intake: { handle(events: InboundEvent[]): Promise<void> };
+}
+
 export interface BuildAppOptions {
   env: Env;
   db: Db;
   logger?: boolean;
+  /**
+   * Canal de WhatsApp; sin él, la instancia solo sirve el panel. Puede ser una función que
+   * recibe el logger de la app (el bot registra sus eventos con él).
+   */
+  bot?: BotHttp | ((log: FastifyBaseLogger) => BotHttp | null) | null;
 }
 
 export async function buildApp({
   env,
   db,
   logger = true,
+  bot = null,
 }: BuildAppOptions): Promise<FastifyInstance> {
   const app = Fastify({
     logger: logger
@@ -139,6 +156,17 @@ export async function buildApp({
     },
     { prefix: '/admin' },
   );
+
+  const channel = typeof bot === 'function' ? bot(app.log) : bot;
+  if (channel) {
+    await app.register(whatsappWebhook, {
+      prefix: '/webhooks/whatsapp',
+      config: channel.whatsapp,
+      audioTranscription: channel.audioTranscription,
+      activityLog: channel.activityLog,
+      onInbound: (events) => channel.intake.handle(events),
+    });
+  }
 
   return app;
 }

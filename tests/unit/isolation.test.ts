@@ -39,6 +39,7 @@ describe('aislamiento: conexiones a BD', () => {
 
   it('no hay identificador de cliente en el esquema (una BD por instancia)', () => {
     const schema = readFileSync(join(SRC, 'db', 'schema.ts'), 'utf8');
-    expect(schema).not.toMatch(/tenant|client_id|customer_id/i);
+    // `customer` (feature 002) es el cliente final que escribe por WhatsApp, no la instancia.
+    expect(schema).not.toMatch(/tenant|client_id|instance_id|business_id/i);
   });
 });

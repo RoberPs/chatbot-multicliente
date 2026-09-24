@@ -8,7 +8,9 @@ import {
   char,
   check,
   date,
+  index,
   integer,
+  type AnyPgColumn,
   pgEnum,
   pgTable,
   primaryKey,
@@ -266,7 +268,81 @@ export const handoffHours = pgTable(
   ],
 );
 
-/** Todas las tablas, en orden seguro para TRUNCATE en tests. */
+// ---------------------------------------------------------------------------
+// Conversaciones del bot (feature 002, data-model.md). Marcas de tiempo como instantes.
+// ---------------------------------------------------------------------------
+
+export const messageDirection = pgEnum('message_direction', ['inbound', 'outbound']);
+export const messageKind = pgEnum('message_kind', ['text', 'audio', 'other']);
+export const messageStatus = pgEnum('message_status', [
+  'pending',
+  'answered',
+  'discarded',
+  'rate_limited',
+  'sending',
+  'sent',
+  'failed',
+]);
+export const transcriptionStatus = pgEnum('transcription_status', ['pending', 'done', 'failed']);
+
+const instant = (name: string) => timestamp(name, { withTimezone: true, mode: 'date' });
+
+/** Cliente final: solo su teléfono en E.164 (FR-030). */
+export const customer = pgTable('customer', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  phone: text('phone').notNull().unique(),
+  rateLimitNotifiedAt: instant('rate_limit_notified_at'),
+  createdAt: instant('created_at').notNull().defaultNow(),
+});
+
+export const conversation = pgTable(
+  'conversation',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    customerId: uuid('customer_id')
+      .notNull()
+      .references(() => customer.id, { onDelete: 'cascade' }),
+    startedAt: instant('started_at').notNull(),
+    lastInboundAt: instant('last_inbound_at').notNull(),
+    lastMessageAt: instant('last_message_at').notNull(),
+    greeted: boolean('greeted').notNull().default(false),
+  },
+  (t) => [
+    index('conversation_customer_last_inbound_idx').on(t.customerId, t.lastInboundAt.desc()),
+    index('conversation_last_message_idx').on(t.lastMessageAt),
+  ],
+);
+
+export const message = pgTable(
+  'message',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    conversationId: uuid('conversation_id')
+      .notNull()
+      .references(() => conversation.id, { onDelete: 'cascade' }),
+    direction: messageDirection('direction').notNull(),
+    kind: messageKind('kind').notNull(),
+    waMessageId: text('wa_message_id').unique(),
+    body: text('body'),
+    otherType: text('other_type'),
+    sentAt: instant('sent_at').notNull(),
+    receivedAt: instant('received_at').notNull(),
+    status: messageStatus('status').notNull(),
+    transcription: transcriptionStatus('transcription'),
+    replyId: uuid('reply_id').references((): AnyPgColumn => message.id, { onDelete: 'set null' }),
+  },
+  (t) => [
+    index('message_conversation_sent_idx').on(t.conversationId, t.sentAt),
+    index('message_pending_idx')
+      .on(t.conversationId)
+      .where(sql`${t.direction} = 'inbound' and ${t.status} = 'pending'`),
+  ],
+);
+
+/** Tablas de conversaciones del bot (sin `updated_at`: no forman parte del snapshot). */
+export const conversationTableNames = ['message', 'conversation', 'customer'] as const;
+
+/** Todas las tablas de la base de conocimiento, en orden seguro para TRUNCATE en tests. */
 export const allTableNames = [
   'resource_service',
   'resource_hours',
