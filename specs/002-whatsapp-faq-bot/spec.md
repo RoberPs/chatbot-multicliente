@@ -36,6 +36,10 @@
 - Q: ¿Qué debe quedar registrado de la actividad del bot para detectar fallos? → A: Registros
   técnicos sin el texto de los mensajes y con el número enmascarado o seudonimizado: mensajes
   procesados, tipo, tiempo de respuesta, fallos, límites superados y mensajes descartados.
+- Q: ¿La atención de audios está siempre disponible? → A: No. Es una capacidad que se activa
+  por instancia según decisiones de negocio y viene desactivada. Mientras está desactivada,
+  los audios se tratan como cualquier otro tipo no atendido y el bot indica que solo atiende
+  mensajes de texto.
 
 ## User Scenarios & Testing *(mandatory)*
 
@@ -203,13 +207,14 @@ contesta y que todas reciben una reconducción hacia lo que el bot puede atender
 - **Mensajes fuera del horario del negocio**: el bot responde igual, a cualquier hora y
   cualquier día, incluidos cierres puntuales. Si ofrece el contacto y este tiene horario de
   atención registrado, indica ese horario.
-- **Audios**: el bot los atiende como si el cliente hubiera escrito su contenido y responde
-  por escrito. Si el audio no se entiende (ruido, silencio, idioma distinto o fallo al
-  convertirlo en texto), el bot pide que lo repita o escriba la consulta, sin suponer lo que
-  se ha dicho.
+- **Audios** (solo con la atención de audios activada en la instancia): el bot los atiende
+  como si el cliente hubiera escrito su contenido y responde por escrito. Si el audio no se
+  entiende (ruido, silencio, idioma distinto o fallo al convertirlo en texto), el bot pide que
+  lo repita o escriba la consulta, sin suponer lo que se ha dicho. Con la atención de audios
+  desactivada, el audio se trata como el resto de tipos no atendidos.
 - **Imágenes, vídeos, documentos, stickers, ubicaciones, contactos y otros tipos**: el bot no
-  interpreta su contenido y responde que solo atiende mensajes de texto y audios, pidiendo que
-  escriba o grabe la consulta. Si el mensaje trae un texto que lo acompaña (por ejemplo, el pie
+  interpreta su contenido y responde que solo atiende mensajes de texto (y audios, si están
+  activados), pidiendo que escriba (o grabe) la consulta. Si el mensaje trae un texto que lo acompaña (por ejemplo, el pie
   de una foto), el bot responde a ese texto e indica que no puede ver el archivo.
 - **Petición de cita o reserva**: la gestión de citas está fuera de alcance. El bot indica que
   no puede reservar por este medio y ofrece el contacto del negocio. Puede informar de si un
@@ -341,14 +346,18 @@ contesta y que todas reciben una reconducción hacia lo que el bot puede atender
   instrucciones, adoptar otro papel o afirmar datos no registrados.
 - **FR-027**: Los mensajes de cortesía (saludos, agradecimientos, despedidas, emojis) MUST
   recibir una respuesta breve acorde, sin tratarse como preguntas ajenas.
-- **FR-028**: El bot MUST atender los mensajes de audio convirtiendo su contenido en texto y
-  aplicándole las mismas reglas que a un mensaje escrito; la respuesta MUST ser escrita. Si el
-  contenido del audio no puede obtenerse con seguridad, el bot MUST pedir que el cliente lo
-  repita o lo escriba, y MUST NOT responder sobre lo que supone que se ha dicho.
+- **FR-028**: La atención de audios MUST poder activarse o desactivarse por instancia, y MUST
+  venir desactivada. Con ella activada, el bot MUST atender los mensajes de audio
+  convirtiendo su contenido en texto y aplicándole las mismas reglas que a un mensaje
+  escrito; la respuesta MUST ser escrita. Si el contenido del audio no puede obtenerse con
+  seguridad, el bot MUST pedir que el cliente lo repita o lo escriba, y MUST NOT responder
+  sobre lo que supone que se ha dicho. Con ella desactivada, los audios MUST tratarse según
+  FR-028a.
 - **FR-028a**: Ante cualquier otro tipo de mensaje (imágenes, vídeos, documentos, stickers,
-  ubicaciones, contactos u otros), el bot MUST NOT interpretar su contenido y MUST responder
-  que solo atiende mensajes de texto y audios. Si el mensaje incluye un texto que lo acompaña,
-  el bot MUST responder a ese texto e indicar que no puede ver el archivo.
+  ubicaciones, contactos u otros, y audios si su atención está desactivada), el bot MUST NOT
+  interpretar su contenido y MUST responder que solo atiende mensajes de texto (y audios, si
+  su atención está activada). Si el mensaje incluye un texto que lo acompaña, el bot MUST
+  responder a ese texto e indicar que no puede ver el archivo.
 
 **Fallos y privacidad**
 
@@ -406,11 +415,12 @@ contesta y que todas reciben una reconducción hacia lo que el bot puede atender
   declaración de falta de información.
 - **SC-008**: El 100 % de las peticiones de hablar con una persona recibe el contacto del
   negocio en la misma respuesta.
-- **SC-009**: En un juego de pruebas de al menos 20 audios con preguntas sobre información
-  registrada, al menos el 90 % recibe la misma respuesta que la pregunta escrita equivalente y
-  el resto recibe una petición de repetir o escribir, nunca un dato erróneo. El 100 % de los
-  mensajes de otros tipos (imágenes, stickers, vídeos, documentos) recibe el aviso de que solo
-  se atienden texto y audios.
+- **SC-009**: El 100 % de los mensajes de tipos no atendidos (imágenes, stickers, vídeos,
+  documentos y, con la atención de audios desactivada, audios) recibe el aviso de qué tipos
+  se atienden. Con la atención de audios activada, en un juego de pruebas de al menos 20
+  audios con preguntas sobre información registrada, al menos el 90 % recibe la misma
+  respuesta que la pregunta escrita equivalente y el resto recibe una petición de repetir o
+  escribir, nunca un dato erróneo.
 - **SC-010**: Negocios de al menos tres sectores distintos se atienden con el mismo
   comportamiento del bot, sin cambios de código.
 - **SC-011**: El 100 % de las conversaciones cuyo último mensaje tiene más de 30 días (más el
@@ -427,6 +437,8 @@ contesta y que todas reciben una reconducción hacia lo que el bot puede atender
 - "Derivación al negocio" (fuera de alcance) se entiende como traspasar la conversación a una
   persona o avisar al negocio. Facilitar el contacto registrado sí está dentro del alcance y es
   el mecanismo que cumple el Principio V en esta versión.
+- La activación de la atención de audios es una decisión de negocio por instancia (coste y
+  tratamiento de voz por un tercero); la toma el operador al configurar la instancia.
 - Los audios se atienden en el idioma de atención del negocio; los audios en otro idioma o
   demasiado largos para procesarse se tratan como no entendidos (FR-028). El límite de
   duración se fija en el plan.

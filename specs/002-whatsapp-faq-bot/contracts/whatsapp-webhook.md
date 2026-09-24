@@ -36,9 +36,10 @@ es asíncrono. Objetivo: p95 < 150 ms.
 | `type` de WhatsApp | `kind` | `body` guardado | Tratamiento |
 |--------------------|--------|-----------------|-------------|
 | `text` | `text` | `text.body` | Normal |
-| `audio` (incluye notas de voz) | `audio` | transcripción | Se descarga y transcribe en paralelo a la espera (R10); fallo → no entendido (FR-028) |
+| `audio` (incluye notas de voz), con `AUDIO_TRANSCRIPTION=on` | `audio` | transcripción | Se descarga y transcribe en paralelo a la espera (R10); fallo → no entendido (FR-028) |
+| `audio`, con `AUDIO_TRANSCRIPTION=off` (por defecto) | `other` (`other_type = audio`) | null | No se descarga; aviso de tipos atendidos (FR-028a) |
 | `image`, `video`, `document` | `other` | `caption` si existe | Se responde al pie, si lo hay, y se avisa de que no se ve el archivo (FR-028a) |
-| `sticker`, `location`, `contacts`, `reaction`, `interactive`, `button`, `unsupported`, otros | `other` | null | Aviso de solo texto y audios (FR-028a) |
+| `sticker`, `location`, `contacts`, `reaction`, `interactive`, `button`, `unsupported`, otros | `other` | null | Aviso de tipos atendidos (FR-028a) |
 
 `from` se normaliza a E.164. El nombre de perfil (`contacts[].profile.name`) no se guarda.
 
@@ -56,7 +57,7 @@ Authorization: Bearer {WHATSAPP_ACCESS_TOKEN}
 - Reintentos ante 429/5xx/red: 3 intentos (1 s, 4 s, 15 s), solo si sigue abierta la ventana
   de 24 h. Un 4xx distinto de 429 no se reintenta.
 
-## Descarga de audio
+## Descarga de audio (solo con `AUDIO_TRANSCRIPTION=on`)
 
 `GET /{media-id}` → URL temporal; `GET <url>` con el mismo token. Se rechaza sin descargar
 entero si `Content-Length` > 2 MB. El contenido solo vive en memoria durante la

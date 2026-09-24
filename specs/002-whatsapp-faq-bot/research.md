@@ -132,28 +132,29 @@ contra la constitución, en especial los Principios IV (solo información regist
 - **Decision**: la interpretación de los mensajes y la redacción del cuerpo de la respuesta
   las hace **Claude** mediante el SDK oficial `@anthropic-ai/sdk`, detrás de un puerto de
   dominio `ChatModel` ([contracts/chat-model.md](contracts/chat-model.md)).
-  - Modelo por defecto `claude-opus-5`, configurable con `LLM_MODEL`; `ANTHROPIC_API_KEY` por
-    variable de entorno.
-  - Pensamiento adaptativo (por defecto en Opus 5) con `output_config.effort = "low"`: las
-    respuestas son cortas y la latencia manda (SC-003). Si la evaluación (R12) mostrara
-    pérdida de calidad, se sube a `medium` antes que cambiar de modelo.
+  - Modelo por defecto **`claude-sonnet-5`**, configurable con `LLM_MODEL`;
+    `ANTHROPIC_API_KEY` por variable de entorno (decisión del usuario, 2026-09-24).
+  - Pensamiento adaptativo (por defecto en Sonnet 5) con **`output_config.effort =
+    "medium"`**, configurable con `LLM_EFFORT`. Se ajusta con los datos de la suite `eval` y
+    de `latencyMs` en los registros: si falla SC-003 se prueba `low`; si falla calidad,
+    `high` u otro modelo.
   - **Salida estructurada** (`output_config.format`, JSON Schema generado del esquema Zod y
     validado de nuevo con Zod al recibirla): cuerpo de la respuesta más banderas
     (`handoffRequested`, `offerContact`, `bookingRequested`, `needsRephrase`…). El código,
     no el modelo, decide el saludo, el bloque de contacto y los avisos fijos (R9).
   - `max_tokens` 4000 (incluye el pensamiento), petición sin streaming, `timeout` 12 s y
     1 reintento del SDK, con un plazo total de 20 s; si se agota, se aplica FR-029.
-  - Rechazos de seguridad: `fallbacks: "default"` (beta `server-side-fallback-2026-07-01`);
-    si la cadena completa termina en `stop_reason: "refusal"`, se trata como fallo de
-    generación (FR-029).
+  - Rechazos de seguridad: `stop_reason: "refusal"` se trata como fallo de generación
+    (FR-029, disculpa con contacto). No se usan fallbacks a otro modelo en esta versión.
 - **Rationale**: interpretar faltas de ortografía, coloquialismos, preguntas encadenadas
   ("¿y el sábado?") y mezclas de temas (FR-022 – FR-027) requiere un modelo de lenguaje; un
   clasificador por reglas no alcanza SC-004. Separar banderas estructuradas del texto permite
   que las garantías de los Principios IV y V las aplique código determinista y probado.
 - **Alternatives considered**:
-  - *`claude-sonnet-5` o `claude-haiku-4-5`*: menor latencia y coste; quedan como opción de
-    configuración (`LLM_MODEL`) si las mediciones de SC-003 no se cumplen con Opus. La
-    decisión de bajar de modelo es del operador, con los datos de la evaluación delante.
+  - *`claude-opus-5`*: más capaz, pero más lento y más caro para respuestas cortas; queda
+    como opción de `LLM_MODEL` si la evaluación muestra errores de interpretación que Sonnet
+    no resuelve con más esfuerzo.
+  - *`claude-haiku-4-5`*: más rápido y barato; opción si SC-003 no se cumple.
   - *Plantillas deterministas completas (el modelo solo clasifica)*: máxima seguridad, pero
     respuestas rígidas, sin tono y peores con preguntas mixtas; se usa solo para los
     mensajes fijos (R9).
@@ -208,11 +209,16 @@ contra la constitución, en especial los Principios IV (solo información regist
 - **Alternatives considered**: dejar que el modelo escriba el contacto (puede omitirlo,
   cambiar un dígito o no incluir el horario).
 
-## R10. Audios
+## R10. Audios (desactivados por defecto)
 
-- **Decision**: puerto `SpeechToText` con un adaptador sobre la **API de transcripción de
-  OpenAI** (`whisper-1`, configurable con `STT_MODEL`; clave `STT_API_KEY`), llamada con
-  `fetch` + `FormData` de Node 22, sin SDK adicional.
+- **Decision**: la atención de audios es un **interruptor por instancia**,
+  `AUDIO_TRANSCRIPTION=on|off`, por defecto `off` (FR-028, decisión de negocio). Con `off`
+  el audio se guarda como `kind = other` (`other_type = audio`), no se descarga y recibe el
+  aviso de "solo texto" (FR-028a); no hace falta ninguna clave de transcripción. Con `on`,
+  `STT_API_KEY` pasa a ser obligatoria y se aplica lo siguiente.
+- **Diseño para cuando se active**: puerto `SpeechToText` con un adaptador sobre la **API de
+  transcripción de OpenAI** (`whisper-1`, configurable con `STT_MODEL`; clave
+  `STT_API_KEY`), llamada con `fetch` + `FormData` de Node 22, sin SDK adicional.
   - El audio se descarga de la Graph API en cuanto llega, **en paralelo con la espera de
     agrupado**, y se transcribe en memoria; nunca se escribe en disco ni en BD (asunción de
     la spec). Solo se guarda el texto.
@@ -228,9 +234,12 @@ contra la constitución, en especial los Principios IV (solo información regist
     memoria de cada contenedor de instancia y su latencia en CPU no cabe en SC-003.
   - *Otros servicios (Deepgram, ElevenLabs Scribe, Google STT)*: equivalentes; se pueden
     añadir como adaptadores.
-- **Riesgo**: el audio del cliente sale a un tercero. El operador necesita el contrato de
-  encargado del tratamiento con ese proveedor (igual que con Meta y Anthropic). Queda anotado
-  en el quickstart y en el README.
+- **Riesgo**: con los audios activados, el audio del cliente sale a un tercero más. Antes de
+  activarlo, el operador necesita el contrato de encargado del tratamiento con ese proveedor
+  (igual que con Meta y Anthropic). Queda anotado en el quickstart y en el README.
+- **Alcance de la implementación**: el interruptor, el camino desactivado y el adaptador se
+  implementan y prueban en esta feature (con `SpeechToText` falso); la suite `eval` de audios
+  (SC-009, parte de audios) solo se ejecuta cuando se decida activarlos.
 
 ## R11. Retención y registros técnicos
 
@@ -263,11 +272,12 @@ contra la constitución, en especial los Principios IV (solo información regist
   - `integration` (Testcontainers, `ChatModel`, `SpeechToText` y `ChannelSender` falsos,
     reloj controlable): agrupado, una respuesta por entrante, límite, retrasos, reanudación
     tras reinicio, borrado a 30 días, frescura de datos entre turnos, registros sin texto.
-  - `eval` (`pnpm test:eval`, requiere `ANTHROPIC_API_KEY` y `STT_API_KEY`): juegos de
-    preguntas contra el modelo real con los negocios de ejemplo de tres sectores de
-    `tests/fixtures/`, que miden SC-001, SC-002, SC-004, SC-006 – SC-010. Sus resultados son
-    requisito para dar la feature por terminada, no para cada commit (coste y no
-    determinismo).
+  - `eval` (`pnpm test:eval`, requiere `ANTHROPIC_API_KEY`; `STT_API_KEY` solo para
+    `pnpm test:eval -- audio`): juegos de preguntas contra el modelo real con los negocios de
+    ejemplo de tres sectores de `tests/fixtures/`, que miden SC-001, SC-002, SC-004, SC-006 –
+    SC-010. Sus resultados son requisito para dar la feature por terminada, no para cada
+    commit (coste y no determinismo). Se ejecuta desde la máquina del desarrollador (o un job
+    manual de CI) con una clave de API propia de evaluación, separada de las de producción.
 - **Rationale**: la constitución exige pruebas de IV y V antes de terminar la feature; las
   garantías deterministas se prueban en CI y las lingüísticas solo pueden medirse con el
   modelo real.
@@ -302,10 +312,10 @@ contra la constitución, en especial los Principios IV (solo información regist
 | Conversación | Nueva tras 24 h sin mensajes del cliente; contexto de 30 mensajes (R4) |
 | Espera de agrupado | 3 s sin mensajes, tope 8 s; cola en PostgreSQL con `SKIP LOCKED` (R5) |
 | Límite por número | 30 mensajes / 15 min deslizantes; aviso único con contacto (R6) |
-| Modelo | Claude `claude-opus-5`, effort `low`, salida estructurada, fallbacks por defecto (R7) |
+| Modelo | Claude `claude-sonnet-5`, effort `medium`, salida estructurada (R7) |
 | Principio IV | Contexto cerrado + hechos calculados + verificador de cifras + evaluación (R8) |
 | Principio V | Contacto y saludo compuestos por código; detector determinista de respaldo (R9) |
-| Audio | Transcripción con Whisper (API) tras un puerto; 2 MB / 120 s; nada se guarda (R10) |
+| Audio | Desactivado por defecto (`AUDIO_TRANSCRIPTION=off`); si se activa, Whisper (API) tras un puerto; 2 MB / 120 s; nada se guarda (R10) |
 | Retención | Borrado horario a 30 días, margen de 24 h (R11) |
 | Registros | Eventos pino sin texto, número seudonimizado con HMAC (R11) |
 | Pruebas | unit / contract / integration + suite `eval` con el modelo real (R12) |

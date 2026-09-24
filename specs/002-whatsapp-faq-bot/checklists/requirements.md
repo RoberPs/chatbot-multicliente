@@ -33,5 +33,8 @@
 
 - Aclaración resuelta (2026-09-24): se atienden texto y audio; el resto de tipos recibe el
   aviso de que solo se atienden texto y audios (FR-028, FR-028a, SC-009).
+- Cambio (2026-09-24, tras el plan): la atención de audios pasa a activarse por instancia
+  según decisión de negocio y viene desactivada; con ella apagada, los audios reciben el
+  aviso de "solo texto" (FR-028, FR-028a, SC-009 actualizados).
 - WhatsApp se menciona porque es el canal fijado por la constitución, no como decisión técnica.
 - Items marked incomplete require spec updates before `/speckit-clarify` or `/speckit-plan`

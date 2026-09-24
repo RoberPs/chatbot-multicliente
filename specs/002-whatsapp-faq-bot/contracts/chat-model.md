@@ -62,11 +62,11 @@ interface ModelReply {
 - La caché de prompts de Anthropic compara el texto enviado byte a byte: si el operador
   cambia un dato, el bloque 2 cambia y se reenvía entero. No contradice "sin caché" de la
   001, que se refiere a no guardar copias del snapshot en el proceso.
-- Parámetros: `model = LLM_MODEL` (def. `claude-opus-5`), `output_config.effort = LLM_EFFORT`
-  (def. `low`), `output_config.format` = JSON Schema de `ModelReply`, `max_tokens` 4000,
-  `fallbacks: "default"`, timeout 12 s, 1 reintento, plazo total 20 s.
-- `stop_reason` distinto de `end_turn` (incluido `refusal` tras los fallbacks) o salida que no
-  valida → `ChatModelError`.
+- Parámetros: `model = LLM_MODEL` (def. `claude-sonnet-5`), pensamiento adaptativo,
+  `output_config.effort = LLM_EFFORT` (def. `medium`), `output_config.format` = JSON Schema
+  de `ModelReply`, `max_tokens` 4000, timeout 12 s, 1 reintento, plazo total 20 s.
+- `stop_reason` distinto de `end_turn` (incluido `refusal`) o salida que no valida →
+  `ChatModelError`.
 
 ## Reglas que el prompt fija (verificadas por la suite `eval`)
 

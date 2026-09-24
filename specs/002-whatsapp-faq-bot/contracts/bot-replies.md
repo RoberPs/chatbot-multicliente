@@ -25,7 +25,7 @@ Separados por una línea en blanco. Un único mensaje de WhatsApp por respuesta.
 | Negocio no activo | — no se responde, se borran (FR-002) | — |
 | Fuera de ventana 24 h | — no se responde, `discarded` (FR-002a) | — |
 | Solo `other` sin pie | R-MEDIA | no |
-| Solo audios no entendidos | R-AUDIO | no |
+| Solo audios no entendidos (audios activados) | R-AUDIO | no |
 | Resto | modelo (con los no entendidos y los `other` anotados en `pending`) | según reglas de abajo |
 | Modelo falla o se agota el plazo | R-ERR | sí |
 | Verificador rechaza dos veces | R-SAFE | sí |
@@ -46,8 +46,10 @@ verbales y pronombres.
 |----|------------|
 | SALUDO | ¡Hola! Soy el asistente automático de {negocio}. Puedo informarte sobre horario, ubicación, servicios, precios y dudas frecuentes. |
 | CONTACTO | Para hablar con una persona de {negocio}: {canales}.{ Horario de atención: {horario}.} |
-| R-MEDIA | Solo puedo atender mensajes de texto y audios. ¿Me escribes o me grabas tu consulta? |
-| AVISO DE ARCHIVO | No puedo ver archivos, imágenes ni stickers; solo leo texto y escucho audios. |
+| R-MEDIA (audios desactivados, por defecto) | Solo puedo atender mensajes de texto. ¿Me escribes tu consulta? |
+| R-MEDIA (audios activados) | Solo puedo atender mensajes de texto y audios. ¿Me escribes o me grabas tu consulta? |
+| AVISO DE ARCHIVO (audios desactivados) | No puedo ver archivos, imágenes, stickers ni escuchar audios; solo leo mensajes de texto. |
+| AVISO DE ARCHIVO (audios activados) | No puedo ver archivos, imágenes ni stickers; solo leo texto y escucho audios. |
 | R-AUDIO | No he podido entender el audio. ¿Puedes repetirlo o escribirme tu consulta? |
 | R-SAFE | No dispongo de esa información. |
 | R-ERR | Ahora mismo no puedo responder. Por favor, vuelve a escribirme en unos minutos. |

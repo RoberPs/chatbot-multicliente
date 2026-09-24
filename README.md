@@ -10,9 +10,11 @@ Estados: especificada → planificada → en implementación → completada (o a
 **Siguiente paso**: la 001 tiene todas sus tareas hechas y la suite en verde. Para pasarla a
 "completada" falta cronometrar el alta de un negocio típico (SC-001, escenario 8 del
 quickstart) y construir la imagen Docker en un entorno con acceso al registro de npm.
-La 002 tiene el plan listo: falta generar las tareas (`/speckit-tasks`). Antes de usarla con
-clientes reales hacen falta los contratos de encargado del tratamiento con Meta, Anthropic y
-el proveedor de transcripción.
+La 002 tiene el plan listo: falta generar las tareas (`/speckit-tasks`). Usa Claude Sonnet 5
+por la API de Anthropic; la atención de audios queda preparada pero desactivada hasta que se
+decida activarla. Antes de usarla con clientes reales hacen falta los contratos de encargado
+del tratamiento con Meta y Anthropic (y con el proveedor de transcripción si se activan los
+audios).
 
 ---
 

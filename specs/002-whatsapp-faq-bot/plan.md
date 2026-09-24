@@ -17,10 +17,13 @@ Enfoque técnico: webhook de la WhatsApp Cloud API con firma verificada que guar
 mensaje en PostgreSQL (deduplicado) y responde `200` al instante. Un procesador en el mismo
 proceso espera 3 s sin mensajes nuevos del cliente, lee el `KnowledgeSnapshot` sin caché,
 calcula por código los hechos delicados (hora local, abierto ahora, franjas de los próximos
-14 días, precios formateados) y pide a Claude (`claude-opus-5`, salida estructurada) el cuerpo
+14 días, precios formateados) y pide a Claude (`claude-sonnet-5`, esfuerzo `medium`, salida
+estructurada, por la API de Anthropic) el cuerpo
 de la respuesta y unas banderas. Un verificador determinista rechaza cualquier cifra que no
 salga de los datos, y el código compone el saludo y el bloque de contacto para garantizar los
-Principios IV y V. Los audios se transcriben con Whisper durante la espera y no se guardan.
+Principios IV y V. La atención de audios queda preparada tras un interruptor por instancia,
+desactivado por defecto (FR-028): mientras esté apagado, un audio recibe el aviso de "solo
+texto"; si se activa, se transcribe con Whisper durante la espera y el audio no se guarda.
 Límite de 30 mensajes / 15 min por número, borrado automático a 30 días y registros técnicos
 sin texto y con el número seudonimizado. Detalle en [research.md](research.md).
 
@@ -29,8 +32,9 @@ sin texto y con el número seudonimizado. Detalle en [research.md](research.md).
 **Language/Version**: TypeScript 5.x (strict) sobre Node.js 22 LTS (heredado de la 001)
 
 **Primary Dependencies**: las de la 001 (Fastify 5, Drizzle ORM, `pg`, Zod,
-libphonenumber-js…) más `@anthropic-ai/sdk`. WhatsApp Cloud API y transcripción (OpenAI
-`whisper-1`) con `fetch` nativo, sin SDK adicional.
+libphonenumber-js…) más `@anthropic-ai/sdk` (modelo `claude-sonnet-5`). WhatsApp Cloud API
+y transcripción (OpenAI `whisper-1`, solo con `AUDIO_TRANSCRIPTION=on`) con `fetch` nativo,
+sin SDK adicional.
 
 **Storage**: PostgreSQL 16, la misma BD por instancia; migración `0001` con `customer`,
 `conversation` y `message` ([data-model.md](data-model.md))
@@ -40,8 +44,8 @@ con `ChatModel`, `SpeechToText` y `ChannelSender` falsos y reloj controlable) y 
 nueva `eval` con el modelo real, fuera de `pnpm test`
 
 **Target Platform**: el mismo contenedor Linux por instancia; necesita salida HTTPS a
-`graph.facebook.com`, `api.anthropic.com` y `api.openai.com`, y entrada HTTPS pública para el
-webhook
+`graph.facebook.com`, `api.anthropic.com` y, solo con audios activados, `api.openai.com`, y
+entrada HTTPS pública para el webhook
 
 **Project Type**: servicio web (monolito modular): se añade el módulo de dominio
 `src/conversation` y los adaptadores del canal, el modelo y la transcripción
@@ -128,7 +132,7 @@ specs/002-whatsapp-faq-bot/
 
 ```text
 src/
-├── config/env.ts                 # + variables WHATSAPP_*, ANTHROPIC_API_KEY, LLM_*, STT_*
+├── config/env.ts                 # + WHATSAPP_*, ANTHROPIC_API_KEY, LLM_*, AUDIO_TRANSCRIPTION, STT_*
 ├── db/
 │   ├── schema.ts                 # + customer, conversation, message
 │   └── migrations/0001_*.sql
@@ -138,7 +142,7 @@ src/
 │   ├── settings.ts               # Constantes: espera, tope, límite, ventana, retención
 │   ├── intake.ts                 # Recepción: estado, deduplicación, conversación, límite
 │   ├── processor.ts              # Cola: reclamar lotes, reglas de ventana, envío y reintentos
-│   ├── transcription.ts          # Descarga y transcripción de audios en paralelo a la espera
+│   ├── transcription.ts          # Audios (si AUDIO_TRANSCRIPTION=on): descarga y transcripción en paralelo a la espera
 │   ├── responder.ts              # Lote → ReplyContext → ChatModel → verificador → composición
 │   ├── facts.ts                  # Hechos derivados y AllowedFacts desde el snapshot
 │   ├── grounding.ts              # Verificador de cifras
