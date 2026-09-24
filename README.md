@@ -5,6 +5,7 @@ Estados: especificada → planificada → en implementación → completada (o a
 | Nº  | Feature                         | Ámbito | Estado      | Rama                         | Spec                                            | Actualizado |
 |-----|---------------------------------|--------|-------------|------------------------------|-------------------------------------------------|-------------|
 | 001 | Base de conocimiento del negocio | Núcleo | En implementación | `001-business-knowledge-base` | [spec](specs/001-business-knowledge-base/spec.md) | 2026-09-24  |
+| 002 | Atención de dudas y precios por WhatsApp | Núcleo | Especificada | `002-whatsapp-faq-bot` | [spec](specs/002-whatsapp-faq-bot/spec.md) | 2026-09-24  |
 
 **Siguiente paso**: la 001 tiene todas sus tareas hechas y la suite en verde. Para pasarla a
 "completada" falta cronometrar el alta de un negocio típico (SC-001, escenario 8 del
