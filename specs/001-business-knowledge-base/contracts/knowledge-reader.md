@@ -120,6 +120,9 @@ Notas:
   negocio no pasa a agenda única en ese caso (edge case de la spec).
 - En `status = "active"`, `handoff.source` nunca es `"none"` (FR-031, FR-032): el Principio V
   siempre tiene un medio al que derivar.
+- Los consumidores del snapshot (specs de conversación y citas) MUST comprobar
+  `status === "active"` antes de atender a un cliente final (FR-029). Esta feature solo expone
+  el estado; la regla se aplica y se prueba en la spec de conversación.
 
 ## Funciones puras auxiliares (entregadas en esta feature)
 

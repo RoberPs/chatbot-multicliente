@@ -209,7 +209,8 @@ y comprobar que el operador recibe un aviso por cada uno.
 **Datos del negocio**
 
 - **FR-001**: El operador MUST poder registrar y modificar los datos del negocio: nombre,
-  dirección, indicaciones para llegar, teléfono y email.
+  dirección, indicaciones para llegar, teléfono, email, zona horaria y moneda. La zona horaria
+  y la moneda toman al crear la instancia los valores por defecto de su configuración.
 - **FR-002**: El sistema MUST validar el formato del teléfono y del email y rechazar los
   valores mal formados.
 

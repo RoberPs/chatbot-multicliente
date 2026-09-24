@@ -56,6 +56,7 @@ críticos, guardado protegido (FR-032), activación (FR-029 – FR-031) y puerto
 - [ ] T009 Definir todas las tablas de data-model.md con Drizzle en src/db/schema.ts: `business` (singleton `id smallint = 1` con CHECK, enum `business_status` draft/active), `business_hours`, `closure`, `service` (enum `price_type` fixed/from/on_request, CHECK `price_cents >= 0`, `duration_minutes` entre 1 y 1440), índice único `lower(name)` en `service` y `resource`, `resource`, `resource_service` (PK compuesta, FK `ON DELETE CASCADE`, sin precio ni duración), `resource_hours`, `resource_absence`, `faq`, `policies` (singleton, `payment_methods text[]`), `tone` (singleton, enum `address_form`), `handoff_contact` (singleton), `handoff_channel` (enum phone/whatsapp/email, único `(type, value)`), `handoff_hours`; CHECK `end_time > start_time`, `weekday` 1..7, `end_date >= start_date`, "ambas horas o ninguna"; `updated_at timestamptz default now()` en todas
 - [ ] T010 Generar la migración inicial con `pnpm db:generate` en src/db/migrations/ y crear el script de migración src/db/migrate.ts que aplica las migraciones y después inserta la fila singleton de `business` (`status = 'draft'`, `name = ''`, `timezone = DEFAULT_TIMEZONE`, `currency = DEFAULT_CURRENCY`) con `ON CONFLICT DO NOTHING`
 - [ ] T011 Implementar src/db/client.ts: `createDb(databaseUrl)` (pool `pg` + instancia Drizzle), `withTransaction(db, fn)`, `lockBusiness(tx)` (`SELECT … FROM business WHERE id = 1 FOR UPDATE`) y `withReadSnapshot(db, fn)` (transacción `REPEATABLE READ READ ONLY`)
+- [ ] T011a Crear el helper `touch()` (`updated_at = now()`) en src/db/timestamps.ts; todas las escrituras de repositorios de todas las historias lo usan
 - [ ] T012 [P] Crear los helpers de test: tests/helpers/global-setup.ts (arranca PostgreSQL 16 con Testcontainers, aplica src/db/migrate.ts, exporta la URL), tests/helpers/db.ts (`resetDb()`: TRUNCATE de todas las tablas y reinserción del negocio en draft) y tests/helpers/app.ts (`buildTestApp()`, `login(app)` que devuelve cookie de sesión y token CSRF, `postForm(app, url, fields)`)
 
 ### Esquemas de validación compartidos
@@ -88,6 +89,7 @@ críticos, guardado protegido (FR-032), activación (FR-029 – FR-031) y puerto
 - [ ] T029 Implementar la autenticación en src/admin/auth/plugin.ts (registro de `@fastify/secure-session` con cookie `HttpOnly`, `SameSite=Strict`, `Secure` en producción; `@fastify/csrf-protection`; hook `requireOperator` que responde `302 → /admin/login` o `401` con `HX-Redirect` para peticiones htmx) y src/admin/auth/routes.ts (`GET/POST /admin/login` con verificación Argon2 de `OPERATOR_USER`/`OPERATOR_PASSWORD_HASH`, error genérico, `@fastify/rate-limit` por IP en el POST; `POST /admin/logout`)
 - [ ] T030 [P] Crear las plantillas base en src/admin/views/: layout.eta (cabecera con estado del negocio, contador de avisos, navegación a todas las secciones, carga de htmx, token CSRF en `hx-headers`), login.eta, partials/flash.eta, partials/field-error.eta, partials/csrf.eta, partials/warnings-count.eta y not-found.eta
 - [ ] T031 Implementar src/admin/render.ts: `renderPage(reply, view, data)` (inyecta estado del negocio y número de avisos calculados en cada petición), `renderForm(reply, view, { values, errors, status })` para 422/409 y `savedResponse(request, reply, redirectTo, fragment)` que devuelve `303` con flash "Guardado" o, si es htmx, `200` con el fragmento y el contador de avisos (`hx-swap-oob`)
+- [ ] T031a [P] Crear los parciales compartidos por varias historias en src/admin/views/partials/: weekly-slots.eta (editor de franjas por día con añadir/quitar fila vía htmx y errores por `slots[i]`), date-range-form.eta (fechas, horas opcionales y motivo opcional) y delete-button.eta (formulario `POST …/delete` con `hx-confirm` y CSRF)
 - [ ] T032 Implementar src/app.ts `buildApp({ env, db })`: registra `@fastify/formbody`, `@fastify/view` con Eta y `src/admin/views`, la ruta estática de `htmx.min.js` desde el paquete `htmx.org`, el plugin de autenticación, `src/admin/routes/index.ts` bajo `/admin` y un manejador de errores que usa `formErrorResponse`; y src/server.ts que carga el entorno, ejecuta las migraciones (research R12) y arranca en `PORT`
 - [ ] T033 Implementar la portada y el estado en src/admin/routes/dashboard.ts (`GET /admin`, `POST /admin/status/activate` → `409` con la lista de avisos que bloquean, `POST /admin/status/deactivate`) con la vista src/admin/views/dashboard.eta (estado "En preparación"/"Activo", lista de avisos, botones de activar/desactivar, accesos a cada sección) y registrar la ruta en src/admin/routes/index.ts
 - [ ] T034 [P] Tests de contrato de sesión y estado en tests/contract/auth.test.ts (toda ruta `/admin/*` sin sesión → `302 → /admin/login`; htmx sin sesión → `401` + `HX-Redirect`; `POST` sin token CSRF → `403`; contraseña incorrecta → error genérico; límite de intentos de login) y tests/contract/status.test.ts (activar con `HANDOFF_UNREACHABLE` → `409` y estado `draft`)
@@ -134,9 +136,9 @@ error en el campo (quickstart §2).
 - [ ] T052 [US1] Implementar los casos de uso `saveBusiness`, `saveBusinessHours`, `createClosure`, `updateClosure`, `deleteClosure` (validan con Zod y escriben dentro de `runGuardedWrite`) en src/knowledge/services/business-info.ts
 - [ ] T053 [US1] Implementar los casos de uso `createService`, `updateService`, `deleteService`, `reorderServices` (validación Zod + `runGuardedWrite`; `NotFoundError` si el id no existe) en src/knowledge/services/catalog.ts
 - [ ] T054 [US1] Completar `buildSnapshot` en src/knowledge/snapshot.ts con `openingHours`, `closures` y `services` (unión `price` incluido `missing`, `durationMinutes`, `bookable` efectivo según data-model.md para el caso sin recursos, `resourceIds: []`, solo servicios activos)
-- [ ] T055 [US1] Crear los parciales reutilizables src/admin/views/partials/weekly-slots.eta (editor de franjas por día con añadir/quitar fila vía htmx y errores por `slots[i]`) y src/admin/views/partials/date-range-form.eta (fechas, horas opcionales y motivo opcional)
+- [ ] T055 [US1] Aplicar `touch()` (T011a) en src/knowledge/repositories/business.ts, business-hours.ts, closures.ts y services.ts, incluido `reorderServices`
 - [ ] T056 [US1] Implementar `GET/POST /admin/business` en src/admin/routes/business.ts con la vista src/admin/views/business.eta (errores junto a cada campo, valores introducidos conservados en 422/409)
-- [ ] T057 [US1] Implementar `GET /admin/hours`, `POST /admin/hours`, `POST /admin/closures`, `POST /admin/closures/:id` y `POST /admin/closures/:id/delete` en src/admin/routes/hours.ts con la vista src/admin/views/hours.eta (usa los parciales de T055)
+- [ ] T057 [US1] Implementar `GET /admin/hours`, `POST /admin/hours`, `POST /admin/closures`, `POST /admin/closures/:id` y `POST /admin/closures/:id/delete` en src/admin/routes/hours.ts con la vista src/admin/views/hours.eta (usa los parciales de T031a)
 - [ ] T058 [US1] Implementar `GET /admin/services`, `GET /admin/services/new`, `GET /admin/services/:id`, `POST /admin/services`, `POST /admin/services/:id`, `POST /admin/services/:id/delete` y `POST /admin/services/reorder` en src/admin/routes/services.ts con las vistas src/admin/views/services/list.eta (estado, precio formateado, duración, reservable) y src/admin/views/services/form.eta (el importe se oculta para "a consultar")
 - [ ] T059 [US1] Registrar las rutas de negocio, horario y servicios en src/admin/routes/index.ts y enlazarlas en la navegación de src/admin/views/layout.eta
 
@@ -161,10 +163,10 @@ devuelve 2500 céntimos y el horario nuevo; eliminar B lo hace desaparecer (quic
 
 ### Implementation for User Story 2
 
-- [ ] T063 [US2] Crear el helper `touch()` (`updated_at = now()`) en src/db/timestamps.ts y aplicarlo a todas las escrituras de src/knowledge/repositories/business.ts, business-hours.ts, closures.ts y services.ts (y en `reorderServices`)
+- [ ] T063 [US2] Revisar que todas las escrituras de src/knowledge/repositories/ usan `touch()` (T011a), incluidas las de reordenación, y que ningún `UPDATE` lo omite
 - [ ] T064 [US2] Exponer `updatedAt` en `buildSnapshot` a partir de `state.maxUpdatedAt` en ISO 8601 y añadir en src/knowledge/snapshot.ts un comentario de contrato que prohíbe cachear el snapshot (FR-021)
 - [ ] T065 [US2] Precargar los formularios de edición con los valores guardados (importe con `formatCents`, horas `HH:MM`) y devolver src/admin/views/not-found.eta con `404` para ids inexistentes en src/admin/routes/services.ts y src/admin/routes/hours.ts
-- [ ] T066 [US2] Crear el parcial src/admin/views/partials/delete-button.eta (formulario `POST …/delete` con `hx-confirm` y CSRF) y usarlo en src/admin/views/services/list.eta y src/admin/views/hours.eta
+- [ ] T066 [US2] Usar el parcial delete-button.eta (T031a) en src/admin/views/services/list.eta y src/admin/views/hours.eta
 - [ ] T067 [US2] Mostrar la fecha de última modificación de cada elemento en src/admin/views/business.eta, src/admin/views/services/form.eta y src/admin/views/hours.eta
 
 **Checkpoint**: US1 y US2 funcionan juntas; los cambios se ven en la siguiente lectura.
@@ -185,7 +187,7 @@ oculta sin perder sus datos (quickstart §4).
 - [ ] T068 [P] [US3] Tests unitarios en tests/unit/schemas/resource.test.ts (nombre obligatorio 1–200, `service_ids[]` como uuids sin duplicados, ausencia = bloque de fechas sin `reason`)
 - [ ] T069 [P] [US3] Tests unitarios del snapshot de recursos en tests/unit/snapshot/scheduling.test.ts (sin recursos → `single_agenda`; con recursos → `resources` y `serviceIds` solo de servicios activos; recurso inactivo excluido; todos inactivos → `resources` con lista vacía y servicios reservables con `bookable = false`; `services[].resourceIds` solo recursos activos)
 - [ ] T070 [P] [US3] Tests de contrato en tests/contract/admin/resources.test.ts (alta con servicios → `303`; `service_ids` inexistente → `422` en `service_ids`; `POST /admin/resources/:id/hours` con franja inválida → `422`; alta, edición y borrado de ausencias; `POST /admin/resources/:id/delete`)
-- [ ] T071 [P] [US3] Test de integración en tests/integration/resources.test.ts (SC-006: un recurso con A y B no figura para C; borrar un servicio borra sus asociaciones; borrar un recurso borra asociaciones, horario y ausencias; desactivar y reactivar conserva servicios, horario y ausencias)
+- [ ] T071 [P] [US3] Test de integración en tests/integration/resources.test.ts (SC-006: un recurso con A y B no figura para C; borrar un servicio borra sus asociaciones; borrar un recurso borra asociaciones, horario y ausencias; desactivar y reactivar conserva servicios, horario y ausencias; cada escritura de recursos, horario, ausencias y asociaciones hace avanzar `snapshot.updatedAt`)
 
 ### Implementation for User Story 3
 
@@ -193,7 +195,7 @@ oculta sin perder sus datos (quickstart §4).
 - [ ] T073 [US3] Implementar el repositorio de recursos (`listResources` con servicios asignados, `getResource`, `createResource`, `updateResource`, `setResourceServices` (reemplazo), `replaceResourceHours`, `createAbsence`, `updateAbsence`, `deleteAbsence`, `deleteResource`, comprobación de que todos los `service_ids` existen), usando `touch()`, en src/knowledge/repositories/resources.ts
 - [ ] T074 [US3] Implementar los casos de uso de recursos (alta/edición con servicios, horario, ausencias, borrado; validación Zod + `runGuardedWrite`; `FieldConflictError('service_ids')` si un servicio no existe) en src/knowledge/services/resources.ts
 - [ ] T075 [US3] Completar `buildSnapshot` en src/knowledge/snapshot.ts: `scheduling` (`single_agenda` solo si no hay ningún recurso registrado, activo o inactivo), recursos activos con `serviceIds`, `hours` y `absences`, `services[].resourceIds` y regla completa de `bookable` efectivo (requiere un recurso activo que lo preste cuando hay recursos)
-- [ ] T076 [US3] Implementar las rutas de contracts/admin-panel.md § Recursos en src/admin/routes/resources.ts con las vistas src/admin/views/resources/list.eta (estado y servicios asignados) y src/admin/views/resources/form.eta (checkboxes de servicios activos, interruptor activo, parcial weekly-slots para el horario, lista y formulario de ausencias con date-range-form y delete-button)
+- [ ] T076 [US3] Implementar las rutas de contracts/admin-panel.md § Recursos en src/admin/routes/resources.ts con las vistas src/admin/views/resources/list.eta (estado y servicios asignados) y src/admin/views/resources/form.eta (checkboxes de servicios activos, interruptor activo, parcial weekly-slots para el horario, lista y formulario de ausencias con date-range-form y delete-button); mostrar la fecha de última modificación del elemento (supuesto de la spec)
 - [ ] T077 [US3] Registrar las rutas de recursos en src/admin/routes/index.ts y en la navegación de src/admin/views/layout.eta
 
 **Checkpoint**: US1–US3 funcionan de forma independiente; el snapshot distingue agenda única y recursos.
@@ -216,6 +218,7 @@ contiene y `handoff.source = "configured"`; una antelación mínima de 31 días 
 - [ ] T080 [P] [US4] Tests unitarios del snapshot en tests/unit/snapshot/faq-policies-handoff.test.ts (FAQ en orden; políticas y tono `null` si no se han guardado; derivación `configured` con canales ordenados y horario; `business_phone`; `none`)
 - [ ] T081 [P] [US4] Tests de contrato en tests/contract/admin/faqs.test.ts y tests/contract/admin/settings.test.ts (`/admin/faqs` alta, edición, borrado y reorden; `/admin/policies` con antelación mínima 3 días y máxima 2 días → `422` en `min_advance`; `/admin/tone`; `/admin/handoff` sin medios elimina el contacto)
 - [ ] T082 [P] [US4] Test de integración de protección de la salida a una persona en tests/integration/handoff-protection.test.ts (quickstart §6: negocio activo, borrar el último medio de derivación con teléfono presente → `303` y `HANDOFF_CONTACT_MISSING`; borrar el teléfono del negocio → `409` y teléfono intacto; tras desactivar, el mismo cambio se guarda y aparece `HANDOFF_UNREACHABLE`; el snapshot de un negocio activo nunca tiene `handoff.source = "none"`)
+- [ ] T082a [P] [US4] Test de integración en tests/integration/updated-at-settings.test.ts: guardar FAQ, reordenar FAQ, guardar políticas, tono y derivación, y borrar todos los medios de derivación hace avanzar `snapshot.updatedAt` en cada caso
 
 ### Implementation for User Story 4
 
@@ -224,14 +227,14 @@ contiene y `handoff.source = "configured"`; una antelación mínima de 31 días 
 - [ ] T085 [P] [US4] Implementar `toneSchema` (`address_form` informal/formal, `style_description`) en src/knowledge/schemas/tone.ts
 - [ ] T086 [P] [US4] Implementar `handoffSchema` (`channels[i].type`/`value` con validación según tipo, unicidad `(type, value)`, `slots` con `weeklySlotsSchema`) en src/knowledge/schemas/handoff.ts
 - [ ] T087 [P] [US4] Implementar el repositorio de FAQ (`list`, `get`, `create` con `sort_order` al final, `update`, `delete`, `reorder`) con `touch()` en src/knowledge/repositories/faqs.ts
-- [ ] T088 [P] [US4] Implementar los repositorios singleton `upsertPolicies`/`getPolicies` en src/knowledge/repositories/policies.ts y `upsertTone`/`getTone` en src/knowledge/repositories/tone.ts
-- [ ] T089 [P] [US4] Implementar el repositorio de derivación (`saveHandoff(tx, channels, slots)`: reemplaza medios y horario y crea/actualiza `handoff_contact`; sin medios borra contacto, medios y horario) en src/knowledge/repositories/handoff.ts
+- [ ] T088 [P] [US4] Implementar los repositorios singleton `upsertPolicies`/`getPolicies` en src/knowledge/repositories/policies.ts y `upsertTone`/`getTone` en src/knowledge/repositories/tone.ts, usando `touch()` en cada escritura
+- [ ] T089 [P] [US4] Implementar el repositorio de derivación (`saveHandoff(tx, channels, slots)`: reemplaza medios y horario y crea/actualiza `handoff_contact` con `touch()`; sin medios borra contacto, medios y horario y hace `touch()` sobre la fila de `business` para que `snapshot.updatedAt` avance) en src/knowledge/repositories/handoff.ts
 - [ ] T090 [US4] Implementar los casos de uso `createFaq`, `updateFaq`, `deleteFaq`, `reorderFaqs` en src/knowledge/services/faqs.ts y `savePolicies`, `saveTone`, `saveHandoff` en src/knowledge/services/settings.ts (validación Zod + `runGuardedWrite`)
 - [ ] T091 [US4] Completar `buildSnapshot` en src/knowledge/snapshot.ts con `faqs`, `policies`, `tone` y `handoff` configurado (canales por `sort_order` y `handoff_hours`)
-- [ ] T092 [US4] Implementar `GET /admin/faqs`, `POST /admin/faqs`, `POST /admin/faqs/:id`, `POST /admin/faqs/:id/delete` y `POST /admin/faqs/reorder` en src/admin/routes/faqs.ts con la vista src/admin/views/faqs.eta
-- [ ] T093 [US4] Implementar `GET/POST /admin/policies` en src/admin/routes/policies.ts con la vista src/admin/views/policies.eta (selector de unidad; al mostrar, usar la mayor unidad exacta: días, horas o minutos; lista editable de formas de pago)
-- [ ] T094 [US4] Implementar `GET/POST /admin/tone` en src/admin/routes/tone.ts con la vista src/admin/views/tone.eta
-- [ ] T095 [US4] Implementar `GET/POST /admin/handoff` en src/admin/routes/handoff.ts con la vista src/admin/views/handoff.eta (filas de medios con tipo y valor, parcial weekly-slots para el horario, nota de que sin medios se usa el teléfono del negocio, error general `409` visible)
+- [ ] T092 [US4] Implementar `GET /admin/faqs`, `POST /admin/faqs`, `POST /admin/faqs/:id`, `POST /admin/faqs/:id/delete` y `POST /admin/faqs/reorder` en src/admin/routes/faqs.ts con la vista src/admin/views/faqs.eta; mostrar la fecha de última modificación del elemento (supuesto de la spec)
+- [ ] T093 [US4] Implementar `GET/POST /admin/policies` en src/admin/routes/policies.ts con la vista src/admin/views/policies.eta (selector de unidad; al mostrar, usar la mayor unidad exacta: días, horas o minutos; lista editable de formas de pago); mostrar la fecha de última modificación del elemento (supuesto de la spec)
+- [ ] T094 [US4] Implementar `GET/POST /admin/tone` en src/admin/routes/tone.ts con la vista src/admin/views/tone.eta; mostrar la fecha de última modificación del elemento (supuesto de la spec)
+- [ ] T095 [US4] Implementar `GET/POST /admin/handoff` en src/admin/routes/handoff.ts con la vista src/admin/views/handoff.eta (filas de medios con tipo y valor, parcial weekly-slots para el horario, nota de que sin medios se usa el teléfono del negocio, error general `409` visible); mostrar la fecha de última modificación del elemento (supuesto de la spec)
 - [ ] T096 [US4] Registrar las rutas de FAQ, políticas, tono y derivación en src/admin/routes/index.ts y en la navegación de src/admin/views/layout.eta
 
 **Checkpoint**: US1–US4 completas; el snapshot tiene todas sus secciones.
@@ -273,6 +276,7 @@ datos los hace desaparecer; el guardado nunca se bloquea por avisos normales.
 - [ ] T106 Test de neutralidad sectorial (SC-005, FR-024, Principio I) en tests/integration/sector-neutrality.test.ts (los tres fixtures se cargan con el mismo modelo y producen snapshots válidos) y tests/unit/sector-neutrality.test.ts (recorre `src/` y falla si encuentra nombres de sector o cliente como `clínica`, `clinic`, `peluquer`, `taller`, `inmobiliaria`, `dentist`, `salon`)
 - [ ] T107 [P] Test de forma del contrato en tests/contract/snapshot-shape.test.ts: esquema Zod estricto de `KnowledgeSnapshot` (en el propio test) que valida la salida de `getSnapshot()` con la instancia vacía y con cada fixture, sin campos extra ni `undefined`
 - [ ] T108 [P] Test de rendimiento en tests/integration/performance.test.ts: con 100 servicios, 20 recursos y 100 FAQ, `getSnapshot()` p95 < 50 ms y `POST /admin/services/:id` p95 < 300 ms
+- [ ] T108a [P] Test de aislamiento (FR-022) en tests/integration/isolation.test.ts: crea dos bases de datos en el mismo contenedor, construye una app y un `KnowledgeReader` por cada una, registra un servicio en A y comprueba que no aparece en el snapshot ni en el panel de B; y en tests/unit/isolation.test.ts recorre `src/` y falla si `createDb` se invoca con algo distinto de `env.DATABASE_URL`
 - [ ] T109 [P] Crear el Dockerfile multi-etapa (build con pnpm, imagen final Node 22 slim sin devDependencies, ejecuta migraciones y arranca `dist/server.js`) en Dockerfile
 - [ ] T110 [P] Documentar puesta en marcha, variables de entorno y comandos (enlazando specs/001-business-knowledge-base/quickstart.md) en README.md
 - [ ] T111 Revisión de seguridad del panel en src/app.ts y src/admin/auth/plugin.ts: cabeceras `X-Frame-Options: DENY`, `Content-Security-Policy` restrictiva (htmx servido localmente), `Referrer-Policy`, `Cache-Control: no-store` en `/admin`, logs sin contraseñas ni cookies; ejecutar el agente `security-auditor` sobre `src/admin` y corregir hallazgos
@@ -289,8 +293,8 @@ datos los hace desaparecer; el guardado nunca se bloquea por avisos normales.
 - **Foundational (Phase 2)**: depende de Setup; BLOQUEA todas las historias.
 - **US1 (Phase 3)**: depende de Foundational.
 - **US2 (Phase 4)**: depende de US1 (modifica y elimina lo que US1 crea).
-- **US3 (Phase 5)**: depende de Foundational; usa servicios de US1 para las asociaciones (los tests crean servicios mediante los casos de uso de US1).
-- **US4 (Phase 6)**: depende solo de Foundational (la protección de T082 usa `saveBusiness` de US1 para borrar el teléfono).
+- **US3 (Phase 5)**: depende de Foundational y de US1 (necesita servicios para las asociaciones; los tests los crean con los casos de uso de US1).
+- **US4 (Phase 6)**: depende de Foundational. Solo el test T082 usa `saveBusiness` (T052, US1) para borrar el teléfono; el resto de US4 puede desarrollarse antes de US1.
 - **US5 (Phase 7)**: depende de Foundational; los avisos de servicio y recurso se prueban con estados en memoria, y la integración en pantallas (T103) necesita las vistas de US1, US3 y US4.
 - **Polish (Phase 8)**: depende de todas las historias.
 
@@ -311,11 +315,11 @@ Setup → Foundational ─┬─ US1 (P1) ─┬─ US2 (P1)
 ### Parallel Opportunities
 
 - Setup: T002–T007 en paralelo tras T001.
-- Foundational: T012–T016 en paralelo; T021, T024, T026, T027, T030 y T034 en paralelo cuando existen sus dependencias.
+- Foundational: T012–T016 en paralelo; T021, T024, T026, T027, T030, T031a y T034 en paralelo cuando existen sus dependencias.
 - US1: tests T035–T042 en paralelo; T043, T044, T046–T051 en paralelo.
 - US3 y US4 pueden desarrollarse en paralelo por personas distintas tras US1 (salvo los ficheros compartidos citados arriba).
 - US4: tests T078–T082 en paralelo; T083–T089 en paralelo.
-- Polish: T105, T107–T110 en paralelo.
+- Polish: T105, T107–T110 y T108a en paralelo.
 
 ---
 
