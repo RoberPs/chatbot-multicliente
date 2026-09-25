@@ -33,4 +33,9 @@ export default tseslint.config(
     files: ['**/*.js', '**/*.mjs'],
     ...tseslint.configs.disableTypeChecked,
   },
+  {
+    // Assets que se sirven al navegador (panel y chat web): no son código de Node.
+    files: ['src/admin/views/*.js', 'src/channels/web/assets/*.js'],
+    languageOptions: { globals: { ...globals.browser } },
+  },
 );

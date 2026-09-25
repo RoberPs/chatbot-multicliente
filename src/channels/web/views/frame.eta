@@ -1,0 +1,46 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Chat con el asistente</title>
+  <link rel="stylesheet" href="/chat/assets/frame.css">
+</head>
+<body>
+  <button id="chat-toggle" type="button" class="toggle" aria-expanded="false" aria-controls="chat-panel">
+    <span aria-hidden="true">💬</span>
+    <span class="sr-only">Abrir el chat</span>
+  </button>
+  <section id="chat-panel" class="panel" hidden>
+    <header class="panel-head">
+      <h1><%= it.available ? 'Asistente de ' + it.businessName : 'Chat' %></h1>
+      <button id="chat-close" type="button" class="close" aria-label="Cerrar el chat">
+        <span aria-hidden="true">×</span>
+      </button>
+    </header>
+    <% if (it.available) { %>
+      <p class="privacy">
+        Estás hablando con el asistente automático de <%= it.businessName %>. Tus mensajes se usan
+        para responderte y se borran a los 30 días.
+        <% if (it.privacyUrl) { %>
+          <a href="<%= it.privacyUrl %>" target="_blank" rel="noopener noreferrer">Política de privacidad</a>
+        <% } %>
+      </p>
+      <ul id="chat-messages" class="messages" aria-live="polite"></ul>
+      <p id="chat-status" class="status" role="status"></p>
+      <form id="chat-form" class="composer">
+        <label class="sr-only" for="chat-text">Tu mensaje</label>
+        <textarea id="chat-text" rows="2" maxlength="<%= it.maxLength %>" required
+                  placeholder="Escribe tu mensaje"></textarea>
+        <button type="submit">Enviar</button>
+      </form>
+    <% } else { %>
+      <div class="unavailable">
+        <p class="message"><%= it.message %></p>
+        <% if (it.contact) { %><p class="contact"><%= it.contact %></p><% } %>
+      </div>
+    <% } %>
+  </section>
+  <script src="/chat/assets/frame.js" defer></script>
+</body>
+</html>

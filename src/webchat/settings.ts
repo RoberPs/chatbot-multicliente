@@ -5,6 +5,8 @@
 import { eq } from 'drizzle-orm';
 import type { DbOrTx } from '../conversation/repositories/customer.js';
 import { webChatSettings } from '../db/schema.js';
+import { touch } from '../db/timestamps.js';
+import { webChatSettingsSchema } from './schemas.js';
 
 export interface WebChatSettings {
   enabled: boolean;
@@ -36,4 +38,17 @@ export async function readWebChatSettings(tx: DbOrTx): Promise<WebChatSettings> 
     .from(webChatSettings)
     .where(eq(webChatSettings.id, 1));
   return row ?? defaultWebChatSettings;
+}
+
+/**
+ * Guarda la configuración del chat web validando con `webChatSettingsSchema` (US2). Es la fila
+ * singleton: siempre `UPDATE`, nunca se inserta ni se borra. Devuelve lo guardado.
+ */
+export async function saveWebChatSettings(tx: DbOrTx, input: unknown): Promise<WebChatSettings> {
+  const values = webChatSettingsSchema.parse(input);
+  await tx
+    .update(webChatSettings)
+    .set({ ...values, ...touch() })
+    .where(eq(webChatSettings.id, 1));
+  return values;
 }

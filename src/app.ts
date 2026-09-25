@@ -12,6 +12,7 @@ import { authRoutes } from './admin/auth/routes.js';
 import './admin/fastify-types.js';
 import { renderNotFound } from './admin/render.js';
 import { adminRoutes } from './admin/routes/index.js';
+import { CHAT_FRAME_PATH, webChatRoutes } from './channels/web/routes.js';
 import { whatsappWebhook } from './channels/whatsapp/webhook.js';
 import type { Env, WhatsAppEnv } from './config/env.js';
 import type { ActivityLog } from './conversation/activity-log.js';
@@ -25,6 +26,10 @@ const require = createRequire(import.meta.url);
 const htmxSource = readFileSync(require.resolve('htmx.org/dist/htmx.min.js'), 'utf8');
 const cssSource = readFileSync(
   fileURLToPath(new URL('./admin/views/app.css', import.meta.url)),
+  'utf8',
+);
+const adminJsSource = readFileSync(
+  fileURLToPath(new URL('./admin/views/app.js', import.meta.url)),
   'utf8',
 );
 
@@ -140,10 +145,15 @@ export async function buildApp({
 
   // Cabeceras de seguridad en todas las respuestas.
   app.addHook('onSend', async (request, reply) => {
-    reply.header('X-Frame-Options', 'DENY');
+    // El chat web se incrusta en la web del negocio: su CSP la pone su propio plugin y no
+    // puede llevar X-Frame-Options (lo sustituye `frame-ancestors`, 004 FR-015).
+    const isChatFrame = (request.url.split('?')[0] ?? '') === CHAT_FRAME_PATH;
+    if (!isChatFrame) {
+      reply.header('X-Frame-Options', 'DENY');
+      reply.header('Content-Security-Policy', CSP);
+    }
     reply.header('X-Content-Type-Options', 'nosniff');
     reply.header('Referrer-Policy', 'same-origin');
-    reply.header('Content-Security-Policy', CSP);
     reply.header('Cross-Origin-Opener-Policy', 'same-origin');
     reply.header('Permissions-Policy', 'camera=(), microphone=(), geolocation=(), payment=()');
     if (env.NODE_ENV === 'production') {
@@ -157,6 +167,12 @@ export async function buildApp({
       .type('text/javascript; charset=utf-8')
       .header('Cache-Control', 'public, max-age=86400')
       .send(htmxSource),
+  );
+  app.get('/assets/app.js', async (_request, reply) =>
+    reply
+      .type('text/javascript; charset=utf-8')
+      .header('Cache-Control', 'public, max-age=3600')
+      .send(adminJsSource),
   );
   app.get('/assets/app.css', async (_request, reply) =>
     reply
@@ -178,6 +194,9 @@ export async function buildApp({
     },
     { prefix: '/admin' },
   );
+
+  // El chat web se registra siempre: sin bot sirve el fragmento y la vista "no disponible".
+  await app.register(webChatRoutes, { prefix: '/chat' });
 
   const whatsapp = channel?.whatsapp;
   if (channel && whatsapp) {

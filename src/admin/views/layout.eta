@@ -7,6 +7,7 @@
   <title><%= it.layout.title %> · Panel del operador</title>
   <link rel="stylesheet" href="/assets/app.css">
   <script src="/assets/htmx.min.js" defer></script>
+  <script src="/assets/app.js" defer></script>
 </head>
 <body hx-boost="true" hx-headers='{"x-csrf-token": "<%= it.layout.csrf %>"}'>
   <header class="topbar">
@@ -32,6 +33,7 @@
       ['/admin/tone', 'Tono'],
       ['/admin/handoff', 'Derivación'],
       ['/admin/playground', 'Probar el bot'],
+      ['/admin/web-chat', 'Chat web'],
     ].forEach(function (item) {
       const current = item[0] === '/admin' ? it.layout.path === '/admin' || it.layout.path === '/admin/' : it.layout.path.startsWith(item[0]); %>
       <a href="<%= item[0] %>"<% if (current) { %> aria-current="page"<% } %>><%= item[1] %></a>

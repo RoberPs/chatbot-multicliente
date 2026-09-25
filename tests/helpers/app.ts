@@ -9,6 +9,9 @@ export const OPERATOR_PASSWORD = 'contraseña-de-prueba';
 
 let passwordHash: Promise<string> | undefined;
 
+/** Contacto de emergencia de la instancia de pruebas (004, FR-022). */
+export const TEST_EMERGENCY_PHONE = '+34600999888';
+
 export const TEST_SESSION_SECRET =
   '3f9a1c7e5b2d4086a1e3c5f7092b4d6e8a0c2e4f6183a5c7e9b1d3f5a7c9e0b2';
 
@@ -16,6 +19,8 @@ export async function buildTestApp(
   db: Db,
   databaseUrl = 'postgres://no-usada',
   bot: BotHttp | null = null,
+  /** Variables de entorno añadidas o cambiadas para este caso (p. ej. PUBLIC_BASE_URL). */
+  extraEnv: Record<string, string> = {},
 ): Promise<FastifyInstance> {
   passwordHash ??= argon2.hash(OPERATOR_PASSWORD, { type: argon2.argon2id });
   const env = loadEnv({
@@ -26,7 +31,9 @@ export async function buildTestApp(
     DEFAULT_PHONE_REGION: 'ES',
     DEFAULT_TIMEZONE: 'Europe/Madrid',
     DEFAULT_CURRENCY: 'EUR',
+    EMERGENCY_CONTACT_PHONE: TEST_EMERGENCY_PHONE,
     NODE_ENV: 'test',
+    ...extraEnv,
   });
   const app = await buildApp({ env, db, logger: false, bot });
   await app.ready();

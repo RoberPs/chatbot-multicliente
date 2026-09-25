@@ -296,3 +296,38 @@ todos los resultados esperados.
 - No se cambia el modelo de Políticas ni de Derivación: siguen siendo registros únicos. Si más
   adelante hacen falta varias políticas o varios contactos (por ejemplo, por servicio), será
   otra spec.
+
+---
+
+## Hallazgos posteriores (2026-09-25, validación de la feature 004)
+
+Anotados al recorrer el escenario 1 del quickstart de la 004 ("Probar el bot"). Ninguno está
+todavía convertido en historia de usuario ni en requisito; quedan aquí para decidirlo cuando
+esta spec pase a plan.
+
+### H1 — El panel no avisa de que una FAQ contradice un dato estructurado (candidato a esta spec)
+
+Con `payment_methods = {Efectivo}` y la FAQ "¿Aceptáis tarjeta? → Sí.", el bot contesta que el
+único método registrado es el efectivo. Es el comportamiento especificado (regla 5 del prompt de
+la 002: ante contradicción prevalece el dato estructurado), pero el operador cree haber
+contestado la duda en las FAQ y nunca se le dice que esa FAQ no se está usando.
+
+Encaja con el contexto de esta spec ("el sistema se comporta según su spec, pero el panel no
+explica lo que pasa"). La forma natural sería un aviso no crítico de `computeWarnings` sobre la
+FAQ, con enlace al dato estructurado que prevalece.
+
+### H2 — El bot repite el bloque de contacto (necesita spec propia)
+
+Al pedir hablar con una persona, la respuesta trae el teléfono y el horario de atención dos
+veces: una en el texto del modelo y otra en el bloque que añade el código. Causas:
+
+- El prompt manda dos cosas que chocan: no escribir datos de contacto porque el sistema añade el
+  bloque, y, en la petición de persona, responder que se le facilita el contacto.
+- `compose()` en `src/conversation/responder.ts` añade `contactBlock(snapshot)` sin comprobar si
+  el texto del modelo ya lo trae.
+- El verificador de cifras no lo frena, y es correcto: el teléfono de derivación sí figura en el
+  snapshot, así que es redundancia, no invención.
+
+**No encaja en esta spec**: es un defecto de la composición de respuestas de la 002, no de la
+claridad del panel. Debería ser una spec de núcleo aparte que arregle las dos capas (instrucción
+del prompt y comprobación determinista antes de añadir el bloque).

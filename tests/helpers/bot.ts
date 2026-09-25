@@ -28,7 +28,7 @@ import { createQuotaWatch } from '../../src/webchat/usage.js';
 import { hairSalon } from '../fixtures/hair-salon.js';
 import { loadFixture } from '../fixtures/load.js';
 import type { BusinessFixture } from '../fixtures/types.js';
-import { buildTestApp } from './app.js';
+import { buildTestApp, TEST_EMERGENCY_PHONE } from './app.js';
 import { resetDb, type TestDatabase } from './db.js';
 import {
   FakeChannelSender,
@@ -40,7 +40,7 @@ import {
 } from './fakes.js';
 import { CUSTOMER_WA, postWebhook, testWhatsApp, textMessage, webhookPayload } from './whatsapp.js';
 
-export const EMERGENCY_PHONE = '+34600999888';
+export const EMERGENCY_PHONE = TEST_EMERGENCY_PHONE;
 
 /** Visitante web de prueba: hash de una sesión (64 hex). */
 export const WEB_USER = 'ab'.repeat(32);

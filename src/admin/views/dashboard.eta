@@ -36,6 +36,8 @@
     <li><a href="/admin/policies">Políticas</a></li>
     <li><a href="/admin/tone">Tono</a></li>
     <li><a href="/admin/handoff">Contacto de derivación</a></li>
+    <li><a href="/admin/playground">Probar el bot</a></li>
+    <li><a href="/admin/web-chat">Chat web</a> · Chat web: <%= it.webChat %></li>
   </ul>
   <p class="meta">Última modificación de la información: <%= it.h.dateTime(it.state.maxUpdatedAt, it.state.business.timezone) %></p>
 </section>

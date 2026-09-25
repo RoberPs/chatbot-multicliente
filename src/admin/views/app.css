@@ -361,3 +361,25 @@ tr.inactive td {
   color: var(--muted);
   white-space: nowrap;
 }
+
+/* Chat web (004, US2): fragmento para la web del negocio y casilla de activación. */
+label.inline {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  font-weight: 500;
+}
+.snippet {
+  width: 100%;
+  font-family: ui-monospace, monospace;
+  font-size: 0.8rem;
+  resize: vertical;
+  background: var(--bg);
+}
+code {
+  font-family: ui-monospace, monospace;
+  font-size: 0.85em;
+  background: var(--bg);
+  padding: 0 0.2em;
+  border-radius: 3px;
+}
