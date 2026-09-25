@@ -85,7 +85,12 @@ Con el chat activado y el negocio activo, en `http://localhost:8080` en una vent
 1. Abre el chat → antes de escribir se ve el aviso de asistente automático y el enlace a la
    política de privacidad (SC-005).
 2. Pregunta el horario → saludo + franjas registradas, con "escribiendo…" mientras tanto.
-3. Envía tres mensajes en menos de 3 s → una sola respuesta que cubre los tres.
+3. Envía tres mensajes seguidos **sin dejar más de 3 s entre uno y otro** → una sola respuesta
+   que cubre los tres, con "escribiendo…" mientras tanto. Lo que cuenta es el hueco entre
+   mensajes consecutivos, no el total: el bot espera 3 s de silencio desde el último (con un
+   tope de 8 s desde el primero). Tecleando tres frases no se llega, así que para la prueba
+   ten los tres textos preparados y pégalos, o usa mensajes de una palabra. Si dejas pasar más
+   de 3 s verás dos respuestas: eso también es correcto, no es un fallo.
 4. Pregunta por el servicio "a consultar" → sin cifra y con el contacto.
 5. Pide hablar con una persona → contacto y su horario.
 6. Recarga la página → siguen los mensajes y la siguiente respuesta no repite el saludo.
