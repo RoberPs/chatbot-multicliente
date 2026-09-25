@@ -285,7 +285,7 @@ contra la constitución, en especial los Principios IV (solo información regist
     reloj controlable): agrupado, una respuesta por entrante, límite, retrasos, reanudación
     tras reinicio, borrado a 30 días, frescura de datos entre turnos, registros sin texto.
   - `eval` (`pnpm test:eval`, requiere `ANTHROPIC_API_KEY`; `STT_API_KEY` solo para
-    `pnpm test:eval -- audio`): juegos de preguntas contra el modelo real con los negocios de
+    `pnpm test:eval audio`): juegos de preguntas contra el modelo real con los negocios de
     ejemplo de tres sectores de `tests/fixtures/`, que miden SC-001, SC-002, SC-004, SC-006 –
     SC-010. Sus resultados son requisito para dar la feature por terminada, no para cada
     commit (coste y no determinismo). Se ejecuta desde la máquina del desarrollador (o un job

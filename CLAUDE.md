@@ -20,7 +20,7 @@ cp .env.example .env && pnpm operator:hash-password
 pnpm db:migrate && pnpm dev        # http://localhost:3000/admin
 pnpm kb:snapshot                   # vista del bot en JSON
 pnpm bot:chat                      # hablar con el bot en la terminal (modelo real)
-pnpm test                          # o test:unit / test:integration / test -- <patrón>
+pnpm test                          # o test:unit / test:integration / test <patrón>
 pnpm test:eval                     # evaluación con el modelo real (coste; fuera de pnpm test)
 pnpm lint && pnpm typecheck
 ```

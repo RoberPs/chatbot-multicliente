@@ -40,6 +40,12 @@ export interface DerivedFacts {
     closureReason: string | null;
   }>;
   prices: Array<{ serviceId: string; text: string }>;
+  /** Plazos de las políticas ya convertidos a días u horas ("60 días"); null si no hay. */
+  policies: {
+    cancellationNotice: string | null;
+    minAdvance: string | null;
+    maxAdvance: string | null;
+  };
   handoffHoursText: string | null;
 }
 

@@ -27,6 +27,11 @@ export interface CriterionOptions {
   /** Audios con Whisper real. */
   audio?: boolean;
   skip?: boolean;
+  /**
+   * SC-010 con los mismos resultados: al final compara el porcentaje de acierto de cada
+   * sector (todos ≥ 90 % y a ≤ 10 puntos entre sí), sin llamadas adicionales al modelo.
+   */
+  compareSectors?: boolean;
 }
 
 export function describeCriterion(
@@ -35,6 +40,7 @@ export function describeCriterion(
   opts: CriterionOptions = {},
 ): void {
   describe.skipIf(!hasApiKey || opts.skip === true)(`${criterion}: ${title}`, () => {
+    const bySector = new Map<string, { ok: number; total: number }>();
     afterAll(() => {
       printReport(`${criterion} — ${title}`);
     });
@@ -55,6 +61,10 @@ export function describeCriterion(
           it(`${question.category}: ${question.text}`, async () => {
             const answer = await runner.ask(question);
             const ok = answer.problems.length === 0;
+            const row = bySector.get(sector.fixture.sector) ?? { ok: 0, total: 0 };
+            row.total += 1;
+            if (ok) row.ok += 1;
+            bySector.set(sector.fixture.sector, row);
             record(
               criterion,
               question.category,
@@ -64,6 +74,19 @@ export function describeCriterion(
             expect.soft(answer.problems, answer.body).toEqual([]);
           });
         }
+      });
+    }
+
+    if (opts.compareSectors) {
+      it('SC-010: mismo comportamiento en los tres sectores', () => {
+        const rates = [...bySector.entries()].map(([name, r]) => {
+          const rate = (r.ok / r.total) * 100;
+          record('SC-010', name, rate >= 90, `[${name}] ${r.ok}/${r.total}`);
+          return rate;
+        });
+        expect(rates).toHaveLength(sectors.length);
+        for (const rate of rates) expect(rate).toBeGreaterThanOrEqual(90);
+        expect(Math.max(...rates) - Math.min(...rates)).toBeLessThanOrEqual(10);
       });
     }
   });

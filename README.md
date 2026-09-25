@@ -12,10 +12,10 @@ Estados: especificada → planificada → en implementación → completada (o a
 quickstart) y construir la imagen Docker en un entorno con acceso al registro de npm.
 La 002 tiene implementadas las cinco historias, los tipos de mensaje no atendidos, los audios
 (desactivados por defecto), el límite por número, la ventana de 24 h y el borrado a los 30
-días, con `pnpm test` en verde. Para pasarla a "completada" falta: ejecutar `pnpm test:eval`
-con el modelo real y revisar los umbrales del quickstart (T099), recorrer los escenarios del
-quickstart con `pnpm bot:chat` (T100) y grabar los 21 audios de prueba de
-`tests/fixtures/audio/` para medir los audios (T083). Usa Claude Sonnet 5 por la API de
+días, con `pnpm test` en verde. La evaluación con el modelo real (`claude-sonnet-5`, esfuerzo
+`medium`) dio 174 de 175 casos correctos; el fallo (plazos en minutos) está corregido. Para
+pasarla a "completada" falta recorrer los escenarios del quickstart con `pnpm bot:chat` (T100)
+y grabar los 21 audios de prueba de `tests/fixtures/audio/` para medir los audios (T083). Usa Claude Sonnet 5 por la API de
 Anthropic. Antes de usarla con clientes reales hacen falta los contratos de encargado del
 tratamiento con Meta y Anthropic (y con el proveedor de transcripción si se activan los
 audios).
@@ -91,9 +91,9 @@ Las guías de validación, con los escenarios manuales, están en
 | `pnpm build` / `pnpm start` | Compila a `dist/` y arranca la versión compilada |
 | `pnpm test` | Unitarios, contrato e integración (levanta PostgreSQL con Testcontainers) |
 | `pnpm test:unit` · `test:contract` · `test:integration` | Cada suite por separado |
-| `pnpm test -- <patrón>` | Solo los ficheros que coinciden, p. ej. `pnpm test -- sector-neutrality` |
+| `pnpm test <patrón>` | Solo los ficheros que coinciden, p. ej. `pnpm test sector-neutrality` |
 | `pnpm test:eval` | Evaluación con el modelo real y los tres sectores de ejemplo (SC-001 a SC-010); tiene coste y no entra en `pnpm test`. Se omite sin `ANTHROPIC_API_KEY` |
-| `pnpm test:eval -- audio` | Además, los audios con Whisper real (necesita `STT_API_KEY` y las grabaciones de `tests/fixtures/audio/`) |
+| `pnpm test:eval audio` | Además, los audios con Whisper real (necesita `STT_API_KEY` y las grabaciones de `tests/fixtures/audio/`) |
 | `pnpm bot:chat` | Conversación con el bot en la terminal, con el modelo real y sin WhatsApp |
 | `pnpm lint` · `pnpm typecheck` · `pnpm format` | Calidad de código |
 | `pnpm db:generate` | Genera una migración tras cambiar `src/db/schema.ts` |

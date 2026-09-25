@@ -79,9 +79,9 @@ Tras los escenarios, revisa la salida de `pnpm dev`: los eventos `bot` del
 pnpm test:unit            # verificador de cifras, composición, detector, hechos derivados
 pnpm test:contract        # webhook: firma, alta, duplicados, grupos, negocio en preparación
 pnpm test:integration     # agrupado, límite, retrasos, reanudación, borrado a 30 días, registros
-pnpm test -- conversation # solo los ficheros de la conversación
+pnpm test conversation # solo los ficheros de la conversación
 pnpm test:eval            # modelo real (API de Anthropic) con los negocios de tests/fixtures; tiene coste
-pnpm test:eval -- audio   # solo al activar los audios; requiere STT_API_KEY
+pnpm test:eval audio   # solo al activar los audios; requiere STT_API_KEY
 ```
 
 `pnpm test:eval` imprime una tabla por criterio de éxito. Para dar la feature por terminada:

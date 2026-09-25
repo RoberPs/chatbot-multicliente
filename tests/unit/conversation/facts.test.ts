@@ -1,5 +1,10 @@
 import { describe, expect, it } from 'vitest';
-import { buildAllowedFacts, deriveFacts, localNow } from '../../../src/conversation/facts.js';
+import {
+  buildAllowedFacts,
+  deriveFacts,
+  durationText,
+  localNow,
+} from '../../../src/conversation/facts.js';
 import { buildSnapshot } from '../../../src/knowledge/snapshot.js';
 import { activeSnapshot, activeState } from '../../helpers/snapshot.js';
 import { service, slot } from '../../helpers/state.js';
@@ -218,5 +223,43 @@ describe('hechos derivados: precios (US2)', () => {
     const allowed = buildAllowedFacts(snapshot, derived);
     expect([...allowed.amountsCents].sort((a, b) => a - b)).toEqual([2500, 4000, 125_050]);
     for (const n of ['25', '40', '1250.5']) expect(allowed.numbers).toContain(n);
+  });
+});
+
+describe('hechos derivados: plazos legibles', () => {
+  it.each([
+    [30, '30 minutos'],
+    [60, '1 hora'],
+    [120, '2 horas'],
+    [90, '1 h 30 min'],
+    [1440, '1 día'],
+    [86_400, '60 días'],
+  ])('%i minutos → "%s"', (minutes, text) => {
+    expect(durationText(minutes)).toBe(text);
+  });
+
+  it('antelaciones y aviso de cancelación convertidos; null si no hay', () => {
+    const snapshot = buildSnapshot(
+      activeState({
+        policies: {
+          cancellationText: null,
+          cancellationNoticeMinutes: 1440,
+          minAdvanceMinutes: 120,
+          maxAdvanceMinutes: 86_400,
+          paymentMethods: [],
+          updatedAt: T,
+        },
+      }),
+    );
+    expect(deriveFacts(snapshot, new Date('2026-09-24T08:00:00Z')).policies).toEqual({
+      cancellationNotice: '1 día',
+      minAdvance: '2 horas',
+      maxAdvance: '60 días',
+    });
+    expect(deriveFacts(activeSnapshot(), new Date('2026-09-24T08:00:00Z')).policies).toEqual({
+      cancellationNotice: null,
+      minAdvance: null,
+      maxAdvance: null,
+    });
   });
 });

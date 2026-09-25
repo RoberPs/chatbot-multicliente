@@ -108,7 +108,7 @@ Ningún paso requiere tocar código ni reiniciar el servicio (SC-002).
 ### 7. Neutralidad sectorial (SC-005, FR-024)
 
 ```bash
-pnpm test -- sector-neutrality
+pnpm test sector-neutrality
 ```
 
 **Esperado**: los fixtures de clínica, peluquería y taller se cargan con el mismo modelo sin
@@ -134,7 +134,7 @@ como un navegador sin JavaScript y comprueba cada paso con `pnpm kb:snapshot` y 
 | 4. Recursos | Correcto: modos, `RESOURCE_HOURS_OUTSIDE_BUSINESS` (sáb 16:00–18:00), desactivar y reactivar |
 | 5. FAQ, políticas, tono y derivación | Correcto: antelación 31 días rechazada en `min_advance` |
 | 6. Activación y protección | Correcto: `409` al borrar el teléfono con el negocio activo; tras desactivar, `HANDOFF_UNREACHABLE` |
-| 7. Neutralidad sectorial | Correcto: `pnpm test -- sector-neutrality` en verde |
+| 7. Neutralidad sectorial | Correcto: `pnpm test sector-neutrality` en verde |
 | 8. Tiempo de alta (SC-001) | Pendiente: lo tiene que cronometrar una persona en el panel |
 
 Rendimiento medido con `tests/integration/performance.test.ts` (Docker Desktop en Windows):

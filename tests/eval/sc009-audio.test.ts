@@ -1,7 +1,7 @@
 /**
  * SC-009 (audios): con AUDIO_TRANSCRIPTION=on, las preguntas con dato hechas por audio se
  * contestan igual que por escrito. Whisper y modelo reales, con las grabaciones de
- * tests/fixtures/audio/. Solo con `pnpm test:eval -- audio` (vitest.config.ts); se omite sin
+ * tests/fixtures/audio/. Solo con `pnpm test:eval audio` (vitest.config.ts); se omite sin
  * ANTHROPIC_API_KEY, sin STT_API_KEY o si falta alguna grabación.
  */
 import { existsSync } from 'node:fs';

@@ -49,6 +49,19 @@ export function priceText(price: SnapshotPrice, currency: string): string {
   }
 }
 
+const plural = (n: number, one: string, many: string) => `${n} ${n === 1 ? one : many}`;
+
+/** Plazo en minutos como lo diría una persona: "60 días", "2 horas", "1 h 30 min". */
+export function durationText(minutes: number): string {
+  if (minutes >= 1440 && minutes % 1440 === 0) return plural(minutes / 1440, 'día', 'días');
+  if (minutes >= 60 && minutes % 60 === 0) return plural(minutes / 60, 'hora', 'horas');
+  if (minutes > 60) return `${Math.floor(minutes / 60)} h ${minutes % 60} min`;
+  return plural(minutes, 'minuto', 'minutos');
+}
+
+const optionalDuration = (minutes: number | null) =>
+  minutes === null ? null : durationText(minutes);
+
 /** Suma días a una fecha de calendario (sin zona horaria). */
 export function addDays(date: ISODate, days: number): ISODate {
   const d = new Date(`${date}T00:00:00Z`);
@@ -77,6 +90,11 @@ export function deriveFacts(snapshot: KnowledgeSnapshot, at: Date): DerivedFacts
       serviceId: s.id,
       text: priceText(s.price, snapshot.business.currency),
     })),
+    policies: {
+      cancellationNotice: optionalDuration(snapshot.policies.cancellationNoticeMinutes),
+      minAdvance: optionalDuration(snapshot.policies.minAdvanceMinutes),
+      maxAdvance: optionalDuration(snapshot.policies.maxAdvanceMinutes),
+    },
     handoffHoursText: formatWeeklyHours(snapshot.handoff.hours),
   };
 }

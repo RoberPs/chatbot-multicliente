@@ -17,6 +17,10 @@ const RULES = [
     'está en next14Days, da el horario semanal de DATOS_DEL_NEGOCIO.openingHours y menciona ' +
     'los cierres de DATOS_DEL_NEGOCIO.closures que cubran esa fecha. Escribe las horas en ' +
     'formato 24 h (9:00, 14:30).',
+  // Plazos de las políticas: ya convertidos por el código.
+  'Plazos de cancelación y antelación para pedir cita: usa HECHOS_CALCULADOS.policies, que ya ' +
+    'están en días u horas. No escribas los minutos de DATOS_DEL_NEGOCIO.policies ni los ' +
+    'conviertas tú.',
   // Regla 2 (US3): lo que no está registrado (FR-015).
   'Información no registrada: si lo que preguntan no está en DATOS_DEL_NEGOCIO ni en ' +
     'HECHOS_CALCULADOS (un servicio que no aparece, un dato que el negocio no ha anotado), di ' +

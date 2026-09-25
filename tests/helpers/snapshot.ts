@@ -46,6 +46,7 @@ export const emptyDerived = (): DerivedFacts => ({
   openNow: true,
   next14Days: [],
   prices: [],
+  policies: { cancellationNotice: null, minAdvance: null, maxAdvance: null },
   handoffHoursText: null,
 });
 

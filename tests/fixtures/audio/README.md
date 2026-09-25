@@ -21,7 +21,7 @@ o grabar con cualquier grabadora y convertir con
 ## Cómo se ejecuta
 
 ```bash
-pnpm test:eval -- audio     # necesita ANTHROPIC_API_KEY y STT_API_KEY en .env
+pnpm test:eval audio     # necesita ANTHROPIC_API_KEY y STT_API_KEY en .env
 ```
 
 La suite se omite si falta alguna de las dos claves o alguno de los ficheros, e indica cuáles.

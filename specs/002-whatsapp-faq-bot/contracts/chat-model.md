@@ -28,6 +28,7 @@ interface ReplyContext {
     openNow: boolean;                      // horario + cierres (FR-008)
     next14Days: Array<{ date: ISODate; weekday: Weekday; intervals: Interval[]; closureReason: string | null }>;
     prices: Array<{ serviceId: string; text: string }>; // "25,00 €", "desde 40,00 €", "a consultar", "sin importe registrado"
+    policies: { cancellationNotice: string | null; minAdvance: string | null; maxAdvance: string | null }; // "1 día", "2 horas", "60 días"
     handoffHoursText: string | null;
   };
   history: Array<{ direction: 'inbound' | 'outbound'; text: string }>; // conversación en curso, ≤ 30
