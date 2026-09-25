@@ -1,0 +1,6 @@
+<li class="msg msg-<%= it.m.direction === 'outbound' ? 'bot' : 'operator' %>">
+  <p class="bubble"><%= it.m.body %></p>
+  <% if (it.m.direction === 'outbound' && it.m.replyTrace) { %>
+    <%~ include('/partials/playground-trace', { trace: it.m.replyTrace, h: it.h }) %>
+  <% } %>
+</li>

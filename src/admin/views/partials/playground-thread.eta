@@ -1,0 +1,12 @@
+<% /* Mensajes de la conversación de prueba. Con `wrap`, envueltos en la lista completa;
+      sin él, solo las filas nuevas que sustituyen al indicador de sondeo. */ %>
+<% if (it.wrap) { %><ul id="playground-thread" class="thread"><% } %>
+<% it.messages.forEach(function (m) { %>
+  <%~ include('/partials/playground-message', { m: m, h: it.h }) %>
+<% }) %>
+<% if (it.poll) { %>
+  <li id="playground-poll" class="typing" aria-live="polite"
+      hx-get="/admin/playground/messages?after=<%= it.poll %>"
+      hx-trigger="every 1s" hx-target="this" hx-swap="outerHTML">escribiendo…</li>
+<% } %>
+<% if (it.wrap) { %></ul><% } %>

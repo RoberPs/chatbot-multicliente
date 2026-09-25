@@ -31,6 +31,7 @@
       ['/admin/policies', 'Políticas'],
       ['/admin/tone', 'Tono'],
       ['/admin/handoff', 'Derivación'],
+      ['/admin/playground', 'Probar el bot'],
     ].forEach(function (item) {
       const current = item[0] === '/admin' ? it.layout.path === '/admin' || it.layout.path === '/admin/' : it.layout.path.startsWith(item[0]); %>
       <a href="<%= item[0] %>"<% if (current) { %> aria-current="page"<% } %>><%= item[1] %></a>

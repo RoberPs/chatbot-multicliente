@@ -293,3 +293,71 @@ tr.inactive td {
   max-width: 22rem;
   margin: 10vh auto;
 }
+
+/* Probar el bot (004, US1): conversación de prueba e información técnica. */
+.notice {
+  border-left: 4px solid var(--warn);
+  background: var(--card);
+  padding: 0.5rem 0.75rem;
+  border-radius: 4px;
+  margin: 0 0 1rem;
+}
+.thread {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: grid;
+  gap: 0.75rem;
+}
+.msg {
+  display: grid;
+  gap: 0.35rem;
+  max-width: 34rem;
+}
+.msg-operator {
+  justify-items: end;
+  margin-left: auto;
+}
+.bubble {
+  margin: 0;
+  padding: 0.5rem 0.75rem;
+  border-radius: 10px;
+  border: 1px solid var(--line);
+  background: var(--bg);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.msg-operator .bubble {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #fff;
+}
+.typing {
+  color: var(--muted);
+  font-style: italic;
+}
+.trace {
+  font-size: 0.8rem;
+  color: var(--muted);
+  border-collapse: collapse;
+}
+.trace caption {
+  text-align: left;
+  font-size: 0.75rem;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  color: var(--muted);
+  padding-bottom: 0.2rem;
+}
+.trace th,
+.trace td {
+  border: 0;
+  padding: 0.1rem 0.6rem 0.1rem 0;
+  text-align: left;
+  font-weight: 400;
+  vertical-align: top;
+}
+.trace th {
+  color: var(--muted);
+  white-space: nowrap;
+}

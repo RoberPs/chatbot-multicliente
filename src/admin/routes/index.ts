@@ -5,6 +5,7 @@ import { faqRoutes } from './faqs.js';
 import { handoffRoutes } from './handoff.js';
 import { hoursRoutes } from './hours.js';
 import { partialRoutes } from './partials.js';
+import { playgroundRoutes } from './playground.js';
 import { policiesRoutes } from './policies.js';
 import { resourceRoutes } from './resources.js';
 import { serviceRoutes } from './services.js';
@@ -21,5 +22,6 @@ export async function adminRoutes(app: FastifyInstance): Promise<void> {
   await app.register(policiesRoutes);
   await app.register(toneRoutes);
   await app.register(handoffRoutes);
+  await app.register(playgroundRoutes);
   await app.register(partialRoutes);
 }

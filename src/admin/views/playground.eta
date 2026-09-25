@@ -1,0 +1,23 @@
+<% layout('/layout') %>
+<%~ include('/partials/general-error', { errors: it.errors, general: it.general, blocking: it.blocking, h: it.h }) %>
+<p class="hint">Conversación de prueba con el bot, con la información registrada y la misma cadena que atiende a los clientes. No cuenta para el uso del chat web.</p>
+
+<% if (!it.botPresent) { %>
+  <p class="notice" role="alert">Falta la clave del modelo de lenguaje (ANTHROPIC_API_KEY) en la configuración de la instancia.</p>
+<% } %>
+<% if (it.state.business.status !== 'active') { %>
+  <p class="notice" role="status">El negocio está en preparación: los clientes reales no reciben respuesta hasta que lo actives. Aquí puedes probarlo igualmente.</p>
+<% } %>
+
+<section class="card">
+  <div class="actions">
+    <h2>Conversación</h2>
+    <form method="post" action="/admin/playground/reset">
+      <%~ include('/partials/csrf', { token: it.layout.csrf }) %>
+      <button type="submit" class="secondary">Nueva conversación</button>
+    </form>
+  </div>
+  <%~ include('/partials/playground-thread', { messages: it.messages, poll: it.poll, wrap: true, h: it.h }) %>
+</section>
+
+<%~ include('/partials/playground-form', { csrf: it.layout.csrf, disabled: !it.botPresent, error: it.h.err(it.errors, 'text'), oob: false }) %>
