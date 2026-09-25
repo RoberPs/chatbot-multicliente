@@ -1,23 +1,26 @@
 <!--
 Sync Impact Report
-- Version change: (plantilla sin versión) → 1.0.0
-- Principios definidos (ratificación inicial):
-  - I. Base común única
-  - II. Configuración antes que código
-  - III. Personalizaciones aisladas
-  - IV. Solo información registrada
-  - V. Siempre hay salida a una persona
-  - VI. El operador registra la información
-- Secciones añadidas: Restricciones del producto, Flujo de desarrollo, Governance
+- Version change: 1.0.0 → 1.1.0 (MINOR: se amplía materialmente la guía sobre canales)
+- Principios modificados: ninguno
+- Secciones modificadas:
+  - Descripción inicial: ya no limita la atención a WhatsApp.
+  - Restricciones del producto: "Canal: WhatsApp es el canal de atención al cliente final" →
+    "Canales: …" (canales añadidos mediante spec de núcleo; todos con la misma cadena de respuesta
+    y las garantías de los Principios IV y V).
+- Secciones añadidas: ninguna
 - Secciones eliminadas: ninguna
+- Motivo: la spec 004-web-channel añade un chat web para clientes finales.
 - Plantillas dependientes: no modificadas (leen la constitución en tiempo de ejecución)
+- Documentos que mencionan "WhatsApp" como único canal y conviene revisar: CLAUDE.md (primera
+  línea) y README.md; las specs 001 y 002 no cambian (describen su propio alcance).
 - TODOs diferidos: ninguno
 -->
 
 # Chatbot Asesor Constitution
 
-Chatbot de atención al cliente por WhatsApp para pequeños negocios (clínicas, peluquerías,
-talleres, inmobiliarias). Se despliega una instancia por cliente a partir de una base común.
+Chatbot de atención al cliente para pequeños negocios (clínicas, peluquerías, talleres,
+inmobiliarias), por WhatsApp y por los demás canales que se añadan al núcleo. Se despliega una
+instancia por cliente a partir de una base común.
 
 ## Core Principles
 
@@ -98,7 +101,9 @@ depende el Principio IV.
 
 ## Restricciones del producto
 
-- Canal: WhatsApp es el canal de atención al cliente final.
+- Canales: el núcleo atiende al cliente final por los canales que se añadan mediante spec de
+  núcleo; el primero es WhatsApp. Todo canal MUST aplicar la misma cadena de respuesta y las
+  mismas garantías de los Principios IV y V.
 - Despliegue: una instancia por cliente, construida a partir del núcleo común más su
   configuración y, si las hay, sus extensiones.
 - Aislamiento: la configuración, las conversaciones y los datos de una instancia MUST NOT ser
@@ -128,4 +133,4 @@ depende el Principio IV.
 - Revisión de cumplimiento: toda spec, plan y revisión de código MUST verificar el
   cumplimiento de estos principios; la complejidad añadida MUST estar justificada.
 
-**Version**: 1.0.0 | **Ratified**: 2026-09-24 | **Last Amended**: 2026-09-24
+**Version**: 1.1.0 | **Ratified**: 2026-09-24 | **Last Amended**: 2026-09-25
