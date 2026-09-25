@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { buildAllowedFacts, deriveFacts, localNow } from '../../../src/conversation/facts.js';
 import { buildSnapshot } from '../../../src/knowledge/snapshot.js';
 import { activeSnapshot, activeState } from '../../helpers/snapshot.js';
-import { slot } from '../../helpers/state.js';
+import { service, slot } from '../../helpers/state.js';
 
 const T = '2026-09-24T10:00:00.000000Z';
 const closure = (
@@ -173,7 +173,50 @@ describe('AllowedFacts', () => {
     expect(allowed.phones).toContain('34611222333');
   });
 
-  it('sin importes hasta que se añadan los precios', () => {
-    expect(allowed.amountsCents.size).toBe(0);
+  it('importes de los servicios en céntimos y su valor en unidades', () => {
+    // Básico 25 € fijo y Completo desde 40 €; Especial es "a consultar".
+    expect([...allowed.amountsCents].sort()).toEqual([2500, 4000]);
+    for (const n of ['25', '40']) expect(allowed.numbers).toContain(n);
+  });
+});
+
+describe('hechos derivados: precios (US2)', () => {
+  const ids = {
+    fixed: '00000000-0000-4000-8000-00000000a001',
+    from: '00000000-0000-4000-8000-00000000a002',
+    onRequest: '00000000-0000-4000-8000-00000000a003',
+    missing: '00000000-0000-4000-8000-00000000a004',
+    decimals: '00000000-0000-4000-8000-00000000a005',
+  };
+  const base = activeState();
+  const snapshot = buildSnapshot({
+    ...base,
+    services: [
+      ...base.services,
+      service({ id: ids.missing, name: 'Sin precio', priceType: 'fixed', priceCents: null }),
+      service({ id: ids.decimals, name: 'Grande', priceType: 'fixed', priceCents: 125_050 }),
+    ],
+  });
+  const derived = deriveFacts(snapshot, new Date('2026-09-24T08:00:00Z'));
+
+  it('un texto por servicio según su tipo, en la moneda del negocio', () => {
+    expect(derived.prices).toEqual([
+      { serviceId: ids.fixed, text: '25,00 €' },
+      { serviceId: ids.from, text: 'desde 40,00 €' },
+      { serviceId: ids.onRequest, text: 'a consultar' },
+      { serviceId: ids.missing, text: 'sin importe registrado' },
+      { serviceId: ids.decimals, text: '1250,50 €' },
+    ]);
+  });
+
+  it('otra moneda', () => {
+    const usd = buildSnapshot({ ...base, business: { ...base.business, currency: 'USD' } });
+    expect(deriveFacts(usd, new Date('2026-09-24T08:00:00Z')).prices[0]?.text).toBe('25,00 US$');
+  });
+
+  it('AllowedFacts incluye los importes registrados y nada de los que no tienen', () => {
+    const allowed = buildAllowedFacts(snapshot, derived);
+    expect([...allowed.amountsCents].sort((a, b) => a - b)).toEqual([2500, 4000, 125_050]);
+    for (const n of ['25', '40', '1250.5']) expect(allowed.numbers).toContain(n);
   });
 });

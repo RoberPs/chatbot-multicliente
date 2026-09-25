@@ -24,7 +24,9 @@ const app = await buildApp({
 const shutdown = async () => {
   // Primero deja de recibir; después espera a las respuestas en curso; por último, la BD.
   await app.close();
+  await started.bot?.transcriber?.stop();
   await started.bot?.processor.stop();
+  await started.bot?.retention.stop();
   await closeDb(db);
   process.exit(0);
 };
@@ -33,3 +35,4 @@ process.on('SIGTERM', () => void shutdown());
 
 await app.listen({ port: env.PORT, host: '0.0.0.0' });
 started.bot?.processor.start();
+started.bot?.retention.start();

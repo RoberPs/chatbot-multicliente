@@ -1,5 +1,8 @@
 import { defineConfig } from 'vitest/config';
 
+// La suite de audios (SC-009) usa Whisper real: solo con `pnpm test:eval -- audio`.
+const audioEval = process.argv.slice(2).includes('audio');
+
 export default defineConfig({
   test: {
     projects: [
@@ -37,6 +40,7 @@ export default defineConfig({
         test: {
           name: 'eval',
           include: ['tests/eval/**/*.test.ts'],
+          exclude: audioEval ? [] : ['tests/eval/sc009-audio.test.ts'],
           environment: 'node',
           globalSetup: ['tests/helpers/global-setup.ts'],
           fileParallelism: false,

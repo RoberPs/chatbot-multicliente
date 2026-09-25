@@ -3,14 +3,18 @@
  * la cadena real (recepción → procesador → modelo de Anthropic) con un canal falso y comprueba
  * la respuesta. Requiere ANTHROPIC_API_KEY; sin ella la suite se omite.
  */
+import { readFile, stat } from 'node:fs/promises';
 import { loadDotEnvIfPresent } from '../../src/config/env.js';
 import { createIntake } from '../../src/conversation/intake.js';
-import type { Clock } from '../../src/conversation/ports.js';
+import { MediaTooLargeError, type Clock, type MediaFetcher } from '../../src/conversation/ports.js';
 import { createProcessor } from '../../src/conversation/processor.js';
 import { conversationSettings } from '../../src/conversation/settings.js';
+import { createTranscriber } from '../../src/conversation/transcription.js';
+import type { InboundEvent } from '../../src/conversation/types.js';
 import { activateBusiness } from '../../src/knowledge/services/business-status.js';
 import { createKnowledgeReader } from '../../src/knowledge/snapshot.js';
 import { createAnthropicChatModel, type Effort } from '../../src/llm/anthropic-chat-model.js';
+import { createWhisperSpeechToText } from '../../src/speech/whisper.js';
 import { loadFixture } from '../fixtures/load.js';
 import type { BusinessFixture } from '../fixtures/types.js';
 import { createTestDatabase, resetDb, type TestDatabase } from '../helpers/db.js';
@@ -20,6 +24,10 @@ import { recordLatency } from './report.js';
 loadDotEnvIfPresent();
 
 export const hasApiKey = Boolean(process.env.ANTHROPIC_API_KEY?.trim());
+export const hasSttKey = Boolean(process.env.STT_API_KEY?.trim());
+
+/** Audios de prueba de SC-009 (tests/fixtures/audio/README.md). */
+export const AUDIO_DIR = new URL('../fixtures/audio/', import.meta.url);
 
 export type Pattern = string | RegExp;
 
@@ -32,14 +40,34 @@ export interface Expectation {
   excludes?: Pattern[];
   /** Debe (true) o no debe (false) llevar el bloque de contacto. */
   contact?: boolean;
+  /** Ningún importe fuera del bloque de contacto (SC-002). */
+  noAmounts?: boolean;
+  /** Debe (true) o no debe (false) empezar por el saludo de presentación (SC-005). */
+  greeting?: boolean;
+  /** Longitud máxima de lo que va antes del contacto (respuestas breves a cortesías). */
+  maxLength?: number;
 }
+
+/** Criterio de éxito que mide cada pregunta (spec, "Success Criteria"). */
+export type Criterion = 'SC-001' | 'SC-002' | 'SC-005' | 'SC-006' | 'SC-007' | 'SC-008' | 'SC-009';
 
 export interface EvalQuestion {
   id: string;
   category: string;
+  /** Por defecto SC-001 (pregunta con dato registrado). */
+  criterion?: Criterion;
   text: string;
   /** Instante en que se pregunta; por defecto el del sector. */
   at?: string;
+  /** Mensajes anteriores de la misma conversación, contestados antes que `text`. */
+  previous?: string[];
+  /** La misma pregunta con faltas o lenguaje coloquial (SC-004): misma expectativa. */
+  variants?: string[];
+  /**
+   * El mensaje es un archivo en lugar de un texto: `text` es su pie (vacío si no tiene) o,
+   * en un audio, lo que dice la grabación `file` de tests/fixtures/audio/.
+   */
+  media?: { type: 'image' | 'sticker' | 'video' | 'document' | 'audio'; file?: string };
   expect: Expectation;
 }
 
@@ -54,6 +82,28 @@ export interface SectorQuestions {
 export const CLOSED =
   /cerrad|cerramos|no abr|no (?:estamos|esta|está) abiert|no (?:hay|tenemos) horario/;
 export const OPEN = /abiert|\bs[ií]\b/;
+/** Reconoce que no tiene el dato (sobre texto normalizado, sin tildes). */
+export const NO_INFO =
+  /no (?:dispong|dispone|tengo|tenemos|cuento|consta|figura|aparece|ofrec|hac|realiz|trabaj|reparam|atend|se )|sin informacion|no hay informacion|no puedo (?:darte|darle|confirmar|indicar|decir)/;
+/** Comienzo del saludo, normalizado. */
+const GREETING_START = '¡hola! soy el asistente automatico de';
+/** Formas de tú, que no deben aparecer cuando se trata de usted. */
+export const TU_FORMS =
+  /\b(?:puedes|quieres|tienes|necesitas|prefieres|llamanos|escribenos|te (?:ayudo|recomiendo|puedo)|contigo|tu consulta)\b/;
+/** Formas de usted, que no deben aparecer cuando se trata de tú. */
+export const USTED_FORMS = /\busted\b|\b(?:le (?:ayudo|recomiendo|puedo)|su consulta)\b/;
+/** Dice que no gestiona citas por este medio. */
+export const NO_BOOKING =
+  /no (?:puedo|podemos|es posible|gestiono|me es posible)|no (?:tengo|dispongo de) acceso/;
+
+/** Reconduce hacia lo que puede atender (preguntas ajenas, SC-006). */
+export const REDIRECT =
+  /solo (?:puedo|te puedo|le puedo)|unicamente puedo|no puedo (?:ayudar|responder|contestar|hablar)|(?:puedo|podemos) (?:ayudarte|ayudarle|informarte|informarle) (?:con|sobre)|no es algo (?:en lo|con lo) que/;
+/** Afirma que algo es gratis (sin contar "no es gratis"). */
+export const SAYS_FREE = /(?<!no )(?:es|sera|seria) gratis|gratuit/;
+
+/** Cualquier importe con moneda (sobre texto normalizado): "25 €", "25,00 eur", "40 euros". */
+export const AMOUNT = /\d+(?:[.,]\d+)?\s?(?:€|eur\b|euros?\b)|€\s?\d/;
 
 /** Minúsculas, sin tildes y con las horas sin cero inicial ("09:00" → "9:00"). */
 export function normalize(text: string): string {
@@ -81,7 +131,16 @@ export function check(body: string, expectation: Expectation, contactLine: strin
   for (const p of expectation.excludes ?? []) {
     if (matches(text, p)) problems.push(`sobra ${String(p)}`);
   }
-  const hasContact = text.includes(normalize(contactLine));
+  const contactAt = text.indexOf(normalize(contactLine));
+  const hasContact = contactAt >= 0;
+  const beforeContact = hasContact ? text.slice(0, contactAt) : text;
+  if (expectation.noAmounts && AMOUNT.test(beforeContact)) problems.push('sobra un importe');
+  const greeted = text.startsWith(GREETING_START);
+  if (expectation.greeting === true && !greeted) problems.push('falta el saludo');
+  if (expectation.greeting === false && text.includes(GREETING_START))
+    problems.push('sobra el saludo');
+  if (expectation.maxLength !== undefined && beforeContact.trim().length > expectation.maxLength)
+    problems.push(`más de ${expectation.maxLength} caracteres`);
   if (expectation.contact === true && !hasContact) problems.push('falta el contacto');
   if (expectation.contact === false && hasContact) problems.push('sobra el contacto');
   return problems;
@@ -114,7 +173,44 @@ export interface SectorRunner {
 
 let phoneCounter = 0;
 
-export async function createSectorRunner(sector: SectorQuestions): Promise<SectorRunner> {
+/** Lee los audios de prueba del disco en lugar de la Graph API. */
+const fixtureAudio: MediaFetcher = {
+  async fetchAudio(file, maxBytes) {
+    const url = new URL(file, AUDIO_DIR);
+    if ((await stat(url)).size > maxBytes) throw new MediaTooLargeError();
+    return { data: await readFile(url), mimeType: 'audio/ogg' };
+  },
+};
+
+/** Evento de entrada para el último mensaje de una pregunta. */
+function lastEvent(
+  question: EvalQuestion,
+  audio: boolean,
+): Omit<InboundEvent, 'waMessageId' | 'from' | 'sentAt'> {
+  const base = { caption: null, mediaId: null, otherType: null, isGroup: false };
+  const media = question.media;
+  if (!media) return { ...base, kind: 'text', text: question.text };
+  if (media.type === 'audio' && audio && media.file) {
+    return { ...base, kind: 'audio', text: null, mediaId: media.file };
+  }
+  return {
+    ...base,
+    kind: 'other',
+    text: null,
+    otherType: media.type,
+    caption: question.text.trim() || null,
+  };
+}
+
+export interface RunnerOptions {
+  /** Activa los audios con Whisper real (requiere STT_API_KEY). */
+  audio?: boolean;
+}
+
+export async function createSectorRunner(
+  sector: SectorQuestions,
+  opts: RunnerOptions = {},
+): Promise<SectorRunner> {
   const t: TestDatabase = await createTestDatabase();
   await resetDb(t.db);
   await loadFixture(t.deps, sector.fixture);
@@ -126,6 +222,13 @@ export async function createSectorRunner(sector: SectorQuestions): Promise<Secto
     effort: (process.env.LLM_EFFORT?.trim() || 'medium') as Effort,
   });
   const contactLine = `Para hablar con una persona de ${String(sector.fixture.business.name)}`;
+  const audio = opts.audio ?? false;
+  const stt = audio
+    ? createWhisperSpeechToText({
+        apiKey: process.env.STT_API_KEY ?? '',
+        model: process.env.STT_MODEL?.trim() || 'whisper-1',
+      })
+    : null;
 
   return {
     async ask(question) {
@@ -140,28 +243,54 @@ export async function createSectorRunner(sector: SectorQuestions): Promise<Secto
         clock,
         activityLog: log,
         emergencyContactPhone: '+34600999888',
+        audioTranscription: audio,
       });
-      const intake = createIntake({ db: t.db, reader, clock, activityLog: log });
+      const transcriber = stt
+        ? createTranscriber({
+            db: t.db,
+            media: fixtureAudio,
+            stt,
+            activityLog: log,
+            wake: () => undefined,
+          })
+        : null;
+      const intake = createIntake({
+        db: t.db,
+        reader,
+        clock,
+        activityLog: log,
+        ...(transcriber ? { transcriber } : {}),
+      });
       // Un cliente nuevo por pregunta: cada una es una conversación independiente.
       phoneCounter += 1;
       const from = `+3469${String(phoneCounter).padStart(7, '0')}`;
-      await intake.handle([
-        {
-          waMessageId: `eval-${question.id}-${phoneCounter}`,
-          from,
-          sentAt: clock.now(),
-          kind: 'text',
-          text: question.text,
-          caption: null,
-          mediaId: null,
-          otherType: null,
-          isGroup: false,
-        },
-      ]);
-      clock.advance(conversationSettings.batchQuietMs);
-      await processor.runOnce();
-      const body = sender.sent.at(-1)?.body ?? '';
-      const latencyMs = log.named('reply_sent')[0]?.latencyMs ?? null;
+      // Los mensajes previos se contestan uno a uno en la misma conversación.
+      const texts = [...(question.previous ?? []), question.text];
+      for (const [i, text] of texts.entries()) {
+        const last = i === texts.length - 1;
+        await intake.handle([
+          {
+            waMessageId: `eval-${question.id}-${phoneCounter}-${i}`,
+            from,
+            sentAt: clock.now(),
+            ...(last
+              ? lastEvent(question, audio)
+              : {
+                  kind: 'text' as const,
+                  text,
+                  caption: null,
+                  mediaId: null,
+                  otherType: null,
+                  isGroup: false,
+                }),
+          },
+        ]);
+        await transcriber?.idle();
+        clock.advance(conversationSettings.batchQuietMs);
+        await processor.runOnce();
+      }
+      const body = sender.sent.length === texts.length ? (sender.sent.at(-1)?.body ?? '') : '';
+      const latencyMs = log.named('reply_sent').at(-1)?.latencyMs ?? null;
       if (latencyMs !== null) recordLatency(latencyMs);
       return {
         body,

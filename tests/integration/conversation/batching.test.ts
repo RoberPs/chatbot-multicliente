@@ -69,10 +69,15 @@ describe('US1: agrupado de mensajes', () => {
   it('no hay más de 4 conversaciones procesándose a la vez', async () => {
     let active = 0;
     let maxActive = 0;
+    // Cada llamada espera a que haya 4 en curso (o 2 s) y sigue 100 ms más: así coinciden
+    // aunque la máquina vaya lenta, y una quinta que se colara también se vería.
     const slowModel: ChatModel = {
       async reply() {
         active += 1;
         maxActive = Math.max(maxActive, active);
+        for (let waited = 0; active < 4 && waited < 2000; waited += 10) {
+          await new Promise((r) => setTimeout(r, 10));
+        }
         await new Promise((r) => setTimeout(r, 100));
         active -= 1;
         return reply('Respuesta.');

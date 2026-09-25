@@ -3,7 +3,7 @@ import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from
 import { saveBusinessHours } from '../../../src/knowledge/services/business-info.js';
 import { createTestDatabase, type TestDatabase } from '../../helpers/db.js';
 import { reply } from '../../helpers/fakes.js';
-import { createTestBot, type TestBot } from '../../helpers/bot.js';
+import { createTestBot, greeted, type TestBot } from '../../helpers/bot.js';
 import { CUSTOMER_E164 } from '../../helpers/whatsapp.js';
 
 const CONTACT = 'Para hablar con una persona de Peluquería Tijeras: WhatsApp';
@@ -31,7 +31,7 @@ describe('US1: respuesta a un texto', () => {
     await bot.settle();
 
     expect(bot.sender.sent).toEqual([
-      { to: CUSTOMER_E164, body: 'Abrimos de martes a viernes de 10:00 a 20:00.' },
+      { to: CUSTOMER_E164, body: greeted('Abrimos de martes a viernes de 10:00 a 20:00.') },
     ]);
     const [call] = bot.model.calls;
     expect(call?.context.snapshot.business.name).toBe('Peluquería Tijeras');
@@ -82,7 +82,7 @@ describe('US1: respuesta a un texto', () => {
     await bot.settle();
     expect(bot.model.calls[1]?.context.history).toEqual([
       { direction: 'inbound', text: '¿abrís el sábado?' },
-      { direction: 'outbound', text: 'Abrimos el sábado de 9:00 a 14:00.' },
+      { direction: 'outbound', text: greeted('Abrimos el sábado de 9:00 a 14:00.') },
     ]);
     expect(bot.model.calls[1]?.context.pending).toEqual([{ kind: 'text', text: '¿y el domingo?' }]);
   });
@@ -94,7 +94,7 @@ describe('US1: respuesta a un texto', () => {
     expect(bot.model.calls).toHaveLength(2);
     expect(bot.model.calls[1]?.feedback).toMatch(/hora/);
     expect(bot.model.calls[1]?.feedback).not.toContain('8:30');
-    expect(bot.sender.sent[0]?.body).toBe('Abrimos a las 10:00.');
+    expect(bot.sender.sent[0]?.body).toBe(greeted('Abrimos a las 10:00.'));
     expect(bot.log.named('grounding_rejected')).toEqual([
       expect.objectContaining({ event: 'grounding_rejected', attempt: 1, offendingCount: 1 }),
     ]);
@@ -105,7 +105,7 @@ describe('US1: respuesta a un texto', () => {
     await bot.send('¿a qué hora abrís?');
     await bot.settle();
     const body = bot.sender.sent[0]?.body ?? '';
-    expect(body.startsWith('No dispongo de esa información.')).toBe(true);
+    expect(body.startsWith(greeted('No dispongo de esa información.'))).toBe(true);
     expect(body).toContain(CONTACT);
     expect(body).not.toMatch(/8:30|7:45/);
     expect(bot.log.named('reply_sent')[0]).toMatchObject({

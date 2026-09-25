@@ -9,15 +9,30 @@ import type { KnowledgeSnapshot } from '../knowledge/types.js';
 import type { ActivityLog, ReplyTemplate } from './activity-log.js';
 import { buildAllowedFacts, deriveFacts } from './facts.js';
 import { groundingGuard, offendingCategories, type FactCategory } from './grounding.js';
+import { detectsHandoffRequest } from './handoff-detector.js';
 import { ChatModelError, type ChatModel, type Clock } from './ports.js';
 import { conversationSettings, type ConversationSettings } from './settings.js';
-import { contactBlock, errorReply, formOf, joinParts, safeReply } from './templates.js';
+import {
+  audioReply,
+  contactBlock,
+  emergencyContact,
+  errorReply,
+  fileNotice,
+  formOf,
+  greeting,
+  joinParts,
+  mediaReply,
+  rateLimitReply,
+  safeReply,
+} from './templates.js';
 import type { HistoryTurn, ModelReply, PendingItem, ReplyContext } from './types.js';
 
 export interface ResponderDeps {
   chatModel: ChatModel;
   clock: Clock;
   activityLog: ActivityLog;
+  /** AUDIO_TRANSCRIPTION: cambia R-MEDIA y el aviso de archivo (FR-028a). */
+  audioTranscription?: boolean;
   settings?: ConversationSettings;
 }
 
@@ -25,6 +40,8 @@ export interface RespondInput {
   snapshot: KnowledgeSnapshot;
   history: HistoryTurn[];
   pending: PendingItem[];
+  /** La conversación ya recibió el saludo (FR-020, FR-021). */
+  greeted: boolean;
   now: Date;
   /** Para los registros. */
   phone: string;
@@ -50,6 +67,31 @@ const CATEGORY_NAMES: Record<FactCategory, string> = {
   number: 'número',
 };
 
+/** El servicio tiene precio "a consultar" o sin importe: el cliente necesita el contacto. */
+function priceNeedsContact(snapshot: KnowledgeSnapshot, serviceId: string): boolean {
+  const price = snapshot.services.find((s) => s.id === serviceId)?.price;
+  return price?.type === 'on_request' || price?.type === 'missing';
+}
+
+/**
+ * Reglas de CONTACTO sobre la respuesta del modelo (contracts/bot-replies.md). La petición de
+ * persona (bandera del modelo o detector) siempre lo añade; si el modelo pide reformular, nada
+ * más lo añade.
+ */
+export function needsContact(
+  snapshot: KnowledgeSnapshot,
+  reply: ModelReply,
+  handoffDetected: boolean,
+): boolean {
+  if (reply.handoffRequested || handoffDetected) return true;
+  if (reply.needsRephrase) return false;
+  return (
+    reply.offerContact ||
+    reply.bookingRequested ||
+    reply.mentionedServiceIds.some((id) => priceNeedsContact(snapshot, id))
+  );
+}
+
 /** Explica al modelo qué tipo de dato sobraba, sin repetir los valores rechazados. */
 export function groundingFeedback(categories: FactCategory[]): string {
   const kinds = categories.map((c) => CATEGORY_NAMES[c]).join(', ');
@@ -60,9 +102,35 @@ export function groundingFeedback(categories: FactCategory[]): string {
   );
 }
 
+/**
+ * R-ERR cuando no se ha podido leer el snapshot (FR-029): sin nombre del negocio ni forma de
+ * trato, porque no se conocen; con el contacto de emergencia de la instancia si lo hay.
+ */
+export function unreadableSnapshotReply(emergencyPhone: string | null): Response {
+  const contact = emergencyPhone ? emergencyContact(emergencyPhone) : null;
+  const { text, truncated } = joinParts({ body: errorReply('tu'), contact });
+  return { text, truncated, contactBlock: contact !== null, greeting: false, template: 'R-ERR' };
+}
+
+/** R-LIMIT con el contacto del negocio, o con el de emergencia si no se pudo leer (FR-004a). */
+export function rateLimitResponse(
+  snapshot: KnowledgeSnapshot | null,
+  emergencyPhone: string | null,
+): Response {
+  const contact = snapshot
+    ? contactBlock(snapshot)
+    : emergencyPhone
+      ? emergencyContact(emergencyPhone)
+      : null;
+  const body = rateLimitReply(formOf(snapshot?.tone.addressForm ?? null));
+  const { text, truncated } = joinParts({ body, contact });
+  return { text, truncated, contactBlock: contact !== null, greeting: false, template: 'R-LIMIT' };
+}
+
 export function createResponder(deps: ResponderDeps) {
   const { chatModel, clock, activityLog } = deps;
   const settings = deps.settings ?? conversationSettings;
+  const audioTranscription = deps.audioTranscription ?? false;
 
   return {
     async respond(input: RespondInput): Promise<Response> {
@@ -75,16 +143,39 @@ export function createResponder(deps: ResponderDeps) {
         derived,
         history: input.history.slice(-settings.historyLimit),
         pending: input.pending,
-        greetingPrepended: false,
+        greetingPrepended: !input.greeted,
         addressForm: snapshot.tone.addressForm,
       };
       const logContext = { phone: input.phone, conversationId: input.conversationId };
 
-      const compose = (body: string, withContact: boolean, template?: ReplyTemplate) => {
+      const { pending } = input;
+      const notice = pending.some((p) => p.kind === 'other')
+        ? fileNotice(audioTranscription)
+        : null;
+      const compose = (
+        body: string,
+        withContact: boolean,
+        template?: ReplyTemplate,
+        withNotice = true,
+      ) => {
         const contact = withContact ? contactBlock(snapshot) : null;
-        const { text, truncated } = joinParts({ body, contact });
-        return { text, truncated, contactBlock: withContact, greeting: false, template };
+        const hello = input.greeted ? null : greeting(snapshot.business.name, form);
+        const { text, truncated } = joinParts({
+          greeting: hello,
+          body,
+          fileNotice: withNotice ? notice : null,
+          contact,
+        });
+        return { text, truncated, contactBlock: withContact, greeting: hello !== null, template };
       };
+
+      // Árbol de decisión (contracts/bot-replies.md): lotes que no necesitan al modelo.
+      if (pending.every((p) => p.kind === 'other' && !p.text)) {
+        return compose(mediaReply(form, audioTranscription), false, 'R-MEDIA', false);
+      }
+      if (audioTranscription && pending.every((p) => p.kind === 'audio' && !p.audioUnderstood)) {
+        return compose(audioReply(form), false, 'R-AUDIO');
+      }
 
       // Un único plazo para toda la respuesta, compartido por los dos intentos (R7).
       const controller = new AbortController();
@@ -110,8 +201,13 @@ export function createResponder(deps: ResponderDeps) {
           }
           feedback = groundingFeedback(offendingCategories(reply.body, allowed));
         }
-        const withContact = reply.handoffRequested || reply.offerContact || reply.bookingRequested;
-        return { ...compose(reply.body, withContact), modelMs: elapsed() };
+        const handoffDetected = input.pending.some(
+          (p) => p.text !== null && detectsHandoffRequest(p.text),
+        );
+        return {
+          ...compose(reply.body, needsContact(snapshot, reply, handoffDetected)),
+          modelMs: elapsed(),
+        };
       } catch (error) {
         // FR-029: el modelo falla o se agota el plazo → disculpa con contacto.
         const failure = error instanceof ChatModelError ? error : new ChatModelError('api_error');

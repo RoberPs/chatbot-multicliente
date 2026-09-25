@@ -1,9 +1,10 @@
 /**
  * Conversación con el bot en la terminal, sin WhatsApp (research R14):
- *   pnpm bot:chat [--as <número>] [--verbose]
+ *   pnpm bot:chat [--as <número>] [--flood <n>] [--verbose]
  *
  * Usa la misma cadena que el webhook (recepción → espera → respuesta) con el modelo real y
- * un canal de consola que imprime las respuestas.
+ * un canal de consola que imprime las respuestas. `--flood <n>` envía antes `n` mensajes
+ * seguidos, para probar el límite por número (FR-004a).
  */
 import { randomUUID } from 'node:crypto';
 import { createInterface } from 'node:readline/promises';
@@ -28,6 +29,7 @@ const env = loadEnv();
 const { values } = parseArgs({
   options: {
     as: { type: 'string', default: '+34600000000' },
+    flood: { type: 'string' },
     verbose: { type: 'boolean', default: false },
   },
 });
@@ -42,6 +44,11 @@ if (!env.ANTHROPIC_API_KEY) {
   process.exit(1);
 }
 const from = phone.number;
+const flood = values.flood === undefined ? 0 : Number(values.flood);
+if (!Number.isInteger(flood) || flood < 0) {
+  console.error(`--flood necesita un número entero: ${values.flood}`);
+  process.exit(1);
+}
 
 /** Eventos técnicos por la salida de error, solo con --verbose. */
 const stderrLogger: LoggerLike = {
@@ -93,7 +100,25 @@ const intake = createIntake({
   wake: (id) => {
     processor.wake(id);
   },
+  notifyRateLimit: (id) => {
+    void processor.sendRateLimitNotice(id);
+  },
 });
+
+const send = (text: string) =>
+  intake.handle([
+    {
+      waMessageId: `cli-${randomUUID()}`,
+      from,
+      sentAt: new Date(),
+      kind: 'text',
+      text,
+      caption: null,
+      mediaId: null,
+      otherType: null,
+      isGroup: false,
+    },
+  ]);
 
 const snapshot = await reader.getSnapshot();
 console.log(
@@ -105,24 +130,16 @@ if (snapshot.status !== 'active') {
 }
 
 processor.start();
+if (flood > 0) {
+  console.log(`Enviando ${flood} mensajes seguidos…`);
+  for (let i = 1; i <= flood; i++) await send(`Mensaje de prueba ${i}`);
+}
 const rl = createInterface({ input: process.stdin, output: process.stdout });
 try {
   for await (const line of rl) {
     const text = line.trim();
     if (text === '') continue;
-    await intake.handle([
-      {
-        waMessageId: `cli-${randomUUID()}`,
-        from,
-        sentAt: new Date(),
-        kind: 'text',
-        text,
-        caption: null,
-        mediaId: null,
-        otherType: null,
-        isGroup: false,
-      },
-    ]);
+    await send(text);
   }
 } finally {
   // Espera a las respuestas que queden antes de salir.

@@ -4,6 +4,9 @@ import type { ActivityLog, BotEvent, EventContext } from '../../src/conversation
 import {
   ChannelSendError,
   ChatModelError,
+  MediaTooLargeError,
+  SpeechToTextError,
+  type Transcript,
   type ChannelSender,
   type ChatModel,
   type Clock,
@@ -112,7 +115,30 @@ export class FakeChannelSender implements ChannelSender {
     return this;
   }
 
-  async sendText(to: string, body: string, _opts?: SendOptions) {
+  /**
+   * Como el cliente real: falla `n` veces seguidas reintentando; antes de cada reintento llama
+   * a `beforeRetry` (p. ej. para avanzar el reloj) y consulta `canRetry`.
+   */
+  failRetrying(n: number, beforeRetry: () => void, status = 503): this {
+    this.retrying = { remaining: n, beforeRetry, status };
+    return this;
+  }
+  private retrying: { remaining: number; beforeRetry: () => void; status: number } | null = null;
+  readonly canRetryAnswers: boolean[] = [];
+
+  async sendText(to: string, body: string, opts?: SendOptions) {
+    const retrying = this.retrying;
+    if (retrying) {
+      this.retrying = null;
+      let attempts = 1;
+      while (retrying.remaining >= attempts) {
+        retrying.beforeRetry();
+        const allowed = opts?.canRetry?.() ?? true;
+        this.canRetryAnswers.push(allowed);
+        if (!allowed) throw new ChannelSendError(attempts, retrying.status);
+        attempts += 1;
+      }
+    }
     const failure = this.failures.shift();
     if (failure) throw new ChannelSendError(1, failure.status);
     this.sent.push({ to, body });
@@ -121,20 +147,39 @@ export class FakeChannelSender implements ChannelSender {
   }
 }
 
+/** Resultado programado de la transcripción falsa. */
+export type SttStep =
+  (Partial<Transcript> & { text: string; realDelayMs?: number }) | Error | { hang: true };
+
 export class FakeSpeechToText implements SpeechToText {
   readonly calls: number[] = [];
-  private readonly results: Array<{ text: string; language: string } | Error> = [];
+  private readonly results: SttStep[] = [];
 
-  queue(...results: Array<{ text: string; language: string } | Error>): this {
+  queue(...results: SttStep[]): this {
     this.results.push(...results);
     return this;
   }
 
-  async transcribe(audio: { data: Buffer; mimeType: string }) {
+  async transcribe(
+    audio: { data: Buffer; mimeType: string },
+    opts: { signal: AbortSignal },
+  ): Promise<Transcript> {
     this.calls.push(audio.data.length);
-    const next = this.results.shift() ?? { text: '', language: 'es' };
+    const next = this.results.shift() ?? { text: '' };
     if (next instanceof Error) throw next;
-    return next;
+    const delay = 'hang' in next ? Number.POSITIVE_INFINITY : (next.realDelayMs ?? 0);
+    if (delay > 0) {
+      // Espera real que respeta el AbortSignal (plazo de la transcripción).
+      await new Promise<void>((resolve, reject) => {
+        const timer = Number.isFinite(delay) ? setTimeout(resolve, delay) : undefined;
+        opts.signal.addEventListener('abort', () => {
+          clearTimeout(timer);
+          reject(new SpeechToTextError('timeout'));
+        });
+      });
+    }
+    if ('hang' in next) throw new SpeechToTextError('timeout');
+    return { language: 'es', durationSeconds: 5, ...next };
   }
 }
 
@@ -144,7 +189,7 @@ export class FakeMediaFetcher implements MediaFetcher {
 
   async fetchAudio(mediaId: string, maxBytes: number) {
     this.calls.push(mediaId);
-    if (this.size > maxBytes) throw new Error('Audio demasiado grande');
+    if (this.size > maxBytes) throw new MediaTooLargeError();
     return { data: Buffer.alloc(this.size), mimeType: 'audio/ogg' };
   }
 }

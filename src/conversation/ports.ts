@@ -21,12 +21,30 @@ export interface ChatModel {
   reply(input: ReplyContext, opts: { signal: AbortSignal; feedback?: string }): Promise<ModelReply>;
 }
 
+export interface Transcript {
+  text: string;
+  /** Código ISO del idioma detectado ("es"). */
+  language: string;
+  /** Duración del audio, si el proveedor la da. */
+  durationSeconds: number | null;
+}
+
+export class SpeechToTextError extends Error {
+  constructor(
+    readonly reason: 'timeout' | 'provider_error',
+    readonly status?: number,
+  ) {
+    super(`Fallo de la transcripción: ${reason}${status === undefined ? '' : ` (${status})`}`);
+    this.name = 'SpeechToTextError';
+  }
+}
+
 export interface SpeechToText {
-  /** Transcribe un audio en memoria. `language` es el código ISO detectado ("es"). */
+  /** Transcribe un audio en memoria; lanza SpeechToTextError si falla. */
   transcribe(
     audio: { data: Buffer; mimeType: string },
     opts: { signal: AbortSignal },
-  ): Promise<{ text: string; language: string }>;
+  ): Promise<Transcript>;
 }
 
 export interface SendOptions {
@@ -49,8 +67,15 @@ export interface ChannelSender {
   sendText(to: string, body: string, opts?: SendOptions): Promise<{ channelMessageId: string }>;
 }
 
+export class MediaTooLargeError extends Error {
+  constructor() {
+    super('El archivo supera el tamaño máximo');
+    this.name = 'MediaTooLargeError';
+  }
+}
+
 export interface MediaFetcher {
-  /** Devuelve el audio en memoria o lanza si supera el límite. */
+  /** Devuelve el audio en memoria; lanza MediaTooLargeError si supera el límite. */
   fetchAudio(mediaId: string, maxBytes: number): Promise<{ data: Buffer; mimeType: string }>;
 }
 

@@ -4,6 +4,7 @@
  */
 import {
   ChannelSendError,
+  MediaTooLargeError,
   type ChannelSender,
   type MediaFetcher,
   type SendOptions,
@@ -26,12 +27,7 @@ const defaultSleep = (ms: number) => new Promise<void>((resolve) => setTimeout(r
 const retryable = (status: number | undefined) =>
   status === undefined || status === 429 || status >= 500;
 
-export class MediaTooLargeError extends Error {
-  constructor() {
-    super('El archivo supera el tamaño máximo');
-    this.name = 'MediaTooLargeError';
-  }
-}
+export { MediaTooLargeError };
 
 export function createGraphClient(opts: GraphClientOptions): ChannelSender & MediaFetcher {
   const doFetch = opts.fetch ?? fetch;

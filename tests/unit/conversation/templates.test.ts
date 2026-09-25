@@ -4,6 +4,7 @@ import {
   emergencyContact,
   errorReply,
   formatWeeklyHours,
+  greeting,
   joinParts,
   safeReply,
 } from '../../../src/conversation/templates.js';
@@ -112,5 +113,25 @@ describe('joinParts', () => {
     expect(result.text.length).toBeLessThanOrEqual(4096);
     expect(result.text.startsWith('Hola.\n\n')).toBe(true);
     expect(result.text.endsWith(contact)).toBe(true);
+  });
+});
+
+describe('plantillas: SALUDO (US4, FR-020)', () => {
+  it('en tú, con el nombre del negocio y lo que atiende', () => {
+    expect(greeting('Negocio Demo', 'tu')).toBe(
+      '¡Hola! Soy el asistente automático de Negocio Demo. Puedo informarte sobre horario, ' +
+        'ubicación, servicios, precios y dudas frecuentes.',
+    );
+  });
+
+  it('en usted', () => {
+    expect(greeting('Negocio Demo', 'usted')).toBe(
+      '¡Hola! Soy el asistente automático de Negocio Demo. Puedo informarle sobre horario, ' +
+        'ubicación, servicios, precios y dudas frecuentes.',
+    );
+  });
+
+  it('sin cifras propias', () => {
+    expect(greeting('Negocio', 'tu')).not.toMatch(/\d/);
   });
 });

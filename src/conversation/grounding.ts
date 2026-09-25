@@ -1,7 +1,7 @@
 /**
  * Verificador de cifras (research R8, capa 3; contracts/chat-model.md).
  *
- * Extrae del texto horas, fechas, teléfonos, correos, URLs y números, y comprueba que cada
+ * Extrae del texto importes, horas, fechas, teléfonos, correos, URLs y números, y comprueba que cada
  * uno está en `AllowedFacts`. Determinista: nunca llama al modelo.
  */
 import type { AllowedFacts } from './types.js';
@@ -59,6 +59,20 @@ interface Extractor {
 
 const MONTH_NAMES = Object.keys(MONTHS).join('|');
 
+/** "1.250,50" (miles con punto), "1250,50", "35.5", "25". */
+const AMOUNT = String.raw`\d{1,3}(?:\.\d{3})+(?:,\d{1,2})?|\d+(?:[.,]\d{1,2})?`;
+const CURRENCY_BEFORE = String.raw`(?:€|US\$|\$|£)`;
+const CURRENCY_AFTER = String.raw`(?:€|US\$|\$|£|(?:EUR|USD|GBP|euros?|d[oó]lares?|libras?)\b)`;
+
+/** Importe escrito → céntimos; separador de miles con punto y decimal con coma o punto. */
+function amountToCents(text: string): number | null {
+  const plain = /\.\d{3}(?:,|$)/.test(text)
+    ? text.replaceAll('.', '').replace(',', '.')
+    : text.replace(',', '.');
+  const value = Number(plain);
+  return Number.isFinite(value) ? Math.round(value * 100) : null;
+}
+
 /** En orden: cada extractor consume su trozo para que los siguientes no lo vuelvan a contar. */
 const EXTRACTORS: Extractor[] = [
   {
@@ -101,6 +115,18 @@ const EXTRACTORS: Extractor[] = [
     category: 'phone',
     re: /(?<![\d:.,])\+?\d(?:[ .-]?\d){8,14}(?![\d:])/g,
     parse: (m) => ({ raw: m[0].trim(), value: m[0].replace(/\D/g, '') }),
+  },
+  {
+    // Antes que las horas: "20.00 €" es un importe, no las 20:00.
+    category: 'amount',
+    re: new RegExp(
+      `(?<![\\d.,])(?:${CURRENCY_BEFORE}\\s?(${AMOUNT})|(${AMOUNT})\\s?${CURRENCY_AFTER})`,
+      'gi',
+    ),
+    parse: (m) => {
+      const cents = amountToCents(m[1] ?? m[2] ?? '');
+      return cents === null ? null : { raw: m[0], value: String(cents) };
+    },
   },
   {
     category: 'time',

@@ -3,8 +3,9 @@
  * valores que el verificador de cifras acepta (capa 3). El modelo nunca calcula horarios.
  */
 import { parsePhoneNumberFromString } from 'libphonenumber-js';
+import { formatCents } from '../knowledge/money.js';
 import { effectiveIntervals, isOpenAt, isoWeekday } from '../knowledge/time/intervals.js';
-import type { ISODate, KnowledgeSnapshot, WeeklySlot } from '../knowledge/types.js';
+import type { ISODate, KnowledgeSnapshot, SnapshotPrice, WeeklySlot } from '../knowledge/types.js';
 import { extractFacts } from './grounding.js';
 import { formatWeeklyHours } from './templates.js';
 import type { AllowedFacts, DerivedFacts } from './types.js';
@@ -28,6 +29,24 @@ export function localNow(at: Date, timezone: string): DerivedFacts['now'] {
   );
   const date = `${parts.year}-${parts.month}-${parts.day}`;
   return { date, time: `${parts.hour}:${parts.minute}`, weekday: isoWeekday(date), timezone };
+}
+
+/**
+ * Precio de un servicio tal como el bot debe decirlo (FR-009 – FR-011): "25,00 €",
+ * "desde 40,00 €", "a consultar" o "sin importe registrado". Espacios normales, no duros.
+ */
+export function priceText(price: SnapshotPrice, currency: string): string {
+  const amount = (cents: number) => formatCents(cents, currency).replace(/\s/g, ' ');
+  switch (price.type) {
+    case 'fixed':
+      return amount(price.amountCents);
+    case 'from':
+      return `desde ${amount(price.amountCents)}`;
+    case 'on_request':
+      return 'a consultar';
+    case 'missing':
+      return 'sin importe registrado';
+  }
 }
 
 /** Suma días a una fecha de calendario (sin zona horaria). */
@@ -54,7 +73,10 @@ export function deriveFacts(snapshot: KnowledgeSnapshot, at: Date): DerivedFacts
     now,
     openNow: isOpenAt(openingHours, closures, now.date, now.time),
     next14Days,
-    prices: [],
+    prices: snapshot.services.map((s) => ({
+      serviceId: s.id,
+      text: priceText(s.price, snapshot.business.currency),
+    })),
     handoffHoursText: formatWeeklyHours(snapshot.handoff.hours),
   };
 }
@@ -121,8 +143,11 @@ export function buildAllowedFacts(
   // Textos libres del snapshot: todo lo que el operador ha escrito vale tal cual.
   for (const text of snapshotTexts(snapshot)) {
     for (const fact of extractFacts(text)) {
+      if (fact.category === 'amount') {
+        allowed.amountsCents.add(Number(fact.value));
+        continue;
+      }
       const set = allowed[`${fact.category}s` as keyof AllowedFacts] as Set<string> | undefined;
-      if (fact.category === 'amount') continue;
       set?.add(fact.value);
       if (fact.category === 'phone') for (const v of phoneVariants(fact.raw)) allowed.phones.add(v);
     }
@@ -176,6 +201,13 @@ export function buildAllowedFacts(
     snapshot.policies.maxAdvanceMinutes,
   ].filter((m): m is number => m !== null);
   for (const m of minutes) for (const n of durationNumbers(m)) allowed.numbers.add(n);
+
+  // Importes de los servicios: en céntimos y en unidades ("25.00" sin símbolo).
+  for (const s of snapshot.services) {
+    if (s.price.type !== 'fixed' && s.price.type !== 'from') continue;
+    allowed.amountsCents.add(s.price.amountCents);
+    allowed.numbers.add(canonicalNumber(s.price.amountCents / 100));
+  }
 
   return allowed;
 }

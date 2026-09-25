@@ -103,6 +103,12 @@ export function contactBlock(snapshot: KnowledgeSnapshot): string {
   return `Para hablar con una persona de ${snapshot.business.name}: ${channels}.${schedule}`;
 }
 
+/** SALUDO: primera respuesta de cada conversación (FR-020). */
+export const greeting = (businessName: string, form: Form): string =>
+  `¡Hola! Soy el asistente automático de ${businessName}. ` +
+  `Puedo ${form === 'usted' ? 'informarle' : 'informarte'} sobre horario, ubicación, servicios, ` +
+  'precios y dudas frecuentes.';
+
 /** R-SAFE: el verificador ha rechazado dos veces la respuesta del modelo. */
 export const safeReply = (_form: Form): string => 'No dispongo de esa información.';
 
@@ -111,6 +117,36 @@ export const errorReply = (form: Form): string =>
   form === 'usted'
     ? 'Ahora mismo no puedo responder. Por favor, vuelva a escribirme en unos minutos.'
     : 'Ahora mismo no puedo responder. Por favor, vuelve a escribirme en unos minutos.';
+
+/** R-MEDIA: el lote solo trae archivos sin texto (FR-028a). */
+export function mediaReply(form: Form, audioTranscription: boolean): string {
+  if (audioTranscription) {
+    return form === 'usted'
+      ? 'Solo puedo atender mensajes de texto y audios. ¿Me escribe o me graba su consulta?'
+      : 'Solo puedo atender mensajes de texto y audios. ¿Me escribes o me grabas tu consulta?';
+  }
+  return form === 'usted'
+    ? 'Solo puedo atender mensajes de texto. ¿Me escribe su consulta?'
+    : 'Solo puedo atender mensajes de texto. ¿Me escribes tu consulta?';
+}
+
+/** AVISO DE ARCHIVO: acompaña a la respuesta si en el lote hay algún archivo (FR-028a). */
+export const fileNotice = (audioTranscription: boolean): string =>
+  audioTranscription
+    ? 'No puedo ver archivos, imágenes ni stickers; solo leo texto y escucho audios.'
+    : 'No puedo ver archivos, imágenes, stickers ni escuchar audios; solo leo mensajes de texto.';
+
+/** R-AUDIO: el lote solo trae audios que no se han podido entender (FR-028). */
+export const audioReply = (form: Form): string =>
+  form === 'usted'
+    ? 'No he podido entender el audio. ¿Puede repetirlo o escribirme su consulta?'
+    : 'No he podido entender el audio. ¿Puedes repetirlo o escribirme tu consulta?';
+
+/** R-LIMIT: el número ha superado el límite de mensajes (FR-004a); va con CONTACTO. */
+export const rateLimitReply = (form: Form): string =>
+  form === 'usted'
+    ? 'Ha enviado muchos mensajes seguidos y voy a dejar de responder durante un rato.'
+    : 'Has enviado muchos mensajes seguidos y voy a dejar de responder durante un rato.';
 
 /** CONTACTO-EMERGENCIA: solo con R-ERR cuando el snapshot no se pudo leer. */
 export const emergencyContact = (phone: string): string =>

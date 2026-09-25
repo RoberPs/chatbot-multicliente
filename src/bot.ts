@@ -9,12 +9,19 @@ import { createActivityLog, type LoggerLike } from './conversation/activity-log.
 import { createIntake } from './conversation/intake.js';
 import { systemClock, type Clock } from './conversation/ports.js';
 import { createProcessor, type Processor } from './conversation/processor.js';
+import { createRetention, type Retention } from './conversation/retention.js';
+import { createTranscriber, type Transcriber } from './conversation/transcription.js';
 import type { Db } from './db/client.js';
 import { createKnowledgeReader } from './knowledge/snapshot.js';
 import { createAnthropicChatModel } from './llm/anthropic-chat-model.js';
+import { createWhisperSpeechToText } from './speech/whisper.js';
 
 export interface Bot extends BotHttp {
   processor: Processor;
+  /** Borrado de conversaciones a los 30 días (FR-030). */
+  retention: Retention;
+  /** Solo con AUDIO_TRANSCRIPTION=on. */
+  transcriber: Transcriber | null;
 }
 
 export interface CreateBotOptions {
@@ -48,15 +55,32 @@ export function createBot({ env, db, logger, clock = systemClock }: CreateBotOpt
     clock,
     activityLog,
     emergencyContactPhone: env.emergencyContactPhone,
+    audioTranscription: env.audioTranscription,
   });
+  const wake = (id: string) => {
+    processor.wake(id);
+  };
+  // Audios (R10): solo con el interruptor encendido; si no, ni se descargan.
+  const transcriber =
+    env.audioTranscription && env.STT_API_KEY
+      ? createTranscriber({
+          db,
+          media: graph,
+          stt: createWhisperSpeechToText({ apiKey: env.STT_API_KEY, model: env.STT_MODEL }),
+          activityLog,
+          wake,
+        })
+      : null;
   const intake = createIntake({
     db,
     reader,
     clock,
     activityLog,
-    wake: (id) => {
-      processor.wake(id);
+    wake,
+    notifyRateLimit: (id) => {
+      void processor.sendRateLimitNotice(id);
     },
+    ...(transcriber ? { transcriber } : {}),
   });
   return {
     whatsapp: env.whatsapp,
@@ -64,5 +88,7 @@ export function createBot({ env, db, logger, clock = systemClock }: CreateBotOpt
     activityLog,
     intake,
     processor,
+    retention: createRetention({ db, clock, activityLog }),
+    transcriber,
   };
 }

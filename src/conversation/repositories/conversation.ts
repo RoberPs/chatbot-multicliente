@@ -93,18 +93,22 @@ export interface ClaimLimits {
   quietMs: number;
   maxWaitMs: number;
   limit: number;
+  /** Tiempo máximo que se espera a un audio en transcripción (R10). */
+  transcriptionWaitMs: number;
   /** Conversaciones que el proceso ya está atendiendo. */
   excludeIds: string[];
 }
 
 /**
  * Conversaciones listas para responder (data-model.md, R5): con entrantes pendientes y
- * `now − último ≥ espera` o `now − primero ≥ tope`. Bloquea las filas con SKIP LOCKED para
+ * `now − último ≥ espera` o `now − primero ≥ tope`, y sin audios transcribiéndose desde hace
+ * menos de 10 s. Bloquea las filas con SKIP LOCKED para
  * que dos procesadores no reclamen la misma.
  */
 export async function claimReady(tx: DbOrTx, now: Date, limits: ClaimLimits): Promise<string[]> {
   const quietBefore = new Date(now.getTime() - limits.quietMs);
   const maxWaitBefore = new Date(now.getTime() - limits.maxWaitMs);
+  const transcribingSince = new Date(now.getTime() - limits.transcriptionWaitMs);
   const exclude =
     limits.excludeIds.length > 0
       ? sql`and c.id not in (${sql.join(
@@ -121,6 +125,11 @@ export async function claimReady(tx: DbOrTx, now: Date, limits: ClaimLimits): Pr
       where m.direction = 'inbound' and m.status = 'pending'
       group by m.conversation_id
       having max(m.received_at) <= ${quietBefore} or min(m.received_at) <= ${maxWaitBefore}
+    )
+    and not exists (
+      select 1 from message a
+      where a.conversation_id = c.id and a.direction = 'inbound' and a.status = 'pending'
+        and a.transcription = 'pending' and a.received_at > ${transcribingSince}
     )
     ${exclude}
     order by c.last_inbound_at

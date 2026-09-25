@@ -94,3 +94,52 @@ describe('groundingGuard', () => {
     expect(groundingGuard(body, allowed())).toEqual({ ok: false, offending });
   });
 });
+
+describe('importes (US2)', () => {
+  const prices = () => allowed({ amountsCents: [2500, 4000, 125_050], numbers: ['25', '40'] });
+
+  it.each([
+    ['25 €', 2500],
+    ['25,00 €', 2500],
+    ['25\u00a0€', 2500],
+    ['25 euros', 2500],
+    ['1 euro', 100],
+    ['€25', 2500],
+    ['25 EUR', 2500],
+    ['35,50 €', 3550],
+    ['35.5 €', 3550],
+    ['1.250,50 €', 125_050],
+    ['1250,50 €', 125_050],
+    ['20.00 €', 2000],
+  ])('importe en "%s"', (text, cents) => {
+    expect(extractFacts(text).map((f) => [f.category, f.value])).toEqual([
+      ['amount', String(cents)],
+    ]);
+  });
+
+  it('un importe sin símbolo cuenta como número', () => {
+    expect(extractFacts('cuesta 25.00').map((f) => [f.category, f.value])).toEqual([
+      ['number', '25'],
+    ]);
+  });
+
+  it.each([
+    'El corte cuesta 25 €.',
+    'El corte cuesta 25,00 €.',
+    'El corte cuesta 25 euros.',
+    'El corte cuesta 25.00.',
+    'El completo, desde 40,00 €.',
+    'El grande sale por 1.250,50 €.',
+  ])('acepta los registrados: "%s"', (body) => {
+    expect(groundingGuard(body, prices())).toEqual({ ok: true });
+  });
+
+  it.each([
+    ['un importe inventado', 'El corte cuesta 30 €.', ['30 €']],
+    ['un importe inventado sin decimales exactos', 'Son 25,50 €.', ['25,50 €']],
+    ['un máximo para un precio "desde"', 'Entre 40 € y 60 €.', ['60 €']],
+    ['un importe pequeño', 'Un suplemento de 5 €.', ['5 €']],
+  ])('rechaza %s', (_name, body, offending) => {
+    expect(groundingGuard(body, prices())).toEqual({ ok: false, offending });
+  });
+});

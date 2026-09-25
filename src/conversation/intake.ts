@@ -10,9 +10,10 @@ import type { KnowledgeReader } from '../knowledge/types.js';
 import type { ActivityLog } from './activity-log.js';
 import type { Clock } from './ports.js';
 import * as conversations from './repositories/conversation.js';
-import { upsertByPhone } from './repositories/customer.js';
-import { insertInbound } from './repositories/message.js';
+import { markRateLimitNotified, upsertByPhone } from './repositories/customer.js';
+import { countInboundSince, insertInbound } from './repositories/message.js';
 import { conversationSettings, type ConversationSettings } from './settings.js';
+import type { Transcriber } from './transcription.js';
 import type { InboundEvent } from './types.js';
 
 export interface IntakeDeps {
@@ -22,6 +23,10 @@ export interface IntakeDeps {
   activityLog: ActivityLog;
   /** Avisa al procesador de que una conversación tiene mensajes nuevos. */
   wake?: (conversationId: string) => void;
+  /** Solo con los audios activados: los audios llegan como `kind = audio`. */
+  transcriber?: Transcriber;
+  /** Pide al procesador el aviso de límite (R-LIMIT) para una conversación (FR-004a). */
+  notifyRateLimit?: (conversationId: string) => void;
   settings?: ConversationSettings;
 }
 
@@ -36,11 +41,26 @@ export function createIntake(deps: IntakeDeps): Intake {
   const { db, reader, clock, activityLog } = deps;
   const settings = deps.settings ?? conversationSettings;
 
-  async function store(event: InboundEvent): Promise<string | null> {
+  interface Stored {
+    conversationId: string;
+    messageId: string;
+    /** Solo si el mensaje supera el límite por número (R6). */
+    rateLimit: { count: number; noticeSent: boolean } | null;
+  }
+
+  async function store(event: InboundEvent): Promise<Stored | null> {
     const receivedAt = clock.now();
     try {
       return await db.transaction(async (tx) => {
         const customer = await upsertByPhone(tx, event.from);
+        // R6: cuentan todos los entrantes de la ventana, también los ya limitados.
+        const windowStart = new Date(receivedAt.getTime() - settings.rateLimitWindowMs);
+        const count = (await countInboundSince(tx, customer.id, windowStart)) + 1;
+        const limited = count > settings.rateLimitMessages;
+        const noticeSent =
+          limited &&
+          (customer.rateLimitNotifiedAt === null || customer.rateLimitNotifiedAt <= windowStart);
+        if (noticeSent) await markRateLimitNotified(tx, customer.id, receivedAt);
         const latest = await conversations.findLatestForCustomer(tx, customer.id);
         // FR-019: conversación nueva si no hay ninguna o han pasado más de 24 h.
         const conversation =
@@ -60,11 +80,16 @@ export function createIntake(deps: IntakeDeps): Intake {
           otherType: event.otherType,
           sentAt: event.sentAt,
           receivedAt,
-          status: 'pending',
+          status: limited ? 'rate_limited' : 'pending',
+          transcription: event.kind === 'audio' && !limited ? 'pending' : null,
         });
-        if (!inserted.inserted) throw new DuplicateMessage();
+        if (!inserted.id) throw new DuplicateMessage();
         await conversations.touchInbound(tx, conversation.id, event.sentAt, receivedAt);
-        return conversation.id;
+        return {
+          conversationId: conversation.id,
+          messageId: inserted.id,
+          rateLimit: limited ? { count, noticeSent } : null,
+        };
       });
     } catch (error) {
       if (error instanceof DuplicateMessage) return null;
@@ -97,11 +122,12 @@ export function createIntake(deps: IntakeDeps): Intake {
 
       const woken = new Set<string>();
       for (const event of events) {
-        const conversationId = await store(event);
-        if (conversationId === null) {
+        const stored = await store(event);
+        if (stored === null) {
           activityLog.log({ event: 'duplicate_ignored' }, { phone: event.from });
           continue;
         }
+        const { conversationId, messageId, rateLimit } = stored;
         activityLog.log(
           {
             event: 'message_received',
@@ -110,7 +136,30 @@ export function createIntake(deps: IntakeDeps): Intake {
           },
           { phone: event.from, conversationId },
         );
+        if (rateLimit) {
+          // No se contesta nunca; como mucho, un aviso por ventana.
+          activityLog.log(
+            {
+              event: 'rate_limit_exceeded',
+              count: rateLimit.count,
+              windowMinutes: settings.rateLimitWindowMs / 60_000,
+              noticeSent: rateLimit.noticeSent,
+            },
+            { phone: event.from, conversationId },
+          );
+          if (rateLimit.noticeSent) deps.notifyRateLimit?.(conversationId);
+          continue;
+        }
         woken.add(conversationId);
+        if (event.kind === 'audio' && event.mediaId && deps.transcriber) {
+          // En paralelo con la espera de agrupado (R10); el webhook no espera.
+          void deps.transcriber.transcribe({
+            messageId,
+            mediaId: event.mediaId,
+            conversationId,
+            phone: event.from,
+          });
+        }
       }
       for (const id of woken) deps.wake?.(id);
     },
