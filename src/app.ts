@@ -12,7 +12,7 @@ import { authRoutes } from './admin/auth/routes.js';
 import './admin/fastify-types.js';
 import { renderNotFound } from './admin/render.js';
 import { adminRoutes } from './admin/routes/index.js';
-import { CHAT_FRAME_PATH, webChatRoutes } from './channels/web/routes.js';
+import { CHAT_FRAME_PATH, FRAME_FALLBACK_CSP, webChatRoutes } from './channels/web/routes.js';
 import { whatsappWebhook } from './channels/whatsapp/webhook.js';
 import type { Env, WhatsAppEnv } from './config/env.js';
 import type { ActivityLog } from './conversation/activity-log.js';
@@ -148,7 +148,13 @@ export async function buildApp({
     // El chat web se incrusta en la web del negocio: su CSP la pone su propio plugin y no
     // puede llevar X-Frame-Options (lo sustituye `frame-ancestors`, 004 FR-015).
     const isChatFrame = (request.url.split('?')[0] ?? '') === CHAT_FRAME_PATH;
-    if (!isChatFrame) {
+    if (isChatFrame) {
+      // Si el manejador del frame no llegó a responder (p. ej. un 500), la respuesta saldría
+      // sin ninguna CSP: se pone la de respaldo, que no permite incrustarla en ningún sitio.
+      if (reply.getHeader('content-security-policy') === undefined) {
+        reply.header('Content-Security-Policy', FRAME_FALLBACK_CSP);
+      }
+    } else {
       reply.header('X-Frame-Options', 'DENY');
       reply.header('Content-Security-Policy', CSP);
     }

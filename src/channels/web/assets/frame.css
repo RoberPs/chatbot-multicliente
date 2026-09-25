@@ -114,6 +114,14 @@ body {
   border-color: var(--chat-accent);
   color: #fff;
 }
+/* Mensaje del propio chat (aviso, disculpa, "no disponible"), no del bot ni del visitante. */
+.messages .notice {
+  max-width: 100%;
+  background: var(--chat-bg);
+  border-style: dashed;
+  color: var(--chat-muted);
+  font-size: 0.85rem;
+}
 
 .status {
   margin: 0;

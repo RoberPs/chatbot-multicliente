@@ -207,21 +207,21 @@ respuestas y contacto; recargar y comprobar que la conversación sigue sin repet
 
 ### Tests for User Story 3 ⚠️
 
-- [ ] T056 [P] [US3] Test unitario tests/unit/webchat/session-token.test.ts: token `base64url(id).base64url(HMAC)` con clave HKDF de `SESSION_SECRET` (`info = "web-session"`); firma alterada, formato inválido o otro secreto → rechazo; `channel_user_id` = 64 hex de `SHA-256(id)` y estable; dos sesiones distintas → ids distintos
-- [ ] T057 [P] [US3] Test estático tests/unit/channels/web-assets.test.ts: los ficheros de src/channels/web/assets/ no contienen `innerHTML`, `outerHTML`, `insertAdjacentHTML`, `document.write` ni `eval` (garantía 9)
-- [ ] T058 [P] [US3] Crear tests/helpers/web.ts: `createWebSession(app)`, `postWebMessage(app, token, text, clientMessageId?)`, `getWebMessages(app, token, after?)` y `webHeaders()` con `Origin` de la instancia y `Sec-Fetch-Site: same-origin`, usando `fastify.inject`
-- [ ] T059 [P] [US3] Test de contrato tests/contract/web-chat.test.ts según [contracts/web-chat-http.md](contracts/web-chat-http.md): `POST /session` → `201` con token, o `200 {unavailable}` sin token si no está disponible; `GET /state` con `available`, `businessName`, `privacyUrl`, `contact` siempre, `maxLength: 1000`; `POST` con `Origin` ajeno o `Sec-Fetch-Site: cross-site` → `403` y cero filas (FR-027, garantía 3); token alterado → `401` (garantía 4); texto vacío o > 1 000 → `400 {"error":"text","maxLength":1000}`; mismo `clientMessageId` dos veces → `202` y una sola fila (FR-023, garantía 5); desactivado o no activo → `200 {accepted:false, unavailable}` sin guardar; snapshot ilegible → `503` con contacto de emergencia; `GET /messages` nunca incluye `reply_trace` y el texto con `<script>` vuelve tal cual; cuerpo > 8 KB rechazado; `Content-Type` y `Cache-Control: no-store`
-- [ ] T060 [P] [US3] Test de integración tests/integration/conversation/web-conversation.test.ts con el modelo falso: primera respuesta con saludo y nombre del negocio (US3-2); tres mensajes en < 3 s → una sola respuesta (US3-3); petición de persona → contacto y horario (US3-4); tras reconectar, `GET /messages` sin cursor devuelve historial y respuesta llegada mientras tanto y la siguiente no repite saludo (US3-5); más de 24 h sin mensajes → conversación nueva con saludo (FR-019); negocio "en preparación" → `unavailable` con contacto (US3-6); dos "pestañas" con el mismo token no duplican respuestas; `waiting` es `true` hasta que hay respuesta
-- [ ] T061 [P] [US3] Test de integración tests/integration/conversation/web-privacy.test.ts: conversación web completa (sesión, mensajes, límite por visitante, tope) capturando todos los registros; no aparecen el token, el `channel_user_id` en claro, los textos enviados ni la IP de `fastify.inject`; todos los eventos con conversación llevan `via: "web"` (SC-008, garantías 1–3 de activity-log)
-- [ ] T062 [P] [US3] Ampliar tests/integration/conversation/latency.test.ts al canal `web`: `reply_sent.latencyMs` desde el último mensaje del grupo cumple el mismo presupuesto que WhatsApp (R14, SC-004)
+- [X] T056 [P] [US3] Test unitario tests/unit/webchat/session-token.test.ts: token `base64url(id).base64url(HMAC)` con clave HKDF de `SESSION_SECRET` (`info = "web-session"`); firma alterada, formato inválido o otro secreto → rechazo; `channel_user_id` = 64 hex de `SHA-256(id)` y estable; dos sesiones distintas → ids distintos
+- [X] T057 [P] [US3] Test estático tests/unit/channels/web-assets.test.ts: los ficheros de src/channels/web/assets/ no contienen `innerHTML`, `outerHTML`, `insertAdjacentHTML`, `document.write` ni `eval` (garantía 9)
+- [X] T058 [P] [US3] Crear tests/helpers/web.ts: `createWebSession(app)`, `postWebMessage(app, token, text, clientMessageId?)`, `getWebMessages(app, token, after?)` y `webHeaders()` con `Origin` de la instancia y `Sec-Fetch-Site: same-origin`, usando `fastify.inject`
+- [X] T059 [P] [US3] Test de contrato tests/contract/web-chat.test.ts según [contracts/web-chat-http.md](contracts/web-chat-http.md): `POST /session` → `201` con token, o `200 {unavailable}` sin token si no está disponible; `GET /state` con `available`, `businessName`, `privacyUrl`, `contact` siempre, `maxLength: 1000`; `POST` con `Origin` ajeno o `Sec-Fetch-Site: cross-site` → `403` y cero filas (FR-027, garantía 3); token alterado → `401` (garantía 4); texto vacío o > 1 000 → `400 {"error":"text","maxLength":1000}`; mismo `clientMessageId` dos veces → `202` y una sola fila (FR-023, garantía 5); desactivado o no activo → `200 {accepted:false, unavailable}` sin guardar; snapshot ilegible → `503` con contacto de emergencia; `GET /messages` nunca incluye `reply_trace` y el texto con `<script>` vuelve tal cual; cuerpo > 8 KB rechazado; `Content-Type` y `Cache-Control: no-store`
+- [X] T060 [P] [US3] Test de integración tests/integration/conversation/web-conversation.test.ts con el modelo falso: primera respuesta con saludo y nombre del negocio (US3-2); tres mensajes en < 3 s → una sola respuesta (US3-3); petición de persona → contacto y horario (US3-4); tras reconectar, `GET /messages` sin cursor devuelve historial y respuesta llegada mientras tanto y la siguiente no repite saludo (US3-5); más de 24 h sin mensajes → conversación nueva con saludo (FR-019); negocio "en preparación" → `unavailable` con contacto (US3-6); dos "pestañas" con el mismo token no duplican respuestas; `waiting` es `true` hasta que hay respuesta
+- [X] T061 [P] [US3] Test de integración tests/integration/conversation/web-privacy.test.ts: conversación web completa (sesión, mensajes, límite por visitante, tope) capturando todos los registros; no aparecen el token, el `channel_user_id` en claro, los textos enviados ni la IP de `fastify.inject`; todos los eventos con conversación llevan `via: "web"` (SC-008, garantías 1–3 de activity-log)
+- [X] T062 [P] [US3] Ampliar tests/integration/conversation/latency.test.ts al canal `web`: `reply_sent.latencyMs` desde el último mensaje del grupo cumple el mismo presupuesto que WhatsApp (R14, SC-004)
 
 ### Implementation for User Story 3
 
-- [ ] T063 [P] [US3] Crear src/webchat/session-token.ts: `issueWebSession(secret)` → token con 16 bytes aleatorios y HMAC-SHA256 con clave HKDF (`info = "web-session"`), `verifyWebSession(secret, token)` → `channelUserId` (`hex(SHA-256(id))`) o `null`, comparación en tiempo constante; el token no se guarda en ningún sitio
-- [ ] T064 [US3] Ampliar src/channels/web/guards.ts con `requireSameOrigin` (en `POST`, `Origin` igual al de la instancia; `Sec-Fetch-Site` distinto de `same-origin` si llega → `403 {"error":"forbidden"}` y `web_rejected{reason:"origin"}`) y `requireWebSession` (`Authorization: Bearer`, `verifyWebSession`; si falla `401 {"error":"session"}` y `web_rejected{reason:"session"}`) (depende de T063)
-- [ ] T065 [US3] Añadir a src/channels/web/routes.ts la API JSON bajo `/chat/api` con parser JSON solo en este plugin y `bodyLimit` 8 KB: `POST /session` (`201` + `web_session_created`, o `200 {unavailable}`), `GET /state`, `GET /messages?after=` (conversación vigente de < 24 h con `listForConversation`, `from: visitor|bot`, `cursor`, `waiting`), `POST /messages` (Zod: `clientMessageId` UUID, `text` recortado 1–1 000; `channelMessageId = web:<channelUserId>:<clientMessageId>`, `sentAt` = hora del servidor; traduce `IntakeOutcome` a `202`/`200 {accepted:false, unavailable}`; snapshot ilegible → `503` con emergencia; `web_rejected{reason:"invalid"}` en `400`); todas con `Cache-Control: no-store` (depende de T064)
-- [ ] T066 [P] [US3] Crear src/channels/web/assets/frame.js (vanilla, solo `textContent`): abre y cierra con `postMessage({type:"chat:resize", open})` al padre; pide sesión y la guarda en `localStorage` (en memoria si no hay almacenamiento); carga `/state` y el historial; envía con `clientMessageId` (`crypto.randomUUID()`), valida longitud en cliente y explica el motivo; mientras `waiting`, sondea cada 1,5 s mostrando "escribiendo…" y a los 45 s muestra la disculpa R-ERR con `contact` y deja de sondear; `401` → pide sesión nueva; `unavailable` → muestra mensaje y contacto; `429` → aviso una vez y no envía hasta `Retry-After`
-- [ ] T067 [P] [US3] Crear src/channels/web/assets/frame.css (botón flotante, panel del chat, burbujas, aviso de privacidad, "escribiendo…", vista "no disponible"; legible en móvil)
+- [X] T063 [P] [US3] Crear src/webchat/session-token.ts: `issueWebSession(secret)` → token con 16 bytes aleatorios y HMAC-SHA256 con clave HKDF (`info = "web-session"`), `verifyWebSession(secret, token)` → `channelUserId` (`hex(SHA-256(id))`) o `null`, comparación en tiempo constante; el token no se guarda en ningún sitio
+- [X] T064 [US3] Ampliar src/channels/web/guards.ts con `requireSameOrigin` (en `POST`, `Origin` igual al de la instancia; `Sec-Fetch-Site` distinto de `same-origin` si llega → `403 {"error":"forbidden"}` y `web_rejected{reason:"origin"}`) y `requireWebSession` (`Authorization: Bearer`, `verifyWebSession`; si falla `401 {"error":"session"}` y `web_rejected{reason:"session"}`) (depende de T063)
+- [X] T065 [US3] Añadir a src/channels/web/routes.ts la API JSON bajo `/chat/api` con parser JSON solo en este plugin y `bodyLimit` 8 KB: `POST /session` (`201` + `web_session_created`, o `200 {unavailable}`), `GET /state`, `GET /messages?after=` (conversación vigente de < 24 h con `listForConversation`, `from: visitor|bot`, `cursor`, `waiting`), `POST /messages` (Zod: `clientMessageId` UUID, `text` recortado 1–1 000; `channelMessageId = web:<channelUserId>:<clientMessageId>`, `sentAt` = hora del servidor; traduce `IntakeOutcome` a `202`/`200 {accepted:false, unavailable}`; snapshot ilegible → `503` con emergencia; `web_rejected{reason:"invalid"}` en `400`); todas con `Cache-Control: no-store` (depende de T064)
+- [X] T066 [P] [US3] Crear src/channels/web/assets/frame.js (vanilla, solo `textContent`): abre y cierra con `postMessage({type:"chat:resize", open})` al padre; pide sesión y la guarda en `localStorage` (en memoria si no hay almacenamiento); carga `/state` y el historial; envía con `clientMessageId` (`crypto.randomUUID()`), valida longitud en cliente y explica el motivo; mientras `waiting`, sondea cada 1,5 s mostrando "escribiendo…" y a los 45 s muestra la disculpa R-ERR con `contact` y deja de sondear; `401` → pide sesión nueva; `unavailable` → muestra mensaje y contacto; `429` → aviso una vez y no envía hasta `Retry-After`
+- [X] T067 [P] [US3] Crear src/channels/web/assets/frame.css (botón flotante, panel del chat, burbujas, aviso de privacidad, "escribiendo…", vista "no disponible"; legible en móvil)
 - [X] T068 [US3] Adaptar tests/eval/harness.ts para aceptar `EVAL_CHANNEL` (`whatsapp` por defecto, `web`), enviando los eventos con `channel`, `channelUserId` y `channelMessageId` del canal elegido y con el chat web activado en la BD de la evaluación (SC-002)
 
 **Checkpoint**: un visitante conversa por la web con las mismas respuestas que por WhatsApp y
@@ -240,15 +240,15 @@ alcanzado el chat muestra el contacto, el panel lo avisa y WhatsApp sigue respon
 
 ### Tests for User Story 4 ⚠️
 
-- [ ] T069 [P] [US4] Test de contrato tests/contract/web-chat-limits.test.ts: 21.ª `POST /chat/api/session` en una hora desde la misma IP → `429 {"unavailable":{"reason":"ip_limit",…}}` con contacto y `Retry-After`, y `web_rejected{reason:"session_limit"}` (garantía 6, SC-007); 121.º `POST /chat/api/messages` en 15 min → `429` sin guardar ni llamar al modelo (`ip_limit`); IPs distintas no se afectan; el límite general de 600/15 min en `state` y `messages`
-- [ ] T070 [P] [US4] Test de integración tests/integration/conversation/web-limits.test.ts: 31 mensajes seguidos de un visitante → R-LIMIT una sola vez por ventana como saliente, el resto `rate_limited` sin respuesta, y vuelve a responder al bajar el ritmo (US4-1, FR-024); los mensajes del playground no cuentan para los límites del chat público
-- [ ] T071 [P] [US4] Test de integración tests/integration/conversation/web-quota.test.ts: con tope diario 3, la cuarta pregunta por `POST /chat/api/messages` → `accepted:false` con `quota` y contacto (US4-3); `web_quota_reached{period:"day"}` se emite una sola vez; al empezar el día local siguiente vuelve a responder; tope mensual igual con `period:"month"`; el panel muestra "Hoy: 3 de 3" y el aviso de tope en `/admin/web-chat` y en la portada
+- [X] T069 [P] [US4] Test de contrato tests/contract/web-chat-limits.test.ts: 21.ª `POST /chat/api/session` en una hora desde la misma IP → `429 {"unavailable":{"reason":"ip_limit",…}}` con contacto y `Retry-After`, y `web_rejected{reason:"session_limit"}` (garantía 6, SC-007); 121.º `POST /chat/api/messages` en 15 min → `429` sin guardar ni llamar al modelo (`ip_limit`); IPs distintas no se afectan; el límite general de 600/15 min en `state` y `messages`
+- [X] T070 [P] [US4] Test de integración tests/integration/conversation/web-limits.test.ts: 31 mensajes seguidos de un visitante → R-LIMIT una sola vez por ventana como saliente, el resto `rate_limited` sin respuesta, y vuelve a responder al bajar el ritmo (US4-1, FR-024); los mensajes del playground no cuentan para los límites del chat público
+- [X] T071 [P] [US4] Test de integración tests/integration/conversation/web-quota.test.ts: con tope diario 3, la cuarta pregunta por `POST /chat/api/messages` → `accepted:false` con `quota` y contacto (US4-3); `web_quota_reached{period:"day"}` se emite una sola vez; al empezar el día local siguiente vuelve a responder; tope mensual igual con `period:"month"`; el panel muestra "Hoy: 3 de 3" y el aviso de tope en `/admin/web-chat` y en la portada
 
 ### Implementation for User Story 4
 
-- [ ] T072 [US4] Añadir los límites por IP en memoria con `@fastify/rate-limit` (clave `request.ip` con `TRUST_PROXY`) a src/channels/web/routes.ts: 20/h en `POST /chat/api/session`, 120/15 min en `POST /chat/api/messages`, 600/15 min en el resto de `/chat/api`; `errorResponseBuilder` → `429` con el objeto `unavailable` (`ip_limit`, contacto) y `Retry-After`; `web_rejected{reason:"session_limit"|"ip_limit"}` sin IP en el registro; la IP no se pasa a ninguna capa de dominio (R10, FR-025, FR-029)
+- [X] T072 [US4] Añadir los límites por IP en memoria con `@fastify/rate-limit` (clave `request.ip` con `TRUST_PROXY`) a src/channels/web/routes.ts: 20/h en `POST /chat/api/session`, 120/15 min en `POST /chat/api/messages`, 600/15 min en el resto de `/chat/api`; `errorResponseBuilder` → `429` con el objeto `unavailable` (`ip_limit`, contacto) y `Retry-After`; `web_rejected{reason:"session_limit"|"ip_limit"}` sin IP en el registro; la IP no se pasa a ninguna capa de dominio (R10, FR-025, FR-029)
 - [X] T073 [US4] Emitir `web_quota_reached{period, cap}` una vez por periodo y proceso (memoria) cuando la recepción o el procesador detectan el tope, en src/webchat/usage.ts o en quien llame a `capReached` dentro de src/conversation/intake.ts y src/conversation/processor.ts
-- [ ] T074 [US4] Mostrar en src/admin/views/web-chat.eta el aviso destacado de tope alcanzado ("El chat web ha alcanzado el tope diario: no responde hasta mañana. Los clientes ven el contacto del negocio." y su versión mensual) y en src/admin/routes/dashboard.ts y src/admin/views/dashboard.eta el estado "tope alcanzado (diario|mensual)" (FR-026, FR-026a)
+- [X] T074 [US4] Mostrar en src/admin/views/web-chat.eta el aviso destacado de tope alcanzado ("El chat web ha alcanzado el tope diario: no responde hasta mañana. Los clientes ven el contacto del negocio." y su versión mensual) y en src/admin/routes/dashboard.ts y src/admin/views/dashboard.eta el estado "tope alcanzado (diario|mensual)" (FR-026, FR-026a)
 
 **Checkpoint**: el chat público está listo para publicarse en una web real.
 
@@ -258,12 +258,12 @@ alcanzado el chat muestra el contacto, el panel lo avisa y WhatsApp sigue respon
 
 **Purpose**: verificación final, evaluación con el modelo real y documentación.
 
-- [ ] T075 [P] Comprobar que tests/unit/sector-neutrality.test.ts recorre también los `.js`, `.css` y `.eta` de src/channels/web y src/webchat (recorre todo `src/`; añadir una aserción que lo confirme si hace falta)
-- [ ] T076 Revisión de seguridad de `/chat/*` y de las páginas nuevas del panel con el agente `security-auditor` (CSP y `frame-ancestors`, comprobación de origen, firma de sesión, límites, ausencia de IP y tokens en registros, escapado en vistas Eta y assets) y corregir lo que encuentre
-- [ ] T077 Ejecutar `pnpm lint && pnpm typecheck && pnpm test` y dejar todo en verde, incluidas las pruebas de la 002 (SC-001)
+- [X] T075 [P] Comprobar que tests/unit/sector-neutrality.test.ts recorre también los `.js`, `.css` y `.eta` de src/channels/web y src/webchat (recorre todo `src/`; añadir una aserción que lo confirme si hace falta)
+- [X] T076 Revisión de seguridad de `/chat/*` y de las páginas nuevas del panel con el agente `security-auditor` (CSP y `frame-ancestors`, comprobación de origen, firma de sesión, límites, ausencia de IP y tokens en registros, escapado en vistas Eta y assets) y corregir lo que encuentre
+- [X] T077 Ejecutar `pnpm lint && pnpm typecheck && pnpm test` y dejar todo en verde, incluidas las pruebas de la 002 (SC-001)
 - [ ] T078 Ejecutar `pnpm test:eval` y `EVAL_CHANNEL=web pnpm test:eval` con el modelo real y comparar los porcentajes de SC-001, SC-002 y SC-005 a SC-008 de la 002 entre canales (SC-002; tiene coste, fuera de `pnpm test`)
 - [ ] T079 Recorrer [quickstart.md](quickstart.md) en el navegador (escenarios 1 a 6), incluida la página de otro origen no permitido, el texto con `<script>` y la ventana privada, y anotar desviaciones
-- [ ] T080 Avisar al usuario y actualizar README.md con el estado de la feature 004 (canal web y "Probar el bot"), las variables `PUBLIC_BASE_URL` y `EMERGENCY_CONTACT_PHONE` obligatoria con `ANTHROPIC_API_KEY`, y cómo activar el chat e insertar el fragmento
+- [X] T080 Avisar al usuario y actualizar README.md con el estado de la feature 004 (canal web y "Probar el bot"), las variables `PUBLIC_BASE_URL` y `EMERGENCY_CONTACT_PHONE` obligatoria con `ANTHROPIC_API_KEY`, y cómo activar el chat e insertar el fragmento
 
 ---
 
@@ -365,3 +365,49 @@ Tras Foundational: una persona con US1 y otra con US2; US3 y US4 en secuencia de
 - Las tareas que tocan src/admin/routes/index.ts y layout.eta en US1 y US2 no son [P] entre sí.
 - Hacer commit tras cada tarea o grupo lógico; parar en cada checkpoint para validar.
 - `README.md` se actualiza solo en T080, y avisando antes al usuario (CLAUDE.md).
+
+---
+
+## Revisión de seguridad (T076): hallazgos y decisiones
+
+Auditoría del canal público y de las páginas nuevas del panel. **Ningún hallazgo crítico ni
+alto**: no hay inyección (consultas parametrizadas), ni XSS (solo `textContent` en los assets y
+`<%= %>` en las vistas), ni acceso a conversaciones ajenas (el `channelUserId` sale del token
+firmado), y el token del visitante no se persiste ni se registra.
+
+### Corregido en esta feature
+
+- `/chat/frame` respondía **sin ninguna CSP** si su manejador fallaba, porque la excepción de la
+  cabecera global se decide por URL. Ahora la cabecera global pone `FRAME_FALLBACK_CSP`
+  (`frame-ancestors 'none'`) cuando el manejador no ha puesto la suya.
+- `POST /chat/api/session` aceptaba cuerpos `application/x-www-form-urlencoded` de hasta el
+  límite global de 256 KB, porque `@fastify/formbody` se hereda de la raíz. El plugin del chat
+  ahora quita ese parser: solo acepta JSON, con los 8 KB del contrato. Con test de contrato.
+- Los errores 500 de `/chat/api/*` no se registraban. Ahora se escriben con `request.log.error`
+  (el serializador de peticiones sigue sin registrar la IP y `redact` cubre `authorization`).
+
+### Recomendaciones que no se aplican aquí (cambian la spec o código compartido)
+
+1. **Los límites por IP no están alineados con el tope diario** (lo más importante). R10 fija
+   120 mensajes/15 min por IP y R9 un tope de 200 respuestas/día: un solo visitante puede
+   agotar el tope del negocio en unos 25 minutos y dejar el chat "no disponible" al resto,
+   además del coste de modelo gastado. Cambiar esos números es cambiar R9/R10: necesita spec.
+2. **El token del visitante no caduca**. R4 fija el formato `base64url(id).base64url(HMAC)` sin
+   marca de tiempo, así que ponerle vencimiento cambia el contrato y su test.
+3. **Sin `PUBLIC_BASE_URL`, el origen de la instancia se deduce de la cabecera `Host`**, que un
+   cliente no-navegador controla. No es explotable desde un navegador (la API usa `Bearer`, no
+   cookies), pero conviene exigir `PUBLIC_BASE_URL` cuando el chat esté activado.
+4. **`GET /chat/api/messages` no lleva `LIMIT`**: lo acotan la ventana de 24 h y el límite por
+   visitante. Añadirlo toca `listForConversation`, que comparte el playground (US1).
+
+### Comportamiento por diseño, no hallazgos
+
+- `allowedOrigins` no protege la API: quien abra `/chat/frame` directamente usa el chat aunque
+  su web no esté en la lista. Lo que exige FR-015/FR-027 es que **otra web no pueda
+  incrustarlo**, y eso lo garantiza `frame-ancestors`.
+- El objeto `unavailable` da el contacto (de emergencia si no hay canales de derivación) y el
+  motivo a peticiones no autenticadas: es exactamente FR-022. Queda anotado que publica el
+  `EMERGENCY_CONTACT_PHONE` y el estado interno de la instancia.
+- Los límites por IP viven en memoria (R10): se reinician con el proceso y no se comparten
+  entre réplicas; con `TRUST_PROXY` mal ajustado detrás de un CDN todos los visitantes
+  compartirían clave.

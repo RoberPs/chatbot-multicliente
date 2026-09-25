@@ -383,3 +383,6 @@ code {
   padding: 0 0.2em;
   border-radius: 3px;
 }
+.notice.critical {
+  border-left-color: var(--danger);
+}

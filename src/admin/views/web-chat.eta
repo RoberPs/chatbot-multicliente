@@ -3,6 +3,16 @@
 <%~ include('/partials/general-error', { errors: it.errors, general: it.general, blocking: it.blocking, h: it.h }) %>
 <p class="hint">Chat en la web del negocio, atendido por el mismo asistente que WhatsApp. Empieza desactivado: no se muestra en ninguna web hasta que lo actives.</p>
 
+<% if (it.capReached) { %>
+  <p class="notice critical" role="alert">
+    <% if (it.capReached === 'day') { %>
+      El chat web ha alcanzado el tope diario: no responde hasta mañana. Los clientes ven el contacto del negocio.
+    <% } else { %>
+      El chat web ha alcanzado el tope mensual: no responde hasta el mes que viene. Los clientes ven el contacto del negocio.
+    <% } %>
+  </p>
+<% } %>
+
 <section class="card">
   <h2>Estado</h2>
   <p>

@@ -27,6 +27,18 @@ function files(dir: string): string[] {
 }
 
 describe('neutralidad sectorial del código', () => {
+  it('el recorrido incluye las vistas y los assets del panel y del chat web (004)', () => {
+    const paths = files(SRC).map((f) => relative(SRC, f).replaceAll('\\', '/'));
+    // Si alguien filtrase el recorrido por extensión, estas comprobaciones lo delatarían.
+    expect(paths).toContain('channels/web/assets/widget.js');
+    expect(paths).toContain('channels/web/assets/frame.js');
+    expect(paths).toContain('channels/web/assets/frame.css');
+    expect(paths).toContain('channels/web/views/frame.eta');
+    expect(paths).toContain('admin/views/web-chat.eta');
+    expect(paths).toContain('admin/views/playground.eta');
+    expect(paths.some((p) => p.startsWith('webchat/'))).toBe(true);
+  });
+
   it('ningún fichero de src/ contiene nombres de sector o cliente', () => {
     const hits: string[] = [];
     for (const file of files(SRC)) {
