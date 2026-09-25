@@ -65,9 +65,18 @@ WhatsApp en SC-001, SC-002 y SC-005 a SC-008 de la 002.
    ```
 
 5. Abre `http://localhost:8080` → aparece el botón del chat.
-6. Sirve la misma página en `-l 8081` (no permitida) → el navegador no muestra el chat (en la
-   consola: bloqueado por `frame-ancestors`).
-7. Desactiva el chat en el panel y recarga `:8080` → "no disponible" con el contacto.
+6. Sirve la misma página en `-l 8081` (no permitida) → el navegador no muestra **nada** (en la
+   consola: bloqueado por `frame-ancestors`). El iframe se inserta invisible y solo se muestra
+   cuando el chat se anuncia, así que tampoco se ve el recuadro de marco bloqueado.
+
+   > **Marca "Disable cache" en la pestaña Network de DevTools mientras hagas estas pruebas.**
+   > `widget.js` se sirve con `Cache-Control: public, max-age=3600` y Chrome guarda la caché
+   > **por sitio de primer nivel**, así que `:8080` y `:8081` tienen copias separadas: recargar
+   > una no refresca la otra, y es fácil creer que el chat se comporta mal cuando lo que corre
+   > es un `widget.js` antiguo.
+
+7. Desactiva el chat en el panel y recarga `:8080` → "no disponible" con el contacto. Aquí el
+   botón **sí** aparece (el frame carga y se anuncia); el mensaje se ve al pulsarlo.
 
 ## Escenario 3 — Conversar como cliente (US3)
 
