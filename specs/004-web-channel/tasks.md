@@ -386,6 +386,15 @@ firmado), y el token del visitante no se persiste ni se registra.
 - Los errores 500 de `/chat/api/*` no se registraban. Ahora se escriben con `request.log.error`
   (el serializador de peticiones sigue sin registrar la IP y `redact` cubre `authorization`).
 
+### Corregido durante el recorrido del quickstart (T079)
+
+- **El iframe bloqueado se veía en la web del negocio.** `widget.js` insertaba el marco siempre
+  visible, así que cuando el navegador se negaba a cargarlo (web no permitida) o el chat no
+  estaba disponible, el visitante veía el recuadro gris de marco bloqueado abajo a la derecha.
+  Ahora el iframe se inserta invisible y solo se muestra cuando el propio chat se anuncia con su
+  primer `chat:resize`; si no llega, no se ve nada. Con test de comportamiento en
+  `tests/unit/channels/web-widget.test.ts`, que ejecuta el script real sobre un DOM mínimo.
+
 ### Recomendaciones que no se aplican aquí (cambian la spec o código compartido)
 
 1. **Los límites por IP no están alineados con el tope diario** (lo más importante). R10 fija

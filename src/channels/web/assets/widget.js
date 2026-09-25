@@ -3,6 +3,11 @@
  *
  * Solo añade un iframe con el chat servido por la instancia y le cambia el tamaño cuando el
  * propio chat lo pide. No lee cookies, no mira el DOM de la web y no manda nada a ninguna parte.
+ *
+ * El iframe se inserta **invisible** y solo se muestra cuando el propio chat se anuncia con su
+ * primer `chat:resize`. Si el navegador se niega a cargarlo porque esta web no está en la lista
+ * de permitidas (`frame-ancestors`), nunca llega ese mensaje y en la página no se ve nada: sin
+ * esto quedaría a la vista el recuadro de marco bloqueado del navegador.
  */
 (function () {
   'use strict';
@@ -35,6 +40,8 @@
   frame.style.maxHeight = 'calc(100vh - 32px)';
   frame.style.width = CLOSED.width;
   frame.style.height = CLOSED.height;
+  // Hasta que el chat se anuncie no se ve nada (ni el marco bloqueado del navegador).
+  frame.style.visibility = 'hidden';
 
   function resize(open) {
     var size = open ? OPEN : CLOSED;
@@ -48,6 +55,8 @@
     if (event.source !== frame.contentWindow) return;
     var data = event.data;
     if (!data || data.type !== 'chat:resize') return;
+    // El chat ha cargado de verdad: ya se puede mostrar.
+    frame.style.visibility = 'visible';
     resize(data.open === true);
   });
 
