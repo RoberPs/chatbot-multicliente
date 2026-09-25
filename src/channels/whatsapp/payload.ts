@@ -70,8 +70,9 @@ const WITH_CAPTION = new Set(['image', 'video', 'document']);
 
 function toEvent(m: z.infer<typeof messageSchema>, audioTranscription: boolean): InboundEvent {
   const base = {
-    waMessageId: m.id,
-    from: toE164(m.from),
+    channel: 'whatsapp' as const,
+    channelUserId: toE164(m.from),
+    channelMessageId: m.id,
     sentAt: new Date(Number(m.timestamp) * 1000),
     isGroup: m.group_id !== undefined,
   };

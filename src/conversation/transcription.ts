@@ -7,6 +7,7 @@
  */
 import type { Db } from '../db/client.js';
 import type { ActivityLog, TranscriptionFailure } from './activity-log.js';
+import type { Channel } from './channels.js';
 import {
   MediaTooLargeError,
   SpeechToTextError,
@@ -20,8 +21,9 @@ export interface TranscriptionJob {
   messageId: string;
   mediaId: string;
   conversationId: string;
-  /** Solo para los registros (seudonimizado). */
-  phone: string;
+  /** Solo para los registros (`via` y seudónimo). */
+  channel: Channel;
+  customerKey: string;
 }
 
 export interface TranscriberDeps {
@@ -82,7 +84,11 @@ export function createTranscriber(deps: TranscriberDeps): Transcriber {
   }
 
   async function run(job: TranscriptionJob): Promise<void> {
-    const logContext = { phone: job.phone, conversationId: job.conversationId };
+    const logContext = {
+      channel: job.channel,
+      customerKey: job.customerKey,
+      conversationId: job.conversationId,
+    };
     try {
       const text = await textOf(job.mediaId);
       await setTranscription(db, job.messageId, 'done', text);

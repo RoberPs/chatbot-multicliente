@@ -3,7 +3,12 @@ import { sql } from 'drizzle-orm';
 import pg from 'pg';
 import { inject } from 'vitest';
 import { closeDb, createDb, type Db } from '../../src/db/client.js';
-import { allTableNames, business, conversationTableNames } from '../../src/db/schema.js';
+import {
+  allTableNames,
+  business,
+  conversationTableNames,
+  webChatSettings,
+} from '../../src/db/schema.js';
 import type { KnowledgeDeps } from '../../src/knowledge/services/deps.js';
 
 const TEMPLATE_DB = 'kb_template';
@@ -45,7 +50,10 @@ export async function createTestDatabase(): Promise<TestDatabase> {
   return { db, url, deps: { db, phoneRegion: 'ES' }, close: () => closeDb(db) };
 }
 
-/** Vacía todas las tablas y deja el negocio vacío en "draft". */
+/**
+ * Vacía todas las tablas, deja el negocio vacío en "draft" y el chat web con sus valores por
+ * defecto (es una fila única: se restablece, no se trunca).
+ */
 export async function resetDb(db: Db): Promise<void> {
   const tables = sql.join(
     [...conversationTableNames, ...allTableNames].map((t) => sql.identifier(t)),
@@ -55,4 +63,7 @@ export async function resetDb(db: Db): Promise<void> {
   await db
     .insert(business)
     .values({ id: 1, status: 'draft', name: '', timezone: 'Europe/Madrid', currency: 'EUR' });
+  await db
+    .update(webChatSettings)
+    .set({ enabled: false, allowedOrigins: [], privacyUrl: null, dailyCap: 200, monthlyCap: 3000 });
 }

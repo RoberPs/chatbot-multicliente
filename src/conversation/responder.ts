@@ -7,6 +7,7 @@
  */
 import type { KnowledgeSnapshot } from '../knowledge/types.js';
 import type { ActivityLog, ReplyTemplate } from './activity-log.js';
+import type { Channel } from './channels.js';
 import { buildAllowedFacts, deriveFacts } from './facts.js';
 import { groundingGuard, offendingCategories, type FactCategory } from './grounding.js';
 import { detectsHandoffRequest } from './handoff-detector.js';
@@ -24,8 +25,15 @@ import {
   mediaReply,
   rateLimitReply,
   safeReply,
+  unavailableReply,
 } from './templates.js';
-import type { HistoryTurn, ModelReply, PendingItem, ReplyContext } from './types.js';
+import type {
+  ContactReason,
+  HistoryTurn,
+  ModelReply,
+  PendingItem,
+  ReplyContext,
+} from './types.js';
 
 export interface ResponderDeps {
   chatModel: ChatModel;
@@ -43,17 +51,22 @@ export interface RespondInput {
   /** La conversación ya recibió el saludo (FR-020, FR-021). */
   greeted: boolean;
   now: Date;
-  /** Para los registros. */
-  phone: string;
+  /** Solo para los registros (`via` y seudónimo); ninguna regla depende del canal (FR-002). */
+  channel: Channel;
+  customerKey: string;
   conversationId: string;
 }
 
 export interface Response {
   text: string;
   contactBlock: boolean;
+  /** Por qué lleva contacto (`null` si no lo lleva); lo muestra "Probar el bot" (R7). */
+  contactReason: ContactReason | null;
   greeting: boolean;
   template?: ReplyTemplate;
   modelMs?: number;
+  /** Borradores rechazados por el verificador (0 – 2), sin sus valores. */
+  groundingRejections: number;
   truncated: boolean;
 }
 
@@ -74,22 +87,42 @@ function priceNeedsContact(snapshot: KnowledgeSnapshot, serviceId: string): bool
 }
 
 /**
- * Reglas de CONTACTO sobre la respuesta del modelo (contracts/bot-replies.md). La petición de
- * persona (bandera del modelo o detector) siempre lo añade; si el modelo pide reformular, nada
- * más lo añade.
+ * Reglas de CONTACTO sobre la respuesta del modelo (contracts/bot-replies.md): devuelve el
+ * motivo o `null`. La petición de persona (bandera del modelo o detector) siempre lo añade; si
+ * el modelo pide reformular, nada más lo añade. Precedencia (004): `handoff_requested` >
+ * `offer_contact` > `booking_requested` > `price_on_request`.
  */
 export function needsContact(
   snapshot: KnowledgeSnapshot,
   reply: ModelReply,
   handoffDetected: boolean,
-): boolean {
-  if (reply.handoffRequested || handoffDetected) return true;
-  if (reply.needsRephrase) return false;
-  return (
-    reply.offerContact ||
-    reply.bookingRequested ||
-    reply.mentionedServiceIds.some((id) => priceNeedsContact(snapshot, id))
-  );
+): ContactReason | null {
+  if (reply.handoffRequested || handoffDetected) return 'handoff_requested';
+  if (reply.needsRephrase) return null;
+  if (reply.offerContact) return 'offer_contact';
+  if (reply.bookingRequested) return 'booking_requested';
+  if (reply.mentionedServiceIds.some((id) => priceNeedsContact(snapshot, id))) {
+    return 'price_on_request';
+  }
+  return null;
+}
+
+/** Respuesta con plantilla fija: el contacto, si va, lo pone la plantilla. */
+function templateResponse(
+  text: string,
+  truncated: boolean,
+  withContact: boolean,
+  template: ReplyTemplate,
+): Response {
+  return {
+    text,
+    truncated,
+    contactBlock: withContact,
+    contactReason: withContact ? 'template' : null,
+    greeting: false,
+    template,
+    groundingRejections: 0,
+  };
 }
 
 /** Explica al modelo qué tipo de dato sobraba, sin repetir los valores rechazados. */
@@ -109,7 +142,7 @@ export function groundingFeedback(categories: FactCategory[]): string {
 export function unreadableSnapshotReply(emergencyPhone: string | null): Response {
   const contact = emergencyPhone ? emergencyContact(emergencyPhone) : null;
   const { text, truncated } = joinParts({ body: errorReply('tu'), contact });
-  return { text, truncated, contactBlock: contact !== null, greeting: false, template: 'R-ERR' };
+  return templateResponse(text, truncated, contact !== null, 'R-ERR');
 }
 
 /** R-LIMIT con el contacto del negocio, o con el de emergencia si no se pudo leer (FR-004a). */
@@ -124,7 +157,25 @@ export function rateLimitResponse(
       : null;
   const body = rateLimitReply(formOf(snapshot?.tone.addressForm ?? null));
   const { text, truncated } = joinParts({ body, contact });
-  return { text, truncated, contactBlock: contact !== null, greeting: false, template: 'R-LIMIT' };
+  return templateResponse(text, truncated, contact !== null, 'R-LIMIT');
+}
+
+/**
+ * R-UNAVAILABLE (004, R9): el chat no puede atender (tope alcanzado con mensajes ya aceptados).
+ * Sin modelo ni saludo, siempre con contacto (o el de emergencia si no se pudo leer).
+ */
+export function unavailableResponse(
+  snapshot: KnowledgeSnapshot | null,
+  emergencyPhone: string | null,
+): Response {
+  const contact = snapshot
+    ? contactBlock(snapshot)
+    : emergencyPhone
+      ? emergencyContact(emergencyPhone)
+      : null;
+  const body = unavailableReply(formOf(snapshot?.tone.addressForm ?? null));
+  const { text, truncated } = joinParts({ body, contact });
+  return templateResponse(text, truncated, contact !== null, 'R-UNAVAILABLE');
 }
 
 export function createResponder(deps: ResponderDeps) {
@@ -146,19 +197,24 @@ export function createResponder(deps: ResponderDeps) {
         greetingPrepended: !input.greeted,
         addressForm: snapshot.tone.addressForm,
       };
-      const logContext = { phone: input.phone, conversationId: input.conversationId };
+      const logContext = {
+        channel: input.channel,
+        customerKey: input.customerKey,
+        conversationId: input.conversationId,
+      };
 
       const { pending } = input;
       const notice = pending.some((p) => p.kind === 'other')
         ? fileNotice(audioTranscription)
         : null;
+      let groundingRejections = 0;
       const compose = (
         body: string,
-        withContact: boolean,
+        reason: ContactReason | null,
         template?: ReplyTemplate,
         withNotice = true,
-      ) => {
-        const contact = withContact ? contactBlock(snapshot) : null;
+      ): Response => {
+        const contact = reason ? contactBlock(snapshot) : null;
         const hello = input.greeted ? null : greeting(snapshot.business.name, form);
         const { text, truncated } = joinParts({
           greeting: hello,
@@ -166,15 +222,23 @@ export function createResponder(deps: ResponderDeps) {
           fileNotice: withNotice ? notice : null,
           contact,
         });
-        return { text, truncated, contactBlock: withContact, greeting: hello !== null, template };
+        return {
+          text,
+          truncated,
+          contactBlock: reason !== null,
+          contactReason: reason,
+          greeting: hello !== null,
+          template,
+          groundingRejections,
+        };
       };
 
       // Árbol de decisión (contracts/bot-replies.md): lotes que no necesitan al modelo.
       if (pending.every((p) => p.kind === 'other' && !p.text)) {
-        return compose(mediaReply(form, audioTranscription), false, 'R-MEDIA', false);
+        return compose(mediaReply(form, audioTranscription), null, 'R-MEDIA', false);
       }
       if (audioTranscription && pending.every((p) => p.kind === 'audio' && !p.audioUnderstood)) {
-        return compose(audioReply(form), false, 'R-AUDIO');
+        return compose(audioReply(form), null, 'R-AUDIO');
       }
 
       // Un único plazo para toda la respuesta, compartido por los dos intentos (R7).
@@ -191,13 +255,14 @@ export function createResponder(deps: ResponderDeps) {
           reply = await chatModel.reply(context, { signal: controller.signal, feedback });
           const guard = groundingGuard(reply.body, allowed);
           if (guard.ok) break;
+          groundingRejections += 1;
           activityLog.log(
             { event: 'grounding_rejected', attempt, offendingCount: guard.offending.length },
             logContext,
           );
           const remaining = settings.modelBudgetMs - elapsed();
           if (attempt >= 2 || remaining < settings.minRetryBudgetMs) {
-            return { ...compose(safeReply(form), true, 'R-SAFE'), modelMs: elapsed() };
+            return { ...compose(safeReply(form), 'template', 'R-SAFE'), modelMs: elapsed() };
           }
           feedback = groundingFeedback(offendingCategories(reply.body, allowed));
         }
@@ -219,7 +284,7 @@ export function createResponder(deps: ResponderDeps) {
           },
           logContext,
         );
-        return { ...compose(errorReply(form), true, 'R-ERR'), modelMs: elapsed() };
+        return { ...compose(errorReply(form), 'template', 'R-ERR'), modelMs: elapsed() };
       } finally {
         clearTimeout(timer);
       }

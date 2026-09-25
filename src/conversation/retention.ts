@@ -1,9 +1,11 @@
 /**
  * Borrado de conversaciones (FR-030, SC-011, research R11): cada hora y al arrancar se borran
  * las conversaciones sin mensajes desde hace 30 días (sus mensajes caen en cascada) y después
- * los clientes que se quedan sin conversaciones.
+ * los clientes que se quedan sin conversaciones, de cualquier canal. Desde la 004 también borra
+ * los días de uso del chat web de hace más de 400 días (FR-028).
  */
 import type { Db } from '../db/client.js';
+import { purgeWebUsage } from '../webchat/usage.js';
 import type { ActivityLog } from './activity-log.js';
 import type { Clock } from './ports.js';
 import * as conversations from './repositories/conversation.js';
@@ -33,11 +35,16 @@ export function createRetention(deps: RetentionDeps): Retention {
   let current: Promise<unknown> | null = null;
 
   async function purge() {
-    const cutoff = new Date(clock.now().getTime() - settings.retentionMs);
-    const result = await db.transaction(async (tx) => ({
-      conversations: await conversations.deleteOlderThan(tx, cutoff),
-      customers: await deleteOrphans(tx),
-    }));
+    const now = clock.now();
+    const cutoff = new Date(now.getTime() - settings.retentionMs);
+    const result = await db.transaction(async (tx) => {
+      const removed = {
+        conversations: await conversations.deleteOlderThan(tx, cutoff),
+        customers: await deleteOrphans(tx),
+      };
+      await purgeWebUsage(tx, now);
+      return removed;
+    });
     activityLog.log({ event: 'retention_purged', ...result });
     return result;
   }

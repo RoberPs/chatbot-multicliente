@@ -1,34 +1,45 @@
 /**
  * Procesador de respuestas (research R5): espera de agrupado, lectura del snapshot sin caché,
  * generación, guardado y envío. El estado vive en la BD, así que se puede reanudar.
+ *
+ * Desde la 004 atiende todos los canales con la misma cadena; lo propio de cada uno (entrega,
+ * ventana de 24 h, negocio activo, chat activado, tope) sale de su `ChannelPolicy`.
  */
 import type { Db } from '../db/client.js';
 import type { KnowledgeReader, KnowledgeSnapshot } from '../knowledge/types.js';
-import type { ActivityLog } from './activity-log.js';
-import { ChannelSendError, type ChannelSender, type ChatModel, type Clock } from './ports.js';
+import { readWebChatSettings } from '../webchat/settings.js';
+import { capReached, incrementWebUsage, readWebUsage, type QuotaWatch } from '../webchat/usage.js';
+import type { ActivityLog, EventContext } from './activity-log.js';
+import type { ChannelPolicies, ChannelPolicy } from './channels.js';
+import { ChannelSendError, type ChatModel, type Clock } from './ports.js';
 import * as conversations from './repositories/conversation.js';
+import type { ConversationWithCustomer } from './repositories/conversation.js';
 import * as messages from './repositories/message.js';
 import type { InboundRow } from './repositories/message.js';
 import {
   createResponder,
   rateLimitResponse,
+  unavailableResponse,
   unreadableSnapshotReply,
   type Response,
 } from './responder.js';
 import { conversationSettings, type ConversationSettings } from './settings.js';
-import type { HistoryTurn, MessageKind, PendingItem } from './types.js';
+import type { HistoryTurn, MessageKind, PendingItem, ReplyTrace } from './types.js';
 
 export interface ProcessorDeps {
   db: Db;
   reader: KnowledgeReader;
   chatModel: ChatModel;
-  sender: ChannelSender;
+  /** Qué hace cada canal: entrega, ventana, negocio activo, chat activado y tope (R1). */
+  policies: ChannelPolicies;
   clock: Clock;
   activityLog: ActivityLog;
   /** Contacto de la instancia para cuando no se puede leer el snapshot (FR-029). */
   emergencyContactPhone: string | null;
   /** AUDIO_TRANSCRIPTION (por defecto apagado). */
   audioTranscription?: boolean;
+  /** Registra `web_quota_reached` una vez por periodo (compartido con la recepción). */
+  quotaWatch?: QuotaWatch;
   settings?: ConversationSettings;
 }
 
@@ -54,8 +65,18 @@ const pendingItem = (m: InboundRow): PendingItem =>
     ? { kind: 'audio', text: m.body, audioUnderstood: m.transcription === 'done' && !!m.body }
     : { kind: m.kind, text: m.body };
 
+/** Información técnica de la respuesta (R7): sin textos ni valores rechazados. */
+const traceOf = (response: Response, latencyMs: number): ReplyTrace => ({
+  template: response.template ?? null,
+  greeting: response.greeting,
+  contact: { added: response.contactBlock, reason: response.contactReason },
+  groundingRejections: response.groundingRejections,
+  modelMs: response.modelMs === undefined ? null : Math.max(0, Math.round(response.modelMs)),
+  latencyMs: Math.max(0, Math.round(latencyMs)),
+});
+
 export function createProcessor(deps: ProcessorDeps): Processor {
-  const { db, reader, sender, clock, activityLog } = deps;
+  const { db, reader, clock, activityLog, policies } = deps;
   const settings = deps.settings ?? conversationSettings;
   const responder = createResponder({
     chatModel: deps.chatModel,
@@ -84,10 +105,18 @@ export function createProcessor(deps: ProcessorDeps): Processor {
     );
   }
 
-  type LogContext = { phone: string; conversationId: string };
+  type LogContext = Required<EventContext>;
 
-  const insideWindow = (lastInboundAt: Date) =>
-    clock.now().getTime() - lastInboundAt.getTime() <= settings.conversationWindowMs;
+  const contextOf = (conversation: ConversationWithCustomer): LogContext => ({
+    channel: conversation.channel,
+    customerKey: conversation.channelUserId,
+    conversationId: conversation.id,
+  });
+
+  /** Dentro de la ventana del canal para responder (FR-002a); sin ventana, siempre. */
+  const insideWindow = (policy: ChannelPolicy, lastInboundAt: Date) =>
+    policy.replyWindowMs === null ||
+    clock.now().getTime() - lastInboundAt.getTime() <= policy.replyWindowMs;
 
   /** Snapshot sin caché; `null` si no se puede leer (FR-029). */
   async function readSnapshot(logContext: LogContext): Promise<KnowledgeSnapshot | null> {
@@ -102,22 +131,52 @@ export function createProcessor(deps: ProcessorDeps): Processor {
     }
   }
 
+  /** Marca los pendientes como descartados y lo registra, uno por mensaje. */
+  async function discardPending(
+    pending: InboundRow[],
+    reason: 'outside_window' | 'disabled',
+    logContext: LogContext,
+  ): Promise<void> {
+    await messages.markDiscarded(
+      db,
+      pending.map((m) => m.id),
+    );
+    for (let i = 0; i < pending.length; i++) {
+      activityLog.log({ event: 'message_discarded', reason }, logContext);
+    }
+  }
+
+  /** Tope del chat web alcanzado ahora (R9); `false` si el canal no tiene tope. */
+  async function webCapReached(
+    policy: ChannelPolicy,
+    snapshot: KnowledgeSnapshot | null,
+  ): Promise<boolean> {
+    if (!policy.usageCap || !snapshot) return false;
+    const now = clock.now();
+    const timezone = snapshot.business.timezone;
+    const current = await readWebChatSettings(db);
+    const period = capReached(await readWebUsage(db, now, timezone), current);
+    if (period) deps.quotaWatch?.reached(period, current, now, timezone);
+    return period !== null;
+  }
+
   /**
-   * Guarda el saliente (cubriendo los entrantes en la misma transacción), lo envía y registra
-   * el resultado. Si el envío falla, los entrantes siguen contestados: no se repite.
+   * Guarda el saliente (cubriendo los entrantes en la misma transacción, con su `reply_trace` y
+   * sumando al uso del chat web si toca), lo entrega y registra el resultado. Si el envío
+   * falla, los entrantes siguen contestados: no se repite.
    */
   async function deliver(args: {
-    conversationId: string;
-    phone: string;
+    conversation: ConversationWithCustomer;
+    policy: ChannelPolicy;
+    snapshot: KnowledgeSnapshot | null;
     response: Response;
     covered: InboundRow[];
     startedAt: Date;
     lastReceived: number;
-    /** Último mensaje del cliente: marca la ventana de 24 h de WhatsApp (FR-002a). */
-    lastInboundAt: Date;
   }): Promise<void> {
-    const { conversationId, phone, response, covered, startedAt, lastReceived } = args;
-    const logContext = { phone, conversationId };
+    const { conversation, policy, snapshot, response, covered, startedAt, lastReceived } = args;
+    const conversationId = conversation.id;
+    const logContext = contextOf(conversation);
     const outboundId = await db.transaction(async (tx) => {
       const at = clock.now();
       const id = await messages.createOutboundCovering(
@@ -126,31 +185,40 @@ export function createProcessor(deps: ProcessorDeps): Processor {
         response.text,
         covered.map((m) => m.id),
         at,
+        traceOf(response, at.getTime() - lastReceived),
       );
       await conversations.touchMessage(tx, conversationId, at);
       if (response.greeting) await conversations.markGreeted(tx, conversationId);
+      // R9: cada respuesta web cuenta, salvo R-UNAVAILABLE (que es la del tope).
+      if (policy.usageCap && snapshot && response.template !== 'R-UNAVAILABLE') {
+        await incrementWebUsage(tx, at, snapshot.business.timezone);
+      }
       return id;
     });
 
     try {
-      const { channelMessageId } = await sender.sendText(phone, response.text, {
+      const { channelMessageId } = await policy.sender.sendText(
+        conversation.channelUserId,
+        response.text,
         // No se reintenta si la ventana se ha cerrado mientras tanto.
-        canRetry: () => insideWindow(args.lastInboundAt),
-      });
+        { canRetry: () => insideWindow(policy, conversation.lastInboundAt) },
+      );
       const sentAt = clock.now();
-      await messages.markSent(db, outboundId, channelMessageId, sentAt);
+      const latencyMs = sentAt.getTime() - lastReceived;
+      await messages.markSent(db, outboundId, channelMessageId, sentAt, traceOf(response, latencyMs));
       await conversations.touchMessage(db, conversationId, sentAt);
       activityLog.log(
         {
           event: 'reply_sent',
           messagesCovered: covered.length,
           kinds: [...new Set(covered.map((m) => m.kind))],
-          latencyMs: sentAt.getTime() - lastReceived,
+          latencyMs,
           waitMs: startedAt.getTime() - lastReceived,
           ...(response.modelMs === undefined ? {} : { modelMs: response.modelMs }),
           greeting: response.greeting,
           contactBlock: response.contactBlock,
           ...(response.template ? { template: response.template } : {}),
+          groundingRejections: response.groundingRejections,
         },
         logContext,
       );
@@ -171,13 +239,19 @@ export function createProcessor(deps: ProcessorDeps): Processor {
   }
 
   async function processConversation(conversationId: string): Promise<void> {
-    const conversation = await conversations.findWithPhone(db, conversationId);
+    const conversation = await conversations.findWithCustomer(db, conversationId);
     if (!conversation) return;
-    const logContext = { phone: conversation.phone, conversationId };
+    const logContext = contextOf(conversation);
+    const policy = policies[conversation.channel];
+    if (!policy) {
+      // Canal que ya no está configurado (p. ej. WhatsApp retirado): no se puede contestar.
+      await discardPending(await messages.pendingFor(db, conversationId), 'disabled', logContext);
+      return;
+    }
 
     // FR-029: si no se puede leer, se contesta igualmente con el contacto de emergencia.
     const snapshot = await readSnapshot(logContext);
-    if (snapshot && snapshot.status !== 'active') {
+    if (policy.requiresActiveBusiness && snapshot && snapshot.status !== 'active') {
       // FR-002: nada puede quedar guardado para contestarse después.
       const removed = await messages.deletePending(db, conversationId);
       for (let i = 0; i < removed; i++) {
@@ -188,60 +262,69 @@ export function createProcessor(deps: ProcessorDeps): Processor {
 
     const pending = await messages.pendingFor(db, conversationId);
     if (pending.length === 0) return;
-    if (!insideWindow(conversation.lastInboundAt)) {
+    if (policy.requiresWebChatEnabled && !(await readWebChatSettings(db)).enabled) {
+      // US2-5: desactivado entre la recepción y la respuesta → sin respuesta.
+      await discardPending(pending, 'disabled', logContext);
+      return;
+    }
+    if (!insideWindow(policy, conversation.lastInboundAt)) {
       // FR-002a: fuera de la ventana de 24 h WhatsApp no deja contestar.
-      await messages.markDiscarded(
-        db,
-        pending.map((m) => m.id),
-      );
-      for (let i = 0; i < pending.length; i++) {
-        activityLog.log({ event: 'message_discarded', reason: 'outside_window' }, logContext);
-      }
+      await discardPending(pending, 'outside_window', logContext);
       return;
     }
     const startedAt = clock.now();
     const lastReceived = Math.max(...pending.map((m) => m.receivedAt.getTime()));
 
-    const response = snapshot
-      ? await responder.respond({
-          snapshot,
-          history: (await messages.history(db, conversationId, settings.historyLimit)).map(
-            (h): HistoryTurn => ({ direction: h.direction, text: historyText(h) }),
-          ),
-          pending: pending.map(pendingItem),
-          greeted: conversation.greeted,
-          now: startedAt,
-          phone: conversation.phone,
-          conversationId,
-        })
-      : unreadableSnapshotReply(deps.emergencyContactPhone);
+    let response: Response;
+    if (!snapshot) {
+      response = unreadableSnapshotReply(deps.emergencyContactPhone);
+    } else if (await webCapReached(policy, snapshot)) {
+      // SC-006: con el tope alcanzado no se llama al modelo.
+      response = unavailableResponse(snapshot, deps.emergencyContactPhone);
+    } else {
+      response = await responder.respond({
+        snapshot,
+        history: (await messages.history(db, conversationId, settings.historyLimit)).map(
+          (h): HistoryTurn => ({ direction: h.direction, text: historyText(h) }),
+        ),
+        pending: pending.map(pendingItem),
+        greeted: conversation.greeted,
+        now: startedAt,
+        channel: conversation.channel,
+        customerKey: conversation.channelUserId,
+        conversationId,
+      });
+    }
 
     await deliver({
-      conversationId,
-      phone: conversation.phone,
+      conversation,
+      policy,
+      snapshot,
       response,
       covered: pending,
       startedAt,
       lastReceived,
-      lastInboundAt: conversation.lastInboundAt,
     });
   }
 
-  /** R-LIMIT con CONTACTO, sin modelo ni espera (FR-004a, R6). */
+  /** R-LIMIT con CONTACTO, sin modelo ni espera (FR-004a, R6). Igual en todos los canales. */
   async function rateLimitNotice(conversationId: string): Promise<void> {
-    const conversation = await conversations.findWithPhone(db, conversationId);
+    const conversation = await conversations.findWithCustomer(db, conversationId);
     if (!conversation) return;
-    const snapshot = await readSnapshot({ phone: conversation.phone, conversationId });
-    if (snapshot && snapshot.status !== 'active') return;
+    const policy = policies[conversation.channel];
+    if (!policy) return;
+    const snapshot = await readSnapshot(contextOf(conversation));
+    if (policy.requiresActiveBusiness && snapshot && snapshot.status !== 'active') return;
+    if (policy.requiresWebChatEnabled && !(await readWebChatSettings(db)).enabled) return;
     const startedAt = clock.now();
     await deliver({
-      conversationId,
-      phone: conversation.phone,
+      conversation,
+      policy,
+      snapshot,
       response: rateLimitResponse(snapshot, deps.emergencyContactPhone),
       covered: [],
       startedAt,
       lastReceived: startedAt.getTime(),
-      lastInboundAt: conversation.lastInboundAt,
     });
   }
 

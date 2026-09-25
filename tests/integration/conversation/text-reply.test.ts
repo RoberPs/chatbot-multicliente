@@ -53,7 +53,7 @@ describe('US1: respuesta a un texto', () => {
     const rows = await bot.messages();
     const inbound = rows.find((m) => m.direction === 'inbound');
     const outbound = rows.find((m) => m.direction === 'outbound');
-    expect(outbound).toMatchObject({ status: 'sent', waMessageId: 'wamid.out.1', kind: 'text' });
+    expect(outbound).toMatchObject({ status: 'sent', channelMessageId: 'wamid.out.1', kind: 'text' });
     expect(inbound).toMatchObject({ status: 'answered', replyId: outbound?.id });
   });
 

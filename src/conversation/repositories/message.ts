@@ -1,6 +1,6 @@
-import { and, asc, count, desc, eq, gt, inArray, or } from 'drizzle-orm';
+import { and, asc, count, desc, eq, gt, inArray, or, sql } from 'drizzle-orm';
 import { conversation, message } from '../../db/schema.js';
-import type { MessageKind } from '../types.js';
+import type { MessageKind, ReplyTrace } from '../types.js';
 import type { DbOrTx } from './customer.js';
 
 export type InboundStatus = 'pending' | 'rate_limited';
@@ -23,12 +23,12 @@ export interface HistoryRow {
   otherType: string | null;
 }
 
-/** Guarda un entrante; `inserted = false` si el id de WhatsApp ya estaba (FR-004). */
+/** Guarda un entrante; `inserted = false` si el id del canal ya estaba (FR-004, FR-023). */
 export async function insertInbound(
   tx: DbOrTx,
   values: {
     conversationId: string;
-    waMessageId: string;
+    channelMessageId: string;
     kind: MessageKind;
     body: string | null;
     otherType: string | null;
@@ -41,7 +41,7 @@ export async function insertInbound(
   const rows = await tx
     .insert(message)
     .values({ ...values, direction: 'inbound', transcription: values.transcription ?? null })
-    .onConflictDoNothing({ target: message.waMessageId })
+    .onConflictDoNothing({ target: message.channelMessageId })
     .returning({ id: message.id });
   const id = rows[0]?.id ?? null;
   return { inserted: id !== null, id };
@@ -113,6 +113,7 @@ export async function createOutboundCovering(
   body: string,
   inboundIds: string[],
   at: Date,
+  replyTrace: ReplyTrace | null = null,
 ): Promise<string> {
   const [outbound] = await tx
     .insert(message)
@@ -124,6 +125,7 @@ export async function createOutboundCovering(
       sentAt: at,
       receivedAt: at,
       status: 'sending',
+      replyTrace,
     })
     .returning({ id: message.id });
   if (!outbound) throw new Error('No se pudo crear el saliente');
@@ -140,15 +142,22 @@ export async function createOutboundCovering(
   return outbound.id;
 }
 
+/** Marca el saliente como enviado; `replyTrace` sustituye al guardado (latencia final). */
 export async function markSent(
   tx: DbOrTx,
   id: string,
   channelMessageId: string,
   sentAt: Date,
+  replyTrace?: ReplyTrace,
 ): Promise<void> {
   await tx
     .update(message)
-    .set({ status: 'sent', waMessageId: channelMessageId, sentAt })
+    .set({
+      status: 'sent',
+      channelMessageId,
+      sentAt,
+      ...(replyTrace === undefined ? {} : { replyTrace }),
+    })
     .where(eq(message.id, id));
 }
 
@@ -208,4 +217,80 @@ export async function setTranscription(
   body: string | null,
 ): Promise<void> {
   await tx.update(message).set({ transcription: status, body }).where(eq(message.id, id));
+}
+
+export interface ConversationMessage {
+  id: string;
+  direction: 'inbound' | 'outbound';
+  body: string | null;
+  sentAt: Date;
+  replyTrace: ReplyTrace | null;
+}
+
+/** Cursor opaco: posición (sent_at, id) del último mensaje entregado. */
+export function encodeCursor(m: { sentAt: Date; id: string }): string {
+  return Buffer.from(`${m.sentAt.toISOString()}|${m.id}`, 'utf8').toString('base64url');
+}
+
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
+
+/** `null` si el cursor no es uno emitido por `encodeCursor`. */
+export function decodeCursor(cursor: string): { sentAt: Date; id: string } | null {
+  const [iso, id, ...rest] = Buffer.from(cursor, 'base64url').toString('utf8').split('|');
+  if (rest.length > 0 || iso === undefined || id === undefined || !UUID_RE.test(id)) return null;
+  const sentAt = new Date(iso);
+  return Number.isNaN(sentAt.getTime()) || sentAt.toISOString() !== iso ? null : { sentAt, id };
+}
+
+/**
+ * Mensajes visibles de una conversación para el playground y la web (R5, R6): entrantes
+ * `pending`, `answered` o `rate_limited` y salientes `sent`, en orden. Con `after`, solo los
+ * posteriores a ese cursor.
+ */
+export async function listForConversation(
+  tx: DbOrTx,
+  conversationId: string,
+  after?: { sentAt: Date; id: string } | null,
+): Promise<ConversationMessage[]> {
+  const rows = await tx
+    .select({
+      id: message.id,
+      direction: message.direction,
+      body: message.body,
+      sentAt: message.sentAt,
+      replyTrace: message.replyTrace,
+    })
+    .from(message)
+    .where(
+      and(
+        eq(message.conversationId, conversationId),
+        or(
+          and(
+            eq(message.direction, 'inbound'),
+            inArray(message.status, ['pending', 'answered', 'rate_limited']),
+          ),
+          and(eq(message.direction, 'outbound'), eq(message.status, 'sent')),
+        ),
+        after
+          ? sql`(${message.sentAt}, ${message.id}) > (${after.sentAt}, ${after.id}::uuid)`
+          : undefined,
+      ),
+    )
+    .orderBy(asc(message.sentAt), asc(message.id));
+  return rows.map((r) => ({ ...r, replyTrace: (r.replyTrace as ReplyTrace | null) ?? null }));
+}
+
+/** Hay entrantes del cliente pendientes de respuesta (el cliente sigue esperando). */
+export async function hasPending(tx: DbOrTx, conversationId: string): Promise<boolean> {
+  const [row] = await tx
+    .select({ n: count() })
+    .from(message)
+    .where(
+      and(
+        eq(message.conversationId, conversationId),
+        eq(message.direction, 'inbound'),
+        eq(message.status, 'pending'),
+      ),
+    );
+  return (row?.n ?? 0) > 0;
 }

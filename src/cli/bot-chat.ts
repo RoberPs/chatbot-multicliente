@@ -16,6 +16,7 @@ import {
   silentActivityLog,
   type LoggerLike,
 } from '../conversation/activity-log.js';
+import { buildChannelPolicies } from '../conversation/channels.js';
 import { createIntake } from '../conversation/intake.js';
 import { systemClock, type ChannelSender } from '../conversation/ports.js';
 import { createProcessor } from '../conversation/processor.js';
@@ -79,6 +80,9 @@ const consoleSender: ChannelSender = {
   },
 };
 
+// Simula WhatsApp (sin ventana de envío real): el canal de consola hace de Graph API.
+const policies = buildChannelPolicies({ whatsappSender: consoleSender });
+
 const processor = createProcessor({
   db,
   reader,
@@ -87,7 +91,7 @@ const processor = createProcessor({
     model: env.LLM_MODEL,
     effort: env.LLM_EFFORT,
   }),
-  sender: consoleSender,
+  policies,
   clock: systemClock,
   activityLog,
   emergencyContactPhone: env.emergencyContactPhone,
@@ -97,6 +101,7 @@ const intake = createIntake({
   reader,
   clock: systemClock,
   activityLog,
+  policies,
   wake: (id) => {
     processor.wake(id);
   },
@@ -108,8 +113,9 @@ const intake = createIntake({
 const send = (text: string) =>
   intake.handle([
     {
-      waMessageId: `cli-${randomUUID()}`,
-      from,
+      channel: 'whatsapp',
+      channelUserId: from,
+      channelMessageId: `cli-${randomUUID()}`,
       sentAt: new Date(),
       kind: 'text',
       text,

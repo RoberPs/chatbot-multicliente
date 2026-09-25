@@ -7,7 +7,7 @@
 import { existsSync } from 'node:fs';
 import { audioQuestions } from '../fixtures/audio/questions.js';
 import { describeCriterion } from './criterion.js';
-import { AUDIO_DIR, hasSttKey } from './harness.js';
+import { AUDIO_DIR, evalChannel, hasSttKey } from './harness.js';
 
 const missing = audioQuestions
   .flatMap((s) => s.questions)
@@ -25,5 +25,5 @@ if (missing.length > 0) {
 describeCriterion('SC-009', 'preguntas por audio', {
   sectors: audioQuestions,
   audio: true,
-  skip: !hasSttKey || missing.length > 0,
+  skip: !hasSttKey || missing.length > 0 || evalChannel === 'web',
 });

@@ -24,8 +24,9 @@ describe('parser del webhook de WhatsApp', () => {
   it('texto → kind text, E.164 y marca de WhatsApp', () => {
     const [e] = events([textMessage('hola', { id: 'wamid.1', timestamp: 1790000000 })]);
     expect(e).toEqual({
-      waMessageId: 'wamid.1',
-      from: CUSTOMER_E164,
+      channel: 'whatsapp',
+      channelUserId: CUSTOMER_E164,
+      channelMessageId: 'wamid.1',
       sentAt: new Date(1790000000 * 1000),
       kind: 'text',
       text: 'hola',

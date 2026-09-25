@@ -10,6 +10,7 @@ import {
   date,
   index,
   integer,
+  jsonb,
   type AnyPgColumn,
   pgEnum,
   pgTable,
@@ -287,13 +288,23 @@ export const transcriptionStatus = pgEnum('transcription_status', ['pending', 'd
 
 const instant = (name: string) => timestamp(name, { withTimezone: true, mode: 'date' });
 
-/** Cliente final: solo su teléfono en E.164 (FR-030). */
-export const customer = pgTable('customer', {
-  id: uuid('id').primaryKey().defaultRandom(),
-  phone: text('phone').notNull().unique(),
-  rateLimitNotifiedAt: instant('rate_limit_notified_at'),
-  createdAt: instant('created_at').notNull().defaultNow(),
-});
+export const customerChannel = pgEnum('customer_channel', ['whatsapp', 'web', 'playground']);
+
+/**
+ * Cliente final de cualquier canal (004, FR-001): solo su identificador en el canal
+ * (WhatsApp: E.164; web: SHA-256 de la sesión; playground: UUID).
+ */
+export const customer = pgTable(
+  'customer',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    channel: customerChannel('channel').notNull(),
+    channelUserId: text('channel_user_id').notNull(),
+    rateLimitNotifiedAt: instant('rate_limit_notified_at'),
+    createdAt: instant('created_at').notNull().defaultNow(),
+  },
+  (t) => [unique('customer_channel_user_unique').on(t.channel, t.channelUserId)],
+);
 
 export const conversation = pgTable(
   'conversation',
@@ -322,7 +333,7 @@ export const message = pgTable(
       .references(() => conversation.id, { onDelete: 'cascade' }),
     direction: messageDirection('direction').notNull(),
     kind: messageKind('kind').notNull(),
-    waMessageId: text('wa_message_id').unique(),
+    channelMessageId: text('channel_message_id').unique(),
     body: text('body'),
     otherType: text('other_type'),
     sentAt: instant('sent_at').notNull(),
@@ -330,6 +341,8 @@ export const message = pgTable(
     status: messageStatus('status').notNull(),
     transcription: transcriptionStatus('transcription'),
     replyId: uuid('reply_id').references((): AnyPgColumn => message.id, { onDelete: 'set null' }),
+    /** Solo en salientes: cómo se compuso la respuesta (004, R7). Sin textos ni datos personales. */
+    replyTrace: jsonb('reply_trace'),
   },
   (t) => [
     index('message_conversation_sent_idx').on(t.conversationId, t.sentAt),
@@ -339,8 +352,38 @@ export const message = pgTable(
   ],
 );
 
+/** Configuración del chat web (004, R8): una sola fila, editable en el panel. */
+export const webChatSettings = pgTable(
+  'web_chat_settings',
+  {
+    id: smallint('id').primaryKey().default(1),
+    enabled: boolean('enabled').notNull().default(false),
+    allowedOrigins: text('allowed_origins').array().notNull().default(sql`'{}'::text[]`),
+    privacyUrl: text('privacy_url'),
+    dailyCap: integer('daily_cap').notNull().default(200),
+    monthlyCap: integer('monthly_cap').notNull().default(3000),
+    updatedAt: updatedAt(),
+  },
+  (t) => [
+    check('web_chat_settings_singleton', sql`${t.id} = 1`),
+    check('web_chat_settings_daily_cap', sql`${t.dailyCap} >= 1`),
+    check('web_chat_settings_monthly_cap', sql`${t.monthlyCap} >= ${t.dailyCap}`),
+  ],
+);
+
+/** Respuestas del canal web por día en la zona horaria del negocio (004, R9). */
+export const webUsageDay = pgTable('web_usage_day', {
+  day: isoDate('day').primaryKey(),
+  replies: integer('replies').notNull().default(0),
+});
+
 /** Tablas de conversaciones del bot (sin `updated_at`: no forman parte del snapshot). */
-export const conversationTableNames = ['message', 'conversation', 'customer'] as const;
+export const conversationTableNames = [
+  'message',
+  'conversation',
+  'customer',
+  'web_usage_day',
+] as const;
 
 /** Todas las tablas de la base de conocimiento, en orden seguro para TRUNCATE en tests. */
 export const allTableNames = [

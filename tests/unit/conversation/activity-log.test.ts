@@ -24,31 +24,70 @@ describe('registro técnico del bot', () => {
   it('seudónimo estable, de 12 hex, distinto por número y sin el número en claro', () => {
     const { logger } = capture();
     const log = createActivityLog(logger, SECRET);
-    const a = log.pseudonym('+34600111222');
+    const a = log.pseudonym('whatsapp', '+34600111222');
     expect(a).toMatch(/^[0-9a-f]{12}$/);
-    expect(log.pseudonym('+34600111222')).toBe(a);
-    expect(createActivityLog(logger, SECRET).pseudonym('+34600111222')).toBe(a);
-    expect(log.pseudonym('+34600111223')).not.toBe(a);
+    expect(log.pseudonym('whatsapp', '+34600111222')).toBe(a);
+    expect(createActivityLog(logger, SECRET).pseudonym('whatsapp', '+34600111222')).toBe(a);
+    expect(log.pseudonym('whatsapp', '+34600111223')).not.toBe(a);
     expect(a).not.toContain('600111222');
   });
 
-  it('emite en el canal bot con el seudónimo y sin el número', () => {
+  it('el mismo channel_user_id en dos canales da seudónimos distintos (R12)', () => {
+    const log = createActivityLog(capture().logger, SECRET);
+    const id = '0f8fad5b-d9cb-469f-a165-70867728950e';
+    expect(log.pseudonym('playground', id)).not.toBe(log.pseudonym('web', id));
+    expect(log.pseudonym('whatsapp', '+34600111222')).not.toBe(
+      log.pseudonym('playground', '+34600111222'),
+    );
+  });
+
+  it('emite en el canal bot con via, el seudónimo y sin el número', () => {
     const { logger, lines } = capture();
     const log = createActivityLog(logger, SECRET);
     log.log(
       { event: 'message_received', kind: 'text' },
-      { phone: '+34600111222', conversationId: 'c1' },
+      { channel: 'whatsapp', customerKey: '+34600111222', conversationId: 'c1' },
     );
     expect(lines).toHaveLength(1);
     const [line] = lines;
     expect(line?.obj).toMatchObject({
       channel: 'bot',
+      via: 'whatsapp',
       event: 'message_received',
       kind: 'text',
       conversationId: 'c1',
-      customer: log.pseudonym('+34600111222'),
+      customer: log.pseudonym('whatsapp', '+34600111222'),
     });
     expect(JSON.stringify(line)).not.toContain('600111222');
+  });
+
+  it('los eventos sin cliente no llevan via ni customer', () => {
+    const { logger, lines } = capture();
+    createActivityLog(logger, SECRET).log({ event: 'web_rejected', reason: 'origin' });
+    expect(lines[0]?.obj).toEqual({ channel: 'bot', event: 'web_rejected', reason: 'origin' });
+  });
+
+  it('los eventos nuevos solo tienen campos cerrados (sin texto libre)', () => {
+    const { logger, lines } = capture();
+    const log = createActivityLog(logger, SECRET);
+    log.log({ event: 'web_session_created' });
+    log.log({ event: 'web_quota_reached', period: 'day', cap: 200 });
+    log.log(
+      { event: 'message_discarded', reason: 'quota' },
+      { channel: 'web', customerKey: 'a'.repeat(64) },
+    );
+    expect(lines.map((l) => l.obj)).toEqual([
+      { channel: 'bot', event: 'web_session_created' },
+      { channel: 'bot', event: 'web_quota_reached', period: 'day', cap: 200 },
+      {
+        channel: 'bot',
+        event: 'message_discarded',
+        reason: 'quota',
+        via: 'web',
+        customer: log.pseudonym('web', 'a'.repeat(64)),
+      },
+    ]);
+    expect(JSON.stringify(lines)).not.toContain('a'.repeat(64));
   });
 
   it.each<[BotEvent, string]>([
@@ -61,6 +100,10 @@ describe('registro técnico del bot', () => {
     [{ event: 'send_failed', attempts: 3, finalFailure: true }, 'error'],
     [{ event: 'webhook_rejected', reason: 'signature' }, 'warn'],
     [{ event: 'retention_purged', conversations: 1, customers: 1 }, 'info'],
+    [{ event: 'web_session_created' }, 'debug'],
+    [{ event: 'web_rejected', reason: 'session_limit' }, 'warn'],
+    [{ event: 'web_quota_reached', period: 'month', cap: 3000 }, 'warn'],
+    [{ event: 'message_discarded', reason: 'disabled' }, 'info'],
   ])('nivel de %o', (event, level) => {
     const { logger, lines } = capture();
     createActivityLog(logger, SECRET).log(event);

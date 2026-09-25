@@ -152,6 +152,27 @@ export const rateLimitReply = (form: Form): string =>
 export const emergencyContact = (phone: string): string =>
   `Si necesitas hablar con una persona: teléfono ${displayPhone(phone)}.`;
 
+/**
+ * R-UNAVAILABLE (004): el chat no puede atender (tope alcanzado, desactivado…). Siempre va con
+ * CONTACTO y sin saludo: es la salida a una persona del Principio V en el chat.
+ */
+export const unavailableReply = (form: Form): string =>
+  form === 'usted'
+    ? 'Ahora mismo no puedo atenderle por este chat.'
+    : 'Ahora mismo no puedo atenderte por este chat.';
+
+/**
+ * Contacto en texto plano para el objeto `unavailable` del chat web (FR-022): el del negocio si
+ * el snapshot se puede leer y tiene canales; si no, el de emergencia de la instancia.
+ */
+export function unavailableContact(
+  snapshot: KnowledgeSnapshot | null,
+  emergencyPhone: string | null,
+): string | null {
+  if (snapshot && snapshot.handoff.channels.length > 0) return contactBlock(snapshot);
+  return emergencyPhone ? emergencyContact(emergencyPhone) : null;
+}
+
 export interface ReplyParts {
   greeting?: string | null;
   body: string;

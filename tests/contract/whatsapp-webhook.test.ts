@@ -1,6 +1,7 @@
 /** Contrato del webhook de WhatsApp (contracts/whatsapp-webhook.md). */
 import type { FastifyInstance } from 'fastify';
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from 'vitest';
+import { systemClock } from '../../src/conversation/ports.js';
 import type { InboundEvent } from '../../src/conversation/types.js';
 import { buildTestApp } from '../helpers/app.js';
 import { createTestBot, type TestBot } from '../helpers/bot.js';
@@ -34,8 +35,14 @@ describe('webhook de WhatsApp: firma, alta y filtrado', () => {
         handle: async (events) => {
           if (failIntake) throw new Error('BD caída');
           received.push(events);
+          return [];
         },
       },
+      reader: {
+        getSnapshot: () => Promise.reject(new Error('no se usa')),
+      },
+      emergencyContactPhone: null,
+      clock: systemClock,
     });
   });
   afterAll(async () => {
@@ -77,7 +84,7 @@ describe('webhook de WhatsApp: firma, alta y filtrado', () => {
       const res = await postWebhook(app, webhookPayload({ messages: [textMessage('hola')] }));
       expect(res.statusCode).toBe(200);
       expect(received).toHaveLength(1);
-      expect(received[0]?.[0]).toMatchObject({ kind: 'text', text: 'hola', from: '+34600111222' });
+      expect(received[0]?.[0]).toMatchObject({ kind: 'text', text: 'hola', channelUserId: '+34600111222' });
     });
 
     it('sin firma → 401 y webhook_rejected{signature}', async () => {
@@ -207,7 +214,7 @@ describe('webhook de WhatsApp: recepción real', () => {
       status: 'pending',
       kind: 'text',
       body: 'hola',
-      waMessageId: 'wamid.NEW',
+      channelMessageId: 'wamid.NEW',
     });
     expect(bot.log.named('message_received')).toEqual([
       expect.objectContaining({ event: 'message_received', kind: 'text' }),

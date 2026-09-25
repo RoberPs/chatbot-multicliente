@@ -15,8 +15,10 @@ import { adminRoutes } from './admin/routes/index.js';
 import { whatsappWebhook } from './channels/whatsapp/webhook.js';
 import type { Env, WhatsAppEnv } from './config/env.js';
 import type { ActivityLog } from './conversation/activity-log.js';
-import type { InboundEvent } from './conversation/types.js';
+import type { Intake } from './conversation/intake.js';
+import type { Clock } from './conversation/ports.js';
 import type { Db } from './db/client.js';
+import type { KnowledgeReader } from './knowledge/types.js';
 
 const viewsDir = fileURLToPath(new URL('./admin/views', import.meta.url));
 const require = createRequire(import.meta.url);
@@ -38,12 +40,22 @@ const CSP = [
   "object-src 'none'",
 ].join('; ');
 
-/** Lo que el servidor HTTP necesita del bot para montar el webhook. */
+/**
+ * Lo que el servidor HTTP necesita del bot: el webhook de WhatsApp (si está configurado), el
+ * chat web y "Probar el bot" del panel.
+ */
 export interface BotHttp {
-  whatsapp: WhatsAppEnv;
+  /** `null` sin WhatsApp: el webhook no se registra. */
+  whatsapp: WhatsAppEnv | null;
   audioTranscription: boolean;
   activityLog: ActivityLog;
-  intake: { handle(events: InboundEvent[]): Promise<void> };
+  /** Recepción común a todos los canales. */
+  intake: Intake;
+  /** Snapshot sin caché, para el contacto del chat web y el estado del negocio. */
+  reader: KnowledgeReader;
+  /** Contacto de la instancia cuando no se puede leer el snapshot (FR-022). */
+  emergencyContactPhone: string | null;
+  clock: Clock;
 }
 
 export interface BuildAppOptions {
@@ -51,8 +63,8 @@ export interface BuildAppOptions {
   db: Db;
   logger?: boolean;
   /**
-   * Canal de WhatsApp; sin él, la instancia solo sirve el panel. Puede ser una función que
-   * recibe el logger de la app (el bot registra sus eventos con él).
+   * Bot; sin él, la instancia solo sirve el panel y el chat web "no disponible". Puede ser una
+   * función que recibe el logger de la app (el bot registra sus eventos con él).
    */
   bot?: BotHttp | ((log: FastifyBaseLogger) => BotHttp | null) | null;
 }
@@ -69,6 +81,14 @@ export async function buildApp({
           level: env.NODE_ENV === 'production' ? 'info' : 'debug',
           // Nunca se registran cookies, cabeceras de autorización ni cuerpos.
           redact: ['req.headers.cookie', 'req.headers.authorization', 'res.headers["set-cookie"]'],
+          // Sin IP ni puerto del cliente en ningún registro (004, R10, SC-008).
+          serializers: {
+            req: (request: { method: string; url: string; hostname: string }) => ({
+              method: request.method,
+              url: request.url,
+              hostname: request.hostname,
+            }),
+          },
         }
       : false,
     // Solo los proxies declarados; con `true` el cliente podría falsear su IP (X-Forwarded-For).
@@ -87,6 +107,8 @@ export async function buildApp({
 
   app.decorate('env', env);
   app.decorate('knowledge', { db, phoneRegion: env.DEFAULT_PHONE_REGION as CountryCode });
+  const channel = (typeof bot === 'function' ? bot(app.log) : bot) ?? null;
+  app.decorate('bot', channel);
 
   await app.register(formbody);
   await app.register(rateLimit, { global: false });
@@ -157,11 +179,11 @@ export async function buildApp({
     { prefix: '/admin' },
   );
 
-  const channel = typeof bot === 'function' ? bot(app.log) : bot;
-  if (channel) {
+  const whatsapp = channel?.whatsapp;
+  if (channel && whatsapp) {
     await app.register(whatsappWebhook, {
       prefix: '/webhooks/whatsapp',
-      config: channel.whatsapp,
+      config: whatsapp,
       audioTranscription: channel.audioTranscription,
       activityLog: channel.activityLog,
       onInbound: (events) => channel.intake.handle(events),

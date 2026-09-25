@@ -1,5 +1,6 @@
 import { desc, eq, lt, sql } from 'drizzle-orm';
 import { conversation, customer } from '../../db/schema.js';
+import type { Channel } from '../channels.js';
 import type { DbOrTx } from './customer.js';
 
 export interface ConversationRow {
@@ -11,8 +12,10 @@ export interface ConversationRow {
   greeted: boolean;
 }
 
-export interface ConversationWithPhone extends ConversationRow {
-  phone: string;
+/** Conversación con el cliente que la identifica en su canal. */
+export interface ConversationWithCustomer extends ConversationRow {
+  channel: Channel;
+  channelUserId: string;
 }
 
 export async function findLatestForCustomer(
@@ -28,7 +31,10 @@ export async function findLatestForCustomer(
   return row ?? null;
 }
 
-export async function findWithPhone(tx: DbOrTx, id: string): Promise<ConversationWithPhone | null> {
+export async function findWithCustomer(
+  tx: DbOrTx,
+  id: string,
+): Promise<ConversationWithCustomer | null> {
   const [row] = await tx
     .select({
       id: conversation.id,
@@ -37,7 +43,8 @@ export async function findWithPhone(tx: DbOrTx, id: string): Promise<Conversatio
       lastInboundAt: conversation.lastInboundAt,
       lastMessageAt: conversation.lastMessageAt,
       greeted: conversation.greeted,
-      phone: customer.phone,
+      channel: customer.channel,
+      channelUserId: customer.channelUserId,
     })
     .from(conversation)
     .innerJoin(customer, eq(customer.id, conversation.customerId))

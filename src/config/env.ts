@@ -8,6 +8,26 @@ const optionalText = z
   .optional()
   .transform((v) => (v === undefined || v.trim() === '' ? undefined : v.trim()));
 
+const LOCAL_HOSTS = new Set(['localhost', '127.0.0.1']);
+
+/**
+ * Origen de una URL pública (`https://host[:puerto]`), o `null` si tiene ruta, consulta,
+ * credenciales o es `http` fuera de localhost.
+ */
+function publicOrigin(value: string): string | null {
+  let url: URL;
+  try {
+    url = new URL(value);
+  } catch {
+    return null;
+  }
+  const secure = url.protocol === 'https:';
+  const local = url.protocol === 'http:' && LOCAL_HOSTS.has(url.hostname);
+  if (!secure && !local) return null;
+  if (url.pathname !== '/' || url.search || url.hash || url.username || url.password) return null;
+  return url.origin;
+}
+
 /** Variables de la instancia. Cada cliente tiene su propio despliegue con sus valores. */
 const envSchema = z.object({
   DATABASE_URL: z.string().min(1, 'DATABASE_URL es obligatoria'),
@@ -91,6 +111,27 @@ const envSchema = z.object({
   ),
   STT_API_KEY: optionalText,
   STT_MODEL: optionalText.transform((v) => v ?? 'whisper-1'),
+
+  // --- Canal web (feature 004) ---
+  /** URL pública de la instancia para escribir el fragmento del chat web; sin barra final. */
+  PUBLIC_BASE_URL: optionalText.pipe(
+    z
+      .string()
+      .optional()
+      .transform((v, ctx) => {
+        if (v === undefined) return undefined;
+        const origin = publicOrigin(v);
+        if (origin === null) {
+          ctx.addIssue({
+            code: 'custom',
+            message:
+              'PUBLIC_BASE_URL debe ser una URL https sin ruta (http solo con localhost o 127.0.0.1)',
+          });
+          return z.NEVER;
+        }
+        return origin;
+      }),
+  ),
 });
 
 const WHATSAPP_VARS = [
@@ -116,8 +157,8 @@ function toE164(value: string): string | null {
 }
 
 /**
- * Agrupa las variables del bot: el canal va entero o no va (research R1), y con él son
- * obligatorios el contacto de emergencia y la clave del modelo.
+ * Agrupa las variables del bot: con la clave del modelo hay bot y es obligatorio el contacto de
+ * emergencia (004, R11); WhatsApp es opcional, va entero o no va y exige la clave del modelo.
  */
 const botSchema = envSchema.transform((raw, ctx) => {
   const present = WHATSAPP_VARS.filter((k) => raw[k] !== undefined);
@@ -147,10 +188,11 @@ const botSchema = envSchema.transform((raw, ctx) => {
         message: 'EMERGENCY_CONTACT_PHONE debe ser un teléfono en formato E.164 (+34...)',
       });
     }
-  } else if (whatsapp) {
+  } else if (raw.ANTHROPIC_API_KEY !== undefined || whatsapp) {
+    // Con bot, todos los canales necesitan una salida a una persona (research R11).
     ctx.addIssue({
       code: 'custom',
-      message: 'EMERGENCY_CONTACT_PHONE es obligatoria con el canal de WhatsApp',
+      message: 'EMERGENCY_CONTACT_PHONE es obligatoria con ANTHROPIC_API_KEY',
     });
   }
 

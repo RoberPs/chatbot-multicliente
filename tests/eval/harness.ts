@@ -2,15 +2,21 @@
  * Arnés de la suite `eval` (research R12): carga un negocio de ejemplo, pasa cada pregunta por
  * la cadena real (recepción → procesador → modelo de Anthropic) con un canal falso y comprueba
  * la respuesta. Requiere ANTHROPIC_API_KEY; sin ella la suite se omite.
+ *
+ * `EVAL_CHANNEL=web` (004, SC-002) envía las preguntas por el canal web, con el chat activado
+ * en la BD de la evaluación; por defecto, `whatsapp`.
  */
+import { createHash, randomUUID } from 'node:crypto';
 import { readFile, stat } from 'node:fs/promises';
 import { loadDotEnvIfPresent } from '../../src/config/env.js';
+import { buildChannelPolicies, type Channel } from '../../src/conversation/channels.js';
 import { createIntake } from '../../src/conversation/intake.js';
 import { MediaTooLargeError, type Clock, type MediaFetcher } from '../../src/conversation/ports.js';
 import { createProcessor } from '../../src/conversation/processor.js';
 import { conversationSettings } from '../../src/conversation/settings.js';
 import { createTranscriber } from '../../src/conversation/transcription.js';
 import type { InboundEvent } from '../../src/conversation/types.js';
+import { webChatSettings } from '../../src/db/schema.js';
 import { activateBusiness } from '../../src/knowledge/services/business-status.js';
 import { createKnowledgeReader } from '../../src/knowledge/snapshot.js';
 import { createAnthropicChatModel, type Effort } from '../../src/llm/anthropic-chat-model.js';
@@ -25,6 +31,10 @@ loadDotEnvIfPresent();
 
 export const hasApiKey = Boolean(process.env.ANTHROPIC_API_KEY?.trim());
 export const hasSttKey = Boolean(process.env.STT_API_KEY?.trim());
+
+/** Canal por el que se hacen las preguntas (SC-002 de la 004). */
+export const evalChannel: Extract<Channel, 'whatsapp' | 'web'> =
+  process.env.EVAL_CHANNEL?.trim() === 'web' ? 'web' : 'whatsapp';
 
 /** Audios de prueba de SC-009 (tests/fixtures/audio/README.md). */
 export const AUDIO_DIR = new URL('../fixtures/audio/', import.meta.url);
@@ -186,7 +196,7 @@ const fixtureAudio: MediaFetcher = {
 function lastEvent(
   question: EvalQuestion,
   audio: boolean,
-): Omit<InboundEvent, 'waMessageId' | 'from' | 'sentAt'> {
+): Omit<InboundEvent, 'channel' | 'channelUserId' | 'channelMessageId' | 'sentAt'> {
   const base = { caption: null, mediaId: null, otherType: null, isGroup: false };
   const media = question.media;
   if (!media) return { ...base, kind: 'text', text: question.text };
@@ -215,6 +225,16 @@ export async function createSectorRunner(
   await resetDb(t.db);
   await loadFixture(t.deps, sector.fixture);
   await activateBusiness(t.db);
+  if (evalChannel === 'web') {
+    await t.db.update(webChatSettings).set({
+      enabled: true,
+      allowedOrigins: ['https://negocio.example'],
+      privacyUrl: 'https://negocio.example/privacidad',
+      // Sin tope efectivo durante la evaluación.
+      dailyCap: 1_000_000,
+      monthlyCap: 1_000_000,
+    });
+  }
   const reader = createKnowledgeReader(t.db);
   const chatModel = createAnthropicChatModel({
     apiKey: process.env.ANTHROPIC_API_KEY,
@@ -235,11 +255,13 @@ export async function createSectorRunner(
       const clock = new OffsetClock(question.at ?? sector.at);
       const sender = new FakeChannelSender();
       const log = new RecordingActivityLog();
+      // El mismo doble recoge las respuestas de WhatsApp y las guardadas de la web.
+      const policies = buildChannelPolicies({ whatsappSender: sender, stored: sender });
       const processor = createProcessor({
         db: t.db,
         reader,
         chatModel,
-        sender,
+        policies,
         clock,
         activityLog: log,
         emergencyContactPhone: '+34600999888',
@@ -259,19 +281,28 @@ export async function createSectorRunner(
         reader,
         clock,
         activityLog: log,
+        policies,
         ...(transcriber ? { transcriber } : {}),
       });
       // Un cliente nuevo por pregunta: cada una es una conversación independiente.
       phoneCounter += 1;
-      const from = `+3469${String(phoneCounter).padStart(7, '0')}`;
+      const channelUserId =
+        evalChannel === 'web'
+          ? createHash('sha256').update(randomUUID()).digest('hex')
+          : `+3469${String(phoneCounter).padStart(7, '0')}`;
+      const messageId = (i: number) =>
+        evalChannel === 'web'
+          ? `web:${channelUserId}:${randomUUID()}`
+          : `eval-${question.id}-${phoneCounter}-${i}`;
       // Los mensajes previos se contestan uno a uno en la misma conversación.
       const texts = [...(question.previous ?? []), question.text];
       for (const [i, text] of texts.entries()) {
         const last = i === texts.length - 1;
         await intake.handle([
           {
-            waMessageId: `eval-${question.id}-${phoneCounter}-${i}`,
-            from,
+            channel: evalChannel,
+            channelUserId,
+            channelMessageId: messageId(i),
             sentAt: clock.now(),
             ...(last
               ? lastEvent(question, audio)

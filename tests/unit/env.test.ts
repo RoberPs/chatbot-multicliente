@@ -118,4 +118,46 @@ describe('variables de la instancia', () => {
       expect(() => loadEnv({ ...base, LLM_EFFORT: 'max' })).toThrow(/LLM_EFFORT/);
     });
   });
+
+  describe('bot sin WhatsApp (004)', () => {
+    it('clave del modelo sin contacto de emergencia → error', () => {
+      expect(() => loadEnv({ ...base, ANTHROPIC_API_KEY: 'sk-ant-prueba' })).toThrow(
+        /EMERGENCY_CONTACT_PHONE es obligatoria con ANTHROPIC_API_KEY/,
+      );
+    });
+
+    it('clave del modelo con contacto de emergencia → válido y sin WhatsApp', () => {
+      const env = loadEnv({
+        ...base,
+        ANTHROPIC_API_KEY: 'sk-ant-prueba',
+        EMERGENCY_CONTACT_PHONE: '+34600111222',
+      });
+      expect(env.whatsapp).toBeNull();
+      expect(env.emergencyContactPhone).toBe('+34600111222');
+    });
+  });
+
+  describe('PUBLIC_BASE_URL', () => {
+    it('ausente → undefined', () => {
+      expect(loadEnv(base).PUBLIC_BASE_URL).toBeUndefined();
+      expect(loadEnv({ ...base, PUBLIC_BASE_URL: '' }).PUBLIC_BASE_URL).toBeUndefined();
+    });
+
+    it('https o http local → origen sin barra final', () => {
+      expect(
+        loadEnv({ ...base, PUBLIC_BASE_URL: 'https://Chat.Ejemplo.com/' }).PUBLIC_BASE_URL,
+      ).toBe('https://chat.ejemplo.com');
+      expect(
+        loadEnv({ ...base, PUBLIC_BASE_URL: 'http://localhost:3000' }).PUBLIC_BASE_URL,
+      ).toBe('http://localhost:3000');
+    });
+
+    it.each([
+      ['con ruta', 'https://chat.ejemplo.com/bot'],
+      ['http público', 'http://chat.ejemplo.com'],
+      ['no es una URL', 'chat.ejemplo.com'],
+    ])('rechaza una URL %s', (_name, value) => {
+      expect(() => loadEnv({ ...base, PUBLIC_BASE_URL: value })).toThrow(/PUBLIC_BASE_URL/);
+    });
+  });
 });

@@ -15,8 +15,11 @@ export interface WhatsAppWebhookOptions {
   config: WhatsAppEnv;
   audioTranscription: boolean;
   activityLog: ActivityLog;
-  /** Guarda los mensajes; si lanza, se responde 503 para que Meta reintente. */
-  onInbound: (events: InboundEvent[]) => Promise<void>;
+  /**
+   * Guarda los mensajes; si lanza, se responde 503 para que Meta reintente. El resultado por
+   * evento no cambia la respuesta a Meta (FR-004).
+   */
+  onInbound: (events: InboundEvent[]) => Promise<unknown>;
 }
 
 const BODY_LIMIT = 512 * 1024;

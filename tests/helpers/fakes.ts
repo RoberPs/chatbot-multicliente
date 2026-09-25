@@ -1,6 +1,7 @@
 /** Dobles de los puertos de src/conversation/ports.ts para tests. */
 import { createHash } from 'node:crypto';
 import type { ActivityLog, BotEvent, EventContext } from '../../src/conversation/activity-log.js';
+import type { Channel } from '../../src/conversation/channels.js';
 import {
   ChannelSendError,
   ChatModelError,
@@ -196,16 +197,20 @@ export class FakeMediaFetcher implements MediaFetcher {
 
 /** Registro técnico que guarda los eventos en memoria. */
 export class RecordingActivityLog implements ActivityLog {
-  readonly events: Array<BotEvent & { customer?: string; conversationId?: string }> = [];
+  readonly events: Array<
+    BotEvent & { via?: Channel; customer?: string; conversationId?: string }
+  > = [];
   log(event: BotEvent, context: EventContext = {}): void {
+    const { channel, customerKey } = context;
     this.events.push({
       ...event,
-      ...(context.phone ? { customer: this.pseudonym(context.phone) } : {}),
+      ...(channel ? { via: channel } : {}),
+      ...(channel && customerKey ? { customer: this.pseudonym(channel, customerKey) } : {}),
       ...(context.conversationId ? { conversationId: context.conversationId } : {}),
     });
   }
-  pseudonym(phone: string): string {
-    return createHash('sha256').update(phone).digest('hex').slice(0, 12);
+  pseudonym(channel: Channel, customerKey: string): string {
+    return createHash('sha256').update(`${channel}:${customerKey}`).digest('hex').slice(0, 12);
   }
   named<N extends BotEvent['event']>(name: N): Array<Extract<BotEvent, { event: N }>> {
     return this.events.filter((e) => e.event === name) as Array<Extract<BotEvent, { event: N }>>;

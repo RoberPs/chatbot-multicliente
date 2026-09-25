@@ -54,7 +54,8 @@ async function respond(
     // Por defecto, conversación ya saludada: los casos de CONTACTO no llevan saludo.
     greeted: opts.greeted ?? true,
     now: clock.now(),
-    phone: '+34600111222',
+    channel: 'whatsapp',
+    customerKey: '+34600111222',
     conversationId: '00000000-0000-4000-8000-0000000000c1',
   });
   return { response, contact: contactBlock(snapshot), model };
@@ -210,7 +211,8 @@ describe('mensajes fijos con contacto (US3, FR-029)', () => {
       pending: [{ kind: 'text', text: '¿a qué hora abrís?' }],
       greeted: true,
       now: clock.now(),
-      phone: '+34600111222',
+      channel: 'whatsapp',
+      customerKey: '+34600111222',
       conversationId: '00000000-0000-4000-8000-0000000000c1',
     });
     expect(response.template).toBe('R-SAFE');

@@ -2,7 +2,10 @@
  * Puertos del dominio de conversación. `src/conversation` solo habla con el exterior a través
  * de estas interfaces; los adaptadores (canal, modelo, transcripción) viven fuera.
  */
+import { randomUUID } from 'node:crypto';
 import type { ModelReply, ReplyContext } from './types.js';
+
+export type { Channel, ChannelPolicies, ChannelPolicy } from './channels.js';
 
 export type ChatModelErrorReason = 'timeout' | 'refusal' | 'invalid_output' | 'api_error';
 
@@ -63,9 +66,17 @@ export class ChannelSendError extends Error {
 }
 
 export interface ChannelSender {
-  /** Envía un texto al número E.164. Devuelve el id del mensaje del canal. */
+  /** `to` es el channel_user_id. Devuelve el id del saliente en el canal. */
   sendText(to: string, body: string, opts?: SendOptions): Promise<{ channelMessageId: string }>;
 }
+
+/**
+ * Canales cuyas respuestas se guardan y el cliente recoge (web y playground, research R5): no
+ * llama a nada externo; el saliente ya está guardado y solo necesita un id propio.
+ */
+export const storedDelivery: ChannelSender = {
+  sendText: async () => ({ channelMessageId: `out:${randomUUID()}` }),
+};
 
 export class MediaTooLargeError extends Error {
   constructor() {

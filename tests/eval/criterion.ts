@@ -8,6 +8,7 @@ import { hairSalonQuestions } from '../fixtures/eval/hair-salon.questions.js';
 import { workshopQuestions } from '../fixtures/eval/workshop.questions.js';
 import {
   createSectorRunner,
+  evalChannel,
   hasApiKey,
   type Criterion,
   type EvalQuestion,
@@ -46,7 +47,10 @@ export function describeCriterion(
     });
 
     for (const sector of opts.sectors ?? sectors) {
-      const questions = sector.questions.filter((q) => measures(q, criterion));
+      // La web solo admite texto (FR-020): las preguntas con archivos no aplican a ese canal.
+      const questions = sector.questions.filter(
+        (q) => measures(q, criterion) && (evalChannel === 'whatsapp' || !q.media),
+      );
       if (questions.length === 0) continue;
       describe(sector.fixture.sector, () => {
         let runner: SectorRunner;

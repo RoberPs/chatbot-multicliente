@@ -7,7 +7,10 @@ import {
   greeting,
   joinParts,
   safeReply,
+  unavailableContact,
+  unavailableReply,
 } from '../../../src/conversation/templates.js';
+import { unavailableResponse } from '../../../src/conversation/responder.js';
 import { activeSnapshot } from '../../helpers/snapshot.js';
 import { slot, typicalWeek } from '../../helpers/state.js';
 
@@ -95,6 +98,53 @@ describe('plantillas fijas', () => {
       expect(text).not.toMatch(/\d/);
     }
     expect(emergencyContact('+34600111222').replace(/\+34 600 11 12 22/, '')).not.toMatch(/\d/);
+  });
+});
+
+describe('plantillas: R-UNAVAILABLE (004)', () => {
+  const formal = () => {
+    const base = activeSnapshot();
+    return { ...base, tone: { ...base.tone, addressForm: 'formal' as const } };
+  };
+
+  it('en tú y en usted', () => {
+    expect(unavailableReply('tu')).toBe('Ahora mismo no puedo atenderte por este chat.');
+    expect(unavailableReply('usted')).toBe('Ahora mismo no puedo atenderle por este chat.');
+  });
+
+  it('siempre con el contacto del negocio y sin saludo', () => {
+    const snapshot = activeSnapshot();
+    const response = unavailableResponse(snapshot, '+34600999888');
+    expect(response).toMatchObject({
+      template: 'R-UNAVAILABLE',
+      greeting: false,
+      contactBlock: true,
+      contactReason: 'template',
+      groundingRejections: 0,
+    });
+    expect(response.text).toBe(
+      `Ahora mismo no puedo atenderte por este chat.\n\n${contactBlock(snapshot)}`,
+    );
+    expect(response.text).not.toContain('¡Hola!');
+    expect(unavailableResponse(formal(), null).text).toMatch(/^Ahora mismo no puedo atenderle/);
+  });
+
+  it('con el contacto de emergencia si no se pudo leer el snapshot', () => {
+    expect(unavailableResponse(null, '+34600999888').text).toBe(
+      'Ahora mismo no puedo atenderte por este chat.\n\n' +
+        'Si necesitas hablar con una persona: teléfono +34 600 99 98 88.',
+    );
+  });
+
+  it('contacto en texto plano para el objeto unavailable', () => {
+    const snapshot = activeSnapshot();
+    expect(unavailableContact(snapshot, '+34600999888')).toBe(contactBlock(snapshot));
+    expect(unavailableContact(null, '+34600999888')).toBe(emergencyContact('+34600999888'));
+    // Sin canales propios, el contacto efectivo es el teléfono del negocio (no el de emergencia).
+    const sinCanales = activeSnapshot({
+      handoff: { channels: [], hours: [], updatedAt: T },
+    });
+    expect(unavailableContact(sinCanales, '+34600999888')).toBe(contactBlock(sinCanales));
   });
 });
 

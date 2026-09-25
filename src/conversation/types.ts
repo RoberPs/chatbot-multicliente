@@ -8,26 +8,71 @@ import type {
   LocalTime,
   Weekday,
 } from '../knowledge/types.js';
+import { CHANNELS, channelUserIdSchema } from './channels.js';
 import { conversationSettings } from './settings.js';
 
 export type MessageKind = 'text' | 'audio' | 'other';
 
-/** Mensaje entrante ya normalizado por el adaptador del canal. */
-export const inboundEventSchema = z.object({
-  waMessageId: z.string().min(1),
-  /** Teléfono del cliente en E.164. */
-  from: z.string().regex(/^\+\d{6,15}$/),
-  /** Marca de WhatsApp del mensaje. */
-  sentAt: z.date(),
-  kind: z.enum(['text', 'audio', 'other']),
-  text: z.string().nullable(),
-  caption: z.string().nullable(),
-  mediaId: z.string().nullable(),
-  /** Tipo de WhatsApp cuando `kind = other` (`image`, `sticker`, `audio`…). */
-  otherType: z.string().nullable(),
-  isGroup: z.boolean(),
-});
+/** Mensaje entrante ya normalizado por el adaptador del canal (004: cualquier canal). */
+export const inboundEventSchema = z
+  .object({
+    channel: z.enum(CHANNELS),
+    /** Cliente en el canal: E.164, hash de la sesión web o UUID del playground. */
+    channelUserId: z.string().min(1),
+    /** Id del mensaje en el canal; deduplica los reintentos (FR-023). */
+    channelMessageId: z.string().min(1),
+    /** Marca del canal (WhatsApp) o del servidor (web y playground). */
+    sentAt: z.date(),
+    kind: z.enum(['text', 'audio', 'other']),
+    text: z.string().nullable(),
+    caption: z.string().nullable(),
+    mediaId: z.string().nullable(),
+    /** Tipo de WhatsApp cuando `kind = other` (`image`, `sticker`, `audio`…). */
+    otherType: z.string().nullable(),
+    isGroup: z.boolean(),
+  })
+  .superRefine((event, ctx) => {
+    if (!channelUserIdSchema(event.channel).safeParse(event.channelUserId).success) {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['channelUserId'],
+        message: 'Identificador de cliente no válido para el canal',
+      });
+    }
+  });
 export type InboundEvent = z.infer<typeof inboundEventSchema>;
+
+/** Por qué una respuesta lleva el bloque de contacto (004, R7). */
+export type ContactReason =
+  | 'handoff_requested'
+  | 'offer_contact'
+  | 'booking_requested'
+  | 'price_on_request'
+  | 'template';
+
+/**
+ * Cómo se compuso una respuesta (FR-009, R7). Se guarda en cada saliente; sin textos ni
+ * valores rechazados por el verificador.
+ */
+export const replyTraceSchema = z
+  .object({
+    template: z.enum(['R-SAFE', 'R-ERR', 'R-MEDIA', 'R-AUDIO', 'R-LIMIT', 'R-UNAVAILABLE']).nullable(),
+    greeting: z.boolean(),
+    contact: z.object({
+      added: z.boolean(),
+      reason: z
+        .enum(['handoff_requested', 'offer_contact', 'booking_requested', 'price_on_request', 'template'])
+        .nullable(),
+    }),
+    groundingRejections: z.number().int().min(0).max(2),
+    modelMs: z.number().int().min(0).nullable(),
+    latencyMs: z.number().int().min(0),
+  })
+  .refine((t) => t.contact.added || t.contact.reason === null, {
+    path: ['contact', 'reason'],
+    message: 'Sin contacto no hay motivo',
+  });
+export type ReplyTrace = z.infer<typeof replyTraceSchema>;
 
 /** Hechos calculados por código a partir del snapshot (R8): el modelo no calcula nada. */
 export interface DerivedFacts {

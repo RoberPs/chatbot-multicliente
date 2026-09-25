@@ -68,7 +68,7 @@ describe('Fase 10: retención', () => {
     const conversations = await t.db.select().from(conversation);
     expect(conversations).toHaveLength(1);
     const customers = await t.db.select().from(customer);
-    expect(customers.map((c) => c.phone)).toEqual(['+34600111222']);
+    expect(customers.map((c) => c.channelUserId)).toEqual(['+34600111222']);
     expect(bot.log.named('retention_purged')).toEqual([
       expect.objectContaining({ conversations: 2, customers: 1 }),
     ]);
