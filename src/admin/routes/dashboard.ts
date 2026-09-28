@@ -4,6 +4,7 @@ import { activateBusiness, deactivateBusiness } from '../../knowledge/services/b
 import { readWebChatSettings } from '../../webchat/settings.js';
 import { capReached, readWebUsage } from '../../webchat/usage.js';
 import { readState, renderPage, savedResponse } from '../render.js';
+import { sectionSummaries } from '../section-summaries.js';
 
 /**
  * Estado del chat web para la portada (004, FR-026, FR-026a). No es un aviso de
@@ -32,6 +33,7 @@ export async function dashboardRoutes(app: FastifyInstance): Promise<void> {
     return {
       state,
       title: 'Portada',
+      summaries: sectionSummaries(state),
       webChat: await webChatStatus(db, now, state.business.timezone),
     };
   };

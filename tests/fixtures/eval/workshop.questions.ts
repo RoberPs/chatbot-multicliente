@@ -58,7 +58,26 @@ export const workshopQuestions: SectorQuestions = {
       category: 'ubicacion',
       text: '¿Dónde está el taller y cómo llego?',
       variants: ['donde esta el taller y como llego', 'como llego al taller'],
-      expect: { includes: ['nave 4', 'salida 12'] },
+      expect: {
+        includes: [
+          'nave 4',
+          'salida 12',
+          'https://maps.example.com/@41.6809,-0.8792,17z?q=poligono+industrial+norte+nave+4',
+        ],
+      },
+    },
+    {
+      // 003, FR-014: el enlace a mapa, copiado exacto junto a la dirección.
+      id: 'ws-mapa',
+      category: 'ubicacion',
+      text: '¿Me pasáis la ubicación en el mapa?',
+      variants: ['me pasais la ubicacion', 'teneis un link del mapa?'],
+      expect: {
+        includes: [
+          'nave 4',
+          'https://maps.example.com/@41.6809,-0.8792,17z?q=poligono+industrial+norte+nave+4',
+        ],
+      },
     },
     // Servicios
     {

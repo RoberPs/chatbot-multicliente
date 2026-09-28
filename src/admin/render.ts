@@ -138,7 +138,8 @@ export async function submitForm<T>(
     run: () => Promise<T>;
     redirectTo: string | ((result: T) => string);
     onError: (error: FormErrorResponse) => Promise<FastifyReply>;
-    message?: string;
+    /** Texto del flash; puede depender del resultado del guardado (003, FR-006). */
+    message?: string | ((result: T) => string);
   },
 ): Promise<FastifyReply> {
   let result: T;
@@ -151,7 +152,8 @@ export async function submitForm<T>(
     return opts.onError(formError);
   }
   const target = typeof opts.redirectTo === 'function' ? opts.redirectTo(result) : opts.redirectTo;
-  return savedResponse(request, reply, target, opts.message);
+  const message = typeof opts.message === 'function' ? opts.message(result) : opts.message;
+  return savedResponse(request, reply, target, message);
 }
 
 /** Página 404 del panel (elemento inexistente o ruta desconocida). */

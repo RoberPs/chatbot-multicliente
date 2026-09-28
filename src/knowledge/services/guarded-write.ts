@@ -1,7 +1,32 @@
 import { lockBusiness, type Db, type Tx } from '../../db/client.js';
 import { CriticalWarningError, FieldConflictError } from '../errors.js';
 import { loadKnowledgeState } from '../state.js';
+import type { KnowledgeState } from '../types.js';
 import { computeWarnings, criticalWarnings } from '../warnings.js';
+
+/**
+ * Aplica `fn` dentro de la transacción protegida y devuelve también el estado resultante, que
+ * ya se carga para recalcular los avisos (research R6, FR-032).
+ */
+async function guardedTransaction<T>(
+  db: Db,
+  fn: (tx: Tx) => Promise<T>,
+): Promise<{ result: T; after: KnowledgeState }> {
+  try {
+    return await db.transaction(async (tx) => {
+      await lockBusiness(tx);
+      const result = await fn(tx);
+      const after = await loadKnowledgeState(tx);
+      const critical = criticalWarnings(computeWarnings(after));
+      if (after.business.status === 'active' && critical.length > 0) {
+        throw new CriticalWarningError(critical);
+      }
+      return { result, after };
+    });
+  } catch (error) {
+    throw translateDbError(error);
+  }
+}
 
 /**
  * Toda escritura del panel pasa por aquí (research R6, FR-032):
@@ -9,20 +34,24 @@ import { computeWarnings, criticalWarnings } from '../warnings.js';
  * aviso crítico. Las escrituras se serializan con un bloqueo sobre la fila del negocio.
  */
 export async function runGuardedWrite<T>(db: Db, fn: (tx: Tx) => Promise<T>): Promise<T> {
-  try {
-    return await db.transaction(async (tx) => {
-      await lockBusiness(tx);
-      const result = await fn(tx);
-      const state = await loadKnowledgeState(tx);
-      const critical = criticalWarnings(computeWarnings(state));
-      if (state.business.status === 'active' && critical.length > 0) {
-        throw new CriticalWarningError(critical);
-      }
-      return result;
-    });
-  } catch (error) {
-    throw translateDbError(error);
-  }
+  return (await guardedTransaction(db, fn)).result;
+}
+
+/**
+ * Como `runGuardedWrite`, pero devuelve además el estado justo antes y justo después del
+ * guardado, leídos en la misma transacción serializada (003, research R4).
+ */
+export async function runTrackedWrite<T>(
+  db: Db,
+  fn: (tx: Tx) => Promise<T>,
+): Promise<{ result: T; before: KnowledgeState; after: KnowledgeState }> {
+  let before: KnowledgeState | undefined;
+  const { result, after } = await guardedTransaction(db, async (tx) => {
+    before = await loadKnowledgeState(tx);
+    return fn(tx);
+  });
+  if (!before) throw new Error('runTrackedWrite: falta el estado anterior');
+  return { result, before, after };
 }
 
 interface PgError {

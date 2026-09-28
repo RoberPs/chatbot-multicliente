@@ -172,4 +172,20 @@ describe('catálogo de avisos: reglas generales', () => {
       expect(w.message.length).toBeGreaterThan(10);
     }
   });
+
+  it('el enlace a mapa no genera avisos, con o sin dirección (003, FR-015)', () => {
+    const base = () => {
+      const s = emptyState({ businessHours: typicalWeek(), handoff: configuredHandoff() });
+      s.business.phone = '+34600123456';
+      return s;
+    };
+    const withoutUrl = base();
+    const withUrl = base();
+    withUrl.business.mapUrl = 'https://maps.example.com/@40.41,-3.70,17z?q=Plaza+Mayor';
+    const withAddress = base();
+    withAddress.business.address = 'Calle Mayor 1';
+    expect(codes(withoutUrl)).toEqual([]);
+    expect(codes(withUrl)).toEqual([]);
+    expect(codes(withAddress)).toEqual([]);
+  });
 });

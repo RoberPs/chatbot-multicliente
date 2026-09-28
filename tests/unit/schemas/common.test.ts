@@ -5,6 +5,7 @@ import {
   email,
   isoDate,
   localTime,
+  optionalHttpsUrl,
   optionalText,
   phone,
   timezone,
@@ -53,5 +54,48 @@ describe('esquemas comunes', () => {
     expect(trimmedText(1, 10).safeParse('   ').success).toBe(false);
     expect(parseOk(optionalText(10), '   ')).toBeNull();
     expect(parseOk(optionalText(10), undefined)).toBeNull();
+  });
+});
+
+describe('optionalHttpsUrl (003, R7)', () => {
+  const schema = optionalHttpsUrl(500);
+  const error = (value: string) => schema.safeParse(value).error?.issues[0]?.message;
+  const INVALID = 'Enlace no válido: copia el enlace completo, empezando por https://';
+
+  it('vacío → null', () => {
+    expect(schema.parse('')).toBeNull();
+    expect(schema.parse('   ')).toBeNull();
+    expect(schema.parse(undefined)).toBeNull();
+  });
+
+  it('las reglas se aplican en orden', () => {
+    expect(error(`https://example.com/${'a'.repeat(481)}`)).toBe('Máximo 500 caracteres');
+    expect(error('https://example.com/a b')).toBe(INVALID);
+    expect(error('maps.example.com/abc')).toBe(
+      'Escribe el enlace completo, empezando por https://',
+    );
+    expect(error('http://maps.example.com/abc')).toBe(
+      'Usa el enlace seguro, que empieza por https://',
+    );
+    expect(error('HTTP://maps.example.com/abc')).toBe(
+      'Usa el enlace seguro, que empieza por https://',
+    );
+    expect(error('https://localhost/x')).toBe(INVALID);
+    expect(error('https://user:pass@example.com')).toBe(INVALID);
+    expect(error('ftp://example.com/x')).toBe(INVALID);
+    expect(error('https://')).toBe(INVALID);
+  });
+
+  it('acepta 500 caracteres justos', () => {
+    const url = `https://example.com/${'a'.repeat(480)}`;
+    expect(url).toHaveLength(500);
+    expect(schema.parse(url)).toBe(url);
+  });
+
+  it('acepta @ , + ! y ? y lo devuelve recortado, sin recodificar', () => {
+    const url = 'https://maps.example.com/@40.41,-3.70,17z?q=Plaza+Mayor&hl=es';
+    expect(schema.parse(`  ${url}  `)).toBe(url);
+    const other = 'https://mapas.example.org/#!/lugar/Plaza+Mayor,1?z=17&ñ=1';
+    expect(schema.parse(other)).toBe(other);
   });
 });

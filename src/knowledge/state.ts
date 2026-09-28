@@ -32,6 +32,7 @@ interface RawState {
     name: string;
     address: string | null;
     directions: string | null;
+    map_url: string | null;
     phone: string | null;
     email: string | null;
     timezone: string;
@@ -157,6 +158,7 @@ export async function loadKnowledgeState(tx: Tx): Promise<KnowledgeState> {
       name: raw.business.name,
       address: raw.business.address,
       directions: raw.business.directions,
+      mapUrl: raw.business.map_url,
       phone: raw.business.phone,
       email: raw.business.email,
       timezone: raw.business.timezone,

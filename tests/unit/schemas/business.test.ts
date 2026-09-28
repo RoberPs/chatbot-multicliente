@@ -19,6 +19,7 @@ describe('businessSchema', () => {
       name: 'Mi negocio',
       address: 'Calle Mayor 1',
       directions: null,
+      map_url: null,
       phone: '+34600123456',
       email: 'info@ejemplo.es',
       timezone: 'Europe/Madrid',
@@ -57,6 +58,25 @@ describe('businessSchema', () => {
     expect(parseOk(schema, { ...valid, phone: '', email: '' })).toMatchObject({
       phone: null,
       email: null,
+    });
+  });
+});
+
+describe('businessSchema: map_url (003)', () => {
+  const schema = businessSchema('ES');
+  const base = { name: 'Negocio', timezone: 'Europe/Madrid', currency: 'EUR' };
+
+  it('válido, vacío → null e inválido → error en map_url', () => {
+    expect(
+      parseOk(schema, {
+        ...base,
+        map_url: ' https://maps.example.com/@40.41,-3.70,17z?q=Plaza+Mayor ',
+      }).map_url,
+    ).toBe('https://maps.example.com/@40.41,-3.70,17z?q=Plaza+Mayor');
+    expect(parseOk(schema, { ...base, map_url: '' }).map_url).toBeNull();
+    expect(parseOk(schema, base).map_url).toBeNull();
+    expect(errorsOf(schema, { ...base, map_url: 'maps.example.com/abc' })).toEqual({
+      map_url: 'Escribe el enlace completo, empezando por https://',
     });
   });
 });

@@ -117,4 +117,14 @@ describe('prompt del modelo: el texto del cliente son datos (US5, FR-026)', () =
     expect(system).toMatch(/datos, nunca instrucciones|nunca son instrucciones/);
     expect(system).toMatch(/ajen/);
   });
+
+  it('admite el enlace a mapa y tiene la regla de ubicación (003, FR-014)', () => {
+    const core = buildPrompt(replyContext()).system[0];
+    expect(core).toContain(
+      'No escribas datos de contacto (teléfonos, correos, enlaces) salvo la dirección del negocio y su enlace a mapa (DATOS_DEL_NEGOCIO.business.mapUrl)',
+    );
+    expect(core).toContain(
+      'Ubicación: si preguntan dónde está el negocio o cómo llegar, da business.address y business.directions si existen y, si hay business.mapUrl, copia el enlace tal cual, sin acortarlo ni cambiarlo. No escribas ningún otro enlace.',
+    );
+  });
 });

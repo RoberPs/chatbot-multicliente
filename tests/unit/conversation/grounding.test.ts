@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import { extractFacts, groundingGuard } from '../../../src/conversation/grounding.js';
+import { buildAllowedFacts } from '../../../src/conversation/facts.js';
 import type { AllowedFacts } from '../../../src/conversation/types.js';
+import { activeSnapshot, emptyDerived } from '../../helpers/snapshot.js';
 
 const allowed = (partial: Partial<Record<keyof AllowedFacts, Iterable<string | number>>> = {}) =>
   ({
@@ -141,5 +143,29 @@ describe('importes (US2)', () => {
     ['un importe pequeño', 'Un suplemento de 5 €.', ['5 €']],
   ])('rechaza %s', (_name, body, offending) => {
     expect(groundingGuard(body, prices())).toEqual({ ok: false, offending });
+  });
+});
+
+describe('enlace a mapa (003, Principio IV)', () => {
+  const MAP = 'https://maps.example.com/@40.41,-3.70,17z?q=Plaza+Mayor&z=1!2';
+  const base = activeSnapshot();
+  const snapshot = { ...base, business: { ...base.business, mapUrl: MAP } };
+  const facts = () => buildAllowedFacts(snapshot, emptyDerived());
+
+  it('una respuesta que copia el enlace guardado pasa el verificador', () => {
+    const body = `Estamos en Calle Mayor 12, 28013 Madrid. Mapa: ${MAP}. ¡Te esperamos!`;
+    expect(groundingGuard(body, facts())).toEqual({ ok: true });
+    expect(groundingGuard(`Aquí tienes el mapa (${MAP})`, facts())).toEqual({ ok: true });
+  });
+
+  it('otro enlace de mapas se rechaza', () => {
+    const body = 'Mapa: https://maps.example.com/@40.42,-3.70,17z?q=Plaza+Mayor';
+    expect(groundingGuard(body, facts())).toMatchObject({ ok: false });
+  });
+
+  it('sin enlace guardado, cualquier enlace de mapas se rechaza', () => {
+    expect(
+      groundingGuard(`Mapa: ${MAP}`, buildAllowedFacts(activeSnapshot(), emptyDerived())),
+    ).toMatchObject({ ok: false });
   });
 });

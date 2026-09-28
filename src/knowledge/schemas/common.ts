@@ -86,6 +86,42 @@ export function isValidTimezone(value: string): boolean {
   }
 }
 
+const INVALID_URL = 'Enlace no válido: copia el enlace completo, empezando por https://';
+
+/** Primer error de un enlace `https://`, en el orden de research R7; `null` si es válido. */
+function httpsUrlError(value: string, max: number): string | null {
+  if (value.length > max) return `Máximo ${max} caracteres`;
+  if (/\s/.test(value)) return INVALID_URL;
+  if (!value.includes('://')) return 'Escribe el enlace completo, empezando por https://';
+  if (/^http:\/\//i.test(value)) return 'Usa el enlace seguro, que empieza por https://';
+  let url: URL;
+  try {
+    url = new URL(value);
+  } catch {
+    return INVALID_URL;
+  }
+  const valid =
+    url.protocol === 'https:' && url.hostname.includes('.') && !url.username && !url.password;
+  return valid ? null : INVALID_URL;
+}
+
+/**
+ * Enlace `https://` opcional (003, research R7); vacío → `null`. Se devuelve recortado, tal como
+ * se escribió (sin recodificar), porque es lo que ve el operador y lo que copia el bot.
+ */
+export const optionalHttpsUrl = (max: number) =>
+  z.preprocess(
+    blankToNull,
+    z
+      .string()
+      .trim()
+      .superRefine((value, ctx) => {
+        const message = httpsUrlError(value, max);
+        if (message) ctx.addIssue({ code: 'custom', message });
+      })
+      .nullable(),
+  );
+
 /** Zona horaria IANA. */
 export const timezone = z
   .string({ error: REQUIRED })

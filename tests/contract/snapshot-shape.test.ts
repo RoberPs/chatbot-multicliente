@@ -27,6 +27,7 @@ const snapshotSchema = z.strictObject({
     name: z.string(),
     address: z.string().nullable(),
     directions: z.string().nullable(),
+    mapUrl: z.string().startsWith('https://').nullable(),
     phone: z
       .string()
       .regex(/^\+\d{6,15}$/)

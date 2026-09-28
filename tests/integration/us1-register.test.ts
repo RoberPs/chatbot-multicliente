@@ -78,6 +78,7 @@ describe('US1: registrar datos, horario, cierres y servicios', () => {
       name: 'Negocio de ejemplo',
       address: 'Calle Mayor 1',
       directions: 'Frente a la parada de autobús',
+      mapUrl: null,
       phone: '+34600123456',
       email: 'hola@ejemplo.es',
       timezone: 'Europe/Madrid',

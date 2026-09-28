@@ -1,4 +1,5 @@
 import { NotFoundError } from '../errors.js';
+import { describeHandoffChange, effectiveHandoff } from '../handoff.js';
 import * as businessRepo from '../repositories/business.js';
 import * as hoursRepo from '../repositories/business-hours.js';
 import * as closuresRepo from '../repositories/closures.js';
@@ -7,12 +8,24 @@ import { closureSchema } from '../schemas/closure.js';
 import { weeklyScheduleSchema } from '../schemas/weekly-slots.js';
 import type { KnowledgeDeps } from './deps.js';
 import { assertId } from './ids.js';
-import { runGuardedWrite } from './guarded-write.js';
+import type { HandoffChange } from '../types.js';
+import { runGuardedWrite, runTrackedWrite } from './guarded-write.js';
 
-/** Datos del negocio (FR-001, FR-002). */
-export async function saveBusiness(deps: KnowledgeDeps, input: unknown): Promise<void> {
+/**
+ * Datos del negocio (FR-001, FR-002). Devuelve cómo queda el contacto que usa el bot
+ * (003, FR-006): el teléfono del negocio es uno de sus orígenes.
+ */
+export async function saveBusiness(deps: KnowledgeDeps, input: unknown): Promise<HandoffChange> {
   const data = businessSchema(deps.phoneRegion).parse(input);
-  await runGuardedWrite(deps.db, (tx) => businessRepo.updateBusiness(tx, data));
+  const { before, after } = await runTrackedWrite(deps.db, (tx) =>
+    businessRepo.updateBusiness(tx, data),
+  );
+  return describeHandoffChange(
+    effectiveHandoff(before),
+    effectiveHandoff(after),
+    before.business.phone !== after.business.phone,
+    after.business.status,
+  );
 }
 
 /** Horario semanal completo (FR-003, FR-006). */

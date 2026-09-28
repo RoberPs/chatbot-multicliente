@@ -48,8 +48,8 @@ formularios normales (POST + redirección).
 
 | Método | Ruta | Campos |
 |--------|------|--------|
-| GET | `/admin/business` | |
-| POST | `/admin/business` | `name`*, `address`, `directions`, `phone`, `email`, `timezone`*, `currency`* |
+| GET | `/admin/business` | Incluye el recuadro "Contacto que usa el bot" y, si hay enlace guardado, "Abrir en una pestaña nueva" (003) |
+| POST | `/admin/business` | `name`*, `address`, `directions`, `map_url` (003: solo `https://`, ≤ 500), `phone`, `email`, `timezone`*, `currency`* |
 
 ### Horario y cierres (FR-003 – FR-006)
 
@@ -102,9 +102,13 @@ formularios normales (POST + redirección).
 |--------|------|--------|
 | GET/POST | `/admin/policies` | `cancellation_text`, `cancellation_notice` + `_unit`, `min_advance` + `_unit`, `max_advance` + `_unit` (`minutes`/`hours`/`days`), `payment_methods[]` |
 | GET/POST | `/admin/tone` | `address_form`* (`informal`/`formal`), `style_description` |
-| GET/POST | `/admin/handoff` | `channels[i].type`, `channels[i].value`, `slots[i]…`. Sin medios = se elimina el contacto y se usa el teléfono del negocio (FR-019) |
+| GET/POST | `/admin/handoff` | `channels[i].type`, `channels[i].value`, `channels[i].remove` (003: la fila marcada no se guarda ni se valida), `slots[i]…`. Sin medios = se elimina el contacto y se usa el teléfono del negocio (FR-019) |
 
 `*` = obligatorio.
+
+La feature 003 añade a Datos y Derivación el recuadro "Contacto que usa el bot", el mensaje del
+flash cuando ese contacto cambia, los textos de registro único y los resúmenes de la portada:
+ver [003 contracts/admin-panel.md](../../003-admin-panel-clarity/contracts/admin-panel.md).
 
 ## Casos de contrato a cubrir con tests
 

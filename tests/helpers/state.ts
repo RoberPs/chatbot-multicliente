@@ -15,6 +15,7 @@ export function emptyState(overrides: Partial<KnowledgeState> = {}): KnowledgeSt
       name: '',
       address: null,
       directions: null,
+      mapUrl: null,
       phone: null,
       email: null,
       timezone: 'Europe/Madrid',

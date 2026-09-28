@@ -1,6 +1,7 @@
 <% layout('/layout') %>
 <% const v = it.values; const e = it.errors; %>
 <%~ include('/partials/general-error', { errors: it.errors, general: it.general, blocking: it.blocking, h: it.h }) %>
+<p class="hint">Cada negocio tiene una única configuración de tono. Al guardar, sustituye a la anterior.</p>
 <form class="stack card" method="post" action="/admin/tone">
   <%~ include('/partials/csrf', { token: it.layout.csrf }) %>
   <fieldset class="<%= e.address_form ? 'has-error' : '' %>">

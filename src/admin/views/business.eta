@@ -1,6 +1,7 @@
 <% layout('/layout') %>
 <% const v = it.values; const e = it.errors; %>
 <%~ include('/partials/general-error', { errors: it.errors, general: it.general, blocking: it.blocking, h: it.h }) %>
+<%~ include('/partials/handoff-effective', { notice: it.handoffNotice }) %>
 <form class="stack card" method="post" action="/admin/business">
   <%~ include('/partials/csrf', { token: it.layout.csrf }) %>
   <label class="<%= e.name ? 'has-error' : '' %>">Nombre *
@@ -13,8 +14,18 @@
   </label>
   <label class="<%= e.directions ? 'has-error' : '' %>">Cómo llegar
     <textarea name="directions" maxlength="2000"><%= it.h.str(v.directions) %></textarea>
+    <span class="hint">El bot envía este texto tal cual cuando un cliente pregunta dónde estáis o cómo llegar. Ejemplo: "Estamos en la planta baja, junto a la entrada principal del mercado. Autobús: líneas 4 y 12, parada Plaza Mayor. Hay aparcamiento público a 100 m."</span>
     <%~ include('/partials/field-error', { message: e.directions }) %>
   </label>
+  <label class="<%= e.map_url ? 'has-error' : '' %>">Enlace a mapa
+    <input type="text" name="map_url" value="<%= it.h.str(v.map_url) %>" maxlength="500" inputmode="url" placeholder="https://">
+    <span class="hint">Opcional. Pega el enlace de "Compartir" de cualquier servicio de mapas; debe empezar por https://. El bot lo enviará junto a la dirección.</span>
+    <%~ include('/partials/field-error', { message: e.map_url }) %>
+  </label>
+  <% if (it.state.business.mapUrl) { %>
+    <% /* Siempre el enlace guardado, nunca lo enviado en un formulario con errores (research R8). */ %>
+    <p><a href="<%= it.state.business.mapUrl %>" target="_blank" rel="noopener noreferrer">Abrir en una pestaña nueva</a></p>
+  <% } %>
   <div class="row">
     <label class="<%= e.phone ? 'has-error' : '' %>">Teléfono
       <input type="tel" name="phone" value="<%= it.h.str(v.phone) %>">

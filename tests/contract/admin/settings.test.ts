@@ -110,4 +110,16 @@ describe('políticas, tono y derivación', () => {
     expect(res.statusCode).toBe(303);
     expect((await snapshot()).handoff.source).toBe('none');
   });
+
+  it('Políticas, Tono y Derivación explican que son registros únicos (003, FR-008)', async () => {
+    expect((await get(app, session, '/admin/policies')).body).toContain(
+      'Cada negocio tiene un único conjunto de políticas. Al guardar, lo que hay en este formulario sustituye a lo anterior.',
+    );
+    expect((await get(app, session, '/admin/tone')).body).toContain(
+      'Cada negocio tiene una única configuración de tono. Al guardar, sustituye a la anterior.',
+    );
+    expect((await get(app, session, '/admin/handoff')).body).toContain(
+      'Cada negocio tiene un único contacto de derivación, con uno o varios medios por orden de preferencia. Para añadir un medio, rellena la fila vacía o pulsa "Añadir medio". Para quitarlo, marca "Quitar" y guarda. Si quitas todos, el bot usará el teléfono del negocio.',
+    );
+  });
 });

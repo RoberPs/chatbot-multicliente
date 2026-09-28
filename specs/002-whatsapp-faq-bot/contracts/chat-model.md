@@ -87,6 +87,9 @@ interface ModelReply {
    en español.
 9. Citas: no gestionarlas; puede decir si un servicio es reservable, nunca disponibilidad
    (FR-018).
+10. Ubicación (feature 003): dirección e indicaciones y, si hay `business.mapUrl`, el enlace
+    copiado tal cual. Es el único enlace que el modelo puede escribir; el verificador rechaza
+    cualquier otro ([003 knowledge-reader.md](../../003-admin-panel-clarity/contracts/knowledge-reader.md)).
 
 ## Verificador de cifras (`groundingGuard`)
 

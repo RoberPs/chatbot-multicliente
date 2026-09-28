@@ -1,10 +1,12 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { ActivationBlockedError, CriticalWarningError } from '../../src/knowledge/errors.js';
+import * as businessRepo from '../../src/knowledge/repositories/business.js';
 import { saveBusiness } from '../../src/knowledge/services/business-info.js';
 import {
   activateBusiness,
   deactivateBusiness,
 } from '../../src/knowledge/services/business-status.js';
+import { runTrackedWrite } from '../../src/knowledge/services/guarded-write.js';
 import { createKnowledgeReader } from '../../src/knowledge/snapshot.js';
 import { createTestDatabase, resetDb, type TestDatabase } from '../helpers/db.js';
 
@@ -77,5 +79,40 @@ describe('guardado protegido y activación (FR-031, FR-032)', () => {
       ),
     );
     expect((await createKnowledgeReader(t.db).getSnapshot()).business.name).toMatch(/^N[0-4]$/);
+  });
+
+  describe('runTrackedWrite (003)', () => {
+    const data = (phone: string | null, name = 'Negocio') => ({
+      name,
+      address: null,
+      directions: null,
+      map_url: null,
+      phone,
+      email: null,
+      timezone: 'Europe/Madrid',
+      currency: 'EUR',
+    });
+
+    it('devuelve el resultado y el estado antes y después del guardado', async () => {
+      await saveBusiness(t.deps, business('600123456'));
+      const { result, before, after } = await runTrackedWrite(t.db, async (tx) => {
+        await businessRepo.updateBusiness(tx, data('+34600999999', 'Otro'));
+        return 'hecho';
+      });
+      expect(result).toBe('hecho');
+      expect(before.business).toMatchObject({ name: 'Negocio', phone: '+34600123456' });
+      expect(after.business).toMatchObject({ name: 'Otro', phone: '+34600999999' });
+      expect((await createKnowledgeReader(t.db).getSnapshot()).business.phone).toBe('+34600999999');
+    });
+
+    it('sigue revirtiendo con CriticalWarningError si el negocio activo queda sin salida', async () => {
+      await saveBusiness(t.deps, business('600123456'));
+      await activateBusiness(t.db);
+      const error = await runTrackedWrite(t.db, (tx) =>
+        businessRepo.updateBusiness(tx, data(null)),
+      ).catch((e: unknown) => e);
+      expect(error).toBeInstanceOf(CriticalWarningError);
+      expect((await createKnowledgeReader(t.db).getSnapshot()).business.phone).toBe('+34600123456');
+    });
   });
 });

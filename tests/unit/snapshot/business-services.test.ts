@@ -12,6 +12,7 @@ describe('snapshot: negocio, horario y servicios (US1)', () => {
       name: 'Mi negocio',
       address: null,
       directions: null,
+      mapUrl: null,
       phone: null,
       email: null,
       timezone: 'Europe/Madrid',
@@ -104,5 +105,13 @@ describe('snapshot: negocio, horario y servicios (US1)', () => {
     });
     expect(snap.tone).toEqual({ addressForm: null, styleDescription: null });
     expect(snap.faqs).toEqual([]);
+  });
+
+  it('business.mapUrl es el enlace guardado (003, FR-014)', () => {
+    const state = emptyState();
+    state.business.mapUrl = 'https://maps.example.com/@40.41,-3.70,17z?q=Plaza+Mayor';
+    expect(buildSnapshot(state).business.mapUrl).toBe(
+      'https://maps.example.com/@40.41,-3.70,17z?q=Plaza+Mayor',
+    );
   });
 });

@@ -1,18 +1,28 @@
 import type { CountryCode } from 'libphonenumber-js';
 import { z } from 'zod';
 import type { HandoffChannelType } from '../types.js';
-import { email, phone } from './common.js';
+import { checkbox, email, phone } from './common.js';
 import { weeklySlotsSchema } from './weekly-slots.js';
 
 const channelType = z.enum(['phone', 'whatsapp', 'email'], { error: 'Elige el tipo de medio' });
 
-/** Contacto de derivación (FR-018): medios con su valor normalizado y horario opcional. */
+/**
+ * Contacto de derivación (FR-018): medios con su valor normalizado y horario opcional.
+ * Las filas marcadas con "Quitar" (003, FR-001) se descartan sin validar su valor; los errores
+ * del resto conservan el índice del formulario.
+ */
 export const handoffSchema = (region: CountryCode) =>
   z
     .object({
       channels: z.preprocess(
         (v) => (v === undefined || v === null || v === '' ? [] : v),
-        z.array(z.object({ type: channelType, value: z.string({ error: 'Obligatorio' }) })),
+        z.array(
+          z.object({
+            type: channelType,
+            value: z.string({ error: 'Obligatorio' }),
+            remove: checkbox,
+          }),
+        ),
       ),
       slots: weeklySlotsSchema,
     })
@@ -20,6 +30,7 @@ export const handoffSchema = (region: CountryCode) =>
       const channels: Array<{ type: HandoffChannelType; value: string }> = [];
       const seen = new Set<string>();
       v.channels.forEach((channel, i) => {
+        if (channel.remove) return;
         const valueSchema = channel.type === 'email' ? email : phone(region);
         const parsed = valueSchema.safeParse(channel.value);
         if (!parsed.success) {

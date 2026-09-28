@@ -61,6 +61,7 @@ export function buildSnapshot(state: KnowledgeState): KnowledgeSnapshot {
       name: state.business.name,
       address: blankToNull(state.business.address),
       directions: blankToNull(state.business.directions),
+      mapUrl: blankToNull(state.business.mapUrl),
       phone: blankToNull(state.business.phone),
       email: blankToNull(state.business.email),
       timezone: state.business.timezone,

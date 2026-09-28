@@ -33,9 +33,9 @@
     <li><a href="/admin/services">Servicios</a> · <%= it.state.services.length %></li>
     <li><a href="/admin/resources">Recursos</a> · <%= it.state.resources.length %></li>
     <li><a href="/admin/faqs">Preguntas frecuentes</a> · <%= it.state.faqs.length %></li>
-    <li><a href="/admin/policies">Políticas</a></li>
-    <li><a href="/admin/tone">Tono</a></li>
-    <li><a href="/admin/handoff">Contacto de derivación</a></li>
+    <li><a href="/admin/policies">Políticas</a> · <span data-summary="policies"><%= it.summaries.policies %></span></li>
+    <li><a href="/admin/tone">Tono</a> · <span data-summary="tone"><%= it.summaries.tone %></span></li>
+    <li><a href="/admin/handoff">Contacto de derivación</a> · <span data-summary="handoff"><%= it.summaries.handoff %></span></li>
     <li><a href="/admin/playground">Probar el bot</a></li>
     <li><a href="/admin/web-chat">Chat web</a> · Chat web: <%= it.webChat %></li>
   </ul>

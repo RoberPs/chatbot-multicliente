@@ -9,5 +9,6 @@ export async function getBusiness(tx: Tx) {
 }
 
 export async function updateBusiness(tx: Tx, data: BusinessInput): Promise<void> {
-  await tx.update(business).set({ ...data, ...touch() });
+  const { map_url: mapUrl, ...rest } = data;
+  await tx.update(business).set({ ...rest, mapUrl, ...touch() });
 }

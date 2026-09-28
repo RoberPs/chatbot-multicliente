@@ -7,6 +7,8 @@ export const workshop: BusinessFixture = {
     name: 'Taller Motor Rápido',
     address: 'Polígono Industrial Norte, nave 4, Zaragoza',
     directions: 'Salida 12 de la autovía, segunda calle a la derecha.',
+    // 003: enlace a mapa con @, comas y +, que el bot debe copiar tal cual.
+    map_url: 'https://maps.example.com/@41.6809,-0.8792,17z?q=poligono+industrial+norte+nave+4',
     phone: '976 555 010',
     email: 'taller@motorrapido.example',
     timezone: 'Europe/Madrid',

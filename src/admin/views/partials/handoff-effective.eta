@@ -1,0 +1,5 @@
+<% const n = it.notice; %>
+<section class="handoff-effective<%= n.none ? ' is-none' : '' %>" aria-label="Contacto que usa el bot">
+  <p><strong><%= n.lead %></strong><% if (n.contact) { %> <%= n.contact %>.<% } %></p>
+  <p><em><%= n.note %></em></p>
+</section>

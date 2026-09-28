@@ -93,4 +93,20 @@ describe('US2: los cambios se aplican en la siguiente lectura del bot', () => {
     expect(res.statusCode).toBe(303);
     expect((await reader.getSnapshot()).services.map((s) => s.name)).toEqual(['A']);
   });
+
+  it('el enlace a mapa se guarda, cambia y se vacía en la siguiente lectura (003, SC-005)', async () => {
+    const reader = createKnowledgeReader(t.db);
+    const business = (map_url: string) => ({
+      name: 'Negocio',
+      timezone: 'Europe/Madrid',
+      currency: 'EUR',
+      map_url,
+    });
+    await postForm(app, session, '/admin/business', business('https://maps.example.com/a'));
+    expect((await reader.getSnapshot()).business.mapUrl).toBe('https://maps.example.com/a');
+    await postForm(app, session, '/admin/business', business('https://maps.example.com/b'));
+    expect((await reader.getSnapshot()).business.mapUrl).toBe('https://maps.example.com/b');
+    await postForm(app, session, '/admin/business', business(''));
+    expect((await reader.getSnapshot()).business.mapUrl).toBeNull();
+  });
 });

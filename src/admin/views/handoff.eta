@@ -4,16 +4,18 @@
    const own = it.warnings.filter(function (w) { return w.target.kind === 'handoff'; }); %>
 <%~ include('/partials/general-error', { errors: it.errors, general: it.general, blocking: it.blocking, h: it.h }) %>
 <% if (own.length > 0) { %><%~ include('/partials/warnings-list', { warnings: own, h: it.h, links: false }) %><% } %>
-<p class="hint">Persona a la que el bot pasa la conversación cuando no puede resolverla. Si no indicas ningún medio, se usará el teléfono del negocio.</p>
+<%~ include('/partials/handoff-effective', { notice: it.handoffNotice }) %>
+<p class="hint">Persona a la que el bot pasa la conversación cuando no puede resolverla.</p>
+<p class="hint">Cada negocio tiene un único contacto de derivación, con uno o varios medios por orden de preferencia. Para añadir un medio, rellena la fila vacía o pulsa "Añadir medio". Para quitarlo, marca "Quitar" y guarda. Si quitas todos, el bot usará el teléfono del negocio.</p>
 <form class="stack card" method="post" action="/admin/handoff">
   <%~ include('/partials/csrf', { token: it.layout.csrf }) %>
   <fieldset>
     <legend>Medios de contacto (por orden de preferencia)</legend>
     <div id="channel-rows">
       <% channels.forEach(function (c, i) { %>
-        <%~ include('/partials/channel-row', { index: i, type: c.type, value: c.value, errors: e }) %>
+        <%~ include('/partials/channel-row', { index: i, type: c.type, value: c.value, removable: true, remove: c.remove, errors: e }) %>
       <% }) %>
-      <%~ include('/partials/channel-row', { index: channels.length, type: 'phone', value: '', errors: {} }) %>
+      <%~ include('/partials/channel-row', { index: channels.length, type: 'phone', value: '', removable: false, errors: {} }) %>
     </div>
     <button type="button" class="link small" hx-get="/admin/partials/channel-row" hx-target="#channel-rows" hx-swap="beforeend">Añadir medio</button>
     <%~ include('/partials/field-error', { message: e.channels }) %>

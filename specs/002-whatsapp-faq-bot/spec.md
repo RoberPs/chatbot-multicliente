@@ -77,7 +77,7 @@ y comparar cada respuesta con los datos registrados.
    negocio, teniendo en cuenta horario y cierres puntuales.
 4. **Given** un negocio con dirección e indicaciones para llegar, **When** el cliente pregunta
    dónde está o cómo llegar, **Then** el bot responde con la dirección y las indicaciones
-   registradas.
+   registradas y, si hay enlace a mapa, lo incluye copiado tal cual (feature 003, FR-014).
 5. **Given** un negocio con servicios activos e inactivos, **When** el cliente pregunta qué
    servicios ofrece, **Then** el bot enumera solo los servicios activos y no menciona los
    inactivos.

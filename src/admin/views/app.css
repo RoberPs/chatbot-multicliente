@@ -129,6 +129,28 @@ main {
   font-size: 0.85rem;
   margin: 0.25rem 0 0.75rem;
 }
+/* Recuadro "Contacto que usa el bot" (003, FR-005). */
+.handoff-effective {
+  border-left: 4px solid var(--accent);
+  background: var(--card);
+  padding: 0.6rem 1rem;
+  border-radius: 6px;
+  margin-bottom: 1rem;
+}
+.handoff-effective.is-none {
+  border-left-color: var(--danger);
+}
+.handoff-effective p {
+  margin: 0.2rem 0;
+}
+/* Medio marcado para quitar: se ve el efecto antes de guardar, sin JavaScript (003, FR-001). */
+.channel-row:has(.remove input:checked) {
+  opacity: 0.55;
+}
+.channel-row:has(.remove input:checked) select,
+.channel-row:has(.remove input:checked) input[type='text'] {
+  text-decoration: line-through;
+}
 
 form.stack {
   display: grid;

@@ -52,6 +52,7 @@ interface KnowledgeSnapshot {
     name: string;
     address: string | null;
     directions: string | null;
+    mapUrl: string | null;                    // 003: enlace https a un mapa, tal como se guardó
     phone: string | null;                     // E.164
     email: string | null;
     timezone: string;                         // IANA

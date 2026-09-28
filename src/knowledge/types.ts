@@ -31,6 +31,8 @@ export interface BusinessRecord {
   name: string;
   address: string | null;
   directions: string | null;
+  /** Enlace https a un mapa (003, FR-011). */
+  mapUrl: string | null;
   phone: string | null;
   email: string | null;
   timezone: string;
@@ -168,12 +170,27 @@ export interface EffectiveHandoff {
   hours: WeeklySlot[];
 }
 
+/**
+ * Cambio del contacto que usa el bot tras un guardado de Datos o Derivación (003, FR-006).
+ * Derivado: se calcula dentro de la transacción del guardado y no se guarda.
+ */
+export interface HandoffChange {
+  before: EffectiveHandoff;
+  after: EffectiveHandoff;
+  /** El guardado modificó el teléfono del negocio o los medios guardados (FR-006 b). */
+  touched: boolean;
+  /** Estado del negocio después del guardado. */
+  status: BusinessStatus;
+}
+
 export interface KnowledgeSnapshot {
   status: BusinessStatus;
   business: {
     name: string;
     address: string | null;
     directions: string | null;
+    /** Enlace https a un mapa; `null` si no hay (003, FR-014). */
+    mapUrl: string | null;
     phone: string | null;
     email: string | null;
     timezone: string;

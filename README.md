@@ -6,7 +6,7 @@ Estados: especificada → planificada → en implementación → completada (o a
 |-----|---------------------------------|--------|-------------|------------------------------|-------------------------------------------------|-------------|
 | 001 | Base de conocimiento del negocio | Núcleo | En implementación | `001-business-knowledge-base` | [spec](specs/001-business-knowledge-base/spec.md) | 2026-09-24  |
 | 002 | Atención de dudas y precios por WhatsApp | Núcleo | En implementación | `002-whatsapp-faq-bot` | [spec](specs/002-whatsapp-faq-bot/spec.md) · [plan](specs/002-whatsapp-faq-bot/plan.md) · [tareas](specs/002-whatsapp-faq-bot/tasks.md) | 2026-09-25  |
-| 003 | Claridad del panel del operador y enlace a mapa | Núcleo | Especificada | `003-admin-panel-clarity` | [spec](specs/003-admin-panel-clarity/spec.md) | 2026-09-25  |
+| 003 | Claridad del panel del operador y enlace a mapa | Núcleo | En implementación | `004-web-channel` | [spec](specs/003-admin-panel-clarity/spec.md) · [plan](specs/003-admin-panel-clarity/plan.md) · [tareas](specs/003-admin-panel-clarity/tasks.md) | 2026-09-28  |
 | 004 | Canal web del bot de atención | Núcleo | Completada | `004-web-channel` | [spec](specs/004-web-channel/spec.md) · [plan](specs/004-web-channel/plan.md) · [tareas](specs/004-web-channel/tasks.md) | 2026-09-28  |
 
 ---
@@ -61,7 +61,8 @@ WhatsApp. Se puede probar de dos maneras:
 
 Las guías de validación, con los escenarios manuales, están en
 [specs/001-business-knowledge-base/quickstart.md](specs/001-business-knowledge-base/quickstart.md),
-[specs/002-whatsapp-faq-bot/quickstart.md](specs/002-whatsapp-faq-bot/quickstart.md) y
+[specs/002-whatsapp-faq-bot/quickstart.md](specs/002-whatsapp-faq-bot/quickstart.md),
+[specs/003-admin-panel-clarity/quickstart.md](specs/003-admin-panel-clarity/quickstart.md) y
 [specs/004-web-channel/quickstart.md](specs/004-web-channel/quickstart.md).
 
 ## Chat web en la web del negocio

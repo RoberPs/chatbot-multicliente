@@ -45,6 +45,7 @@ export const business = pgTable(
     name: text('name').notNull().default(''),
     address: text('address'),
     directions: text('directions'),
+    mapUrl: text('map_url'),
     phone: text('phone'),
     email: text('email'),
     timezone: text('timezone').notNull(),

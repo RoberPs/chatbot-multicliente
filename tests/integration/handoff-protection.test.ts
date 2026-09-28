@@ -1,9 +1,15 @@
 /** Protección de la salida a una persona (quickstart §6, FR-029 – FR-032, Principio V). */
 import type { FastifyInstance } from 'fastify';
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
+import { readState } from '../../src/admin/render.js';
+import { CriticalWarningError } from '../../src/knowledge/errors.js';
+import { effectiveHandoff } from '../../src/knowledge/handoff.js';
+import { saveBusiness } from '../../src/knowledge/services/business-info.js';
+import { activateBusiness } from '../../src/knowledge/services/business-status.js';
+import { saveHandoff } from '../../src/knowledge/services/settings.js';
 import { createKnowledgeReader } from '../../src/knowledge/snapshot.js';
 import { buildTestApp, get, login, postForm, type Session } from '../helpers/app.js';
-import { createTestDatabase, type TestDatabase } from '../helpers/db.js';
+import { createTestDatabase, resetDb, type TestDatabase } from '../helpers/db.js';
 
 const business = (phone: string) => ({
   name: 'Negocio',
@@ -85,5 +91,38 @@ describe('US4: el negocio activo nunca se queda sin salida a una persona', () =>
       source: 'configured',
       channels: [{ type: 'email', value: 'a@b.es' }],
     });
+  });
+});
+
+describe('003 US1: quitar medios con la casilla "Quitar" sigue protegido por FR-032', () => {
+  let t: TestDatabase;
+
+  beforeAll(async () => {
+    t = await createTestDatabase();
+  });
+  beforeEach(async () => {
+    await resetDb(t.db);
+  });
+  afterAll(async () => {
+    await t.close();
+  });
+
+  const removeOnly = { channels: [{ type: 'email', value: 'a@b.es', remove: 'on' }] };
+
+  it('negocio activo sin teléfono y un único medio → CriticalWarningError y el medio sigue', async () => {
+    await saveHandoff(t.deps, { channels: [{ type: 'email', value: 'a@b.es' }] });
+    await activateBusiness(t.db);
+    const error = await saveHandoff(t.deps, removeOnly).catch((e: unknown) => e);
+    expect(error).toBeInstanceOf(CriticalWarningError);
+    const state = await readState(t.db);
+    expect(state.handoff?.channels.map((c) => c.value)).toEqual(['a@b.es']);
+  });
+
+  it('con teléfono del negocio → se guarda y el bot usa el teléfono del negocio', async () => {
+    await saveBusiness(t.deps, business('600123456'));
+    await saveHandoff(t.deps, { channels: [{ type: 'email', value: 'a@b.es' }] });
+    await activateBusiness(t.db);
+    await saveHandoff(t.deps, removeOnly);
+    expect(effectiveHandoff(await readState(t.db)).source).toBe('business_phone');
   });
 });

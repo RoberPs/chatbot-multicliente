@@ -99,8 +99,11 @@ Ningún paso requiere tocar código ni reiniciar el servicio (SC-002).
 ### 6. Activación y protección de la salida a una persona (FR-029 – FR-032, Principio V)
 
 1. Activa el negocio. **Esperado**: estado "Activo" aunque queden avisos normales.
-2. Elimina el contacto de derivación. **Esperado**: se guarda (queda el teléfono) y aparece
-   `HANDOFF_CONTACT_MISSING`.
+2. Elimina el contacto de derivación: en **Contacto de derivación**, marca **Quitar** en cada
+   medio y pulsa **Guardar**. **Esperado**: se guarda (queda el teléfono), el mensaje dice
+   "Guardado. No hay contacto de derivación configurado, así que el bot pasa las conversaciones
+   al teléfono del negocio: +34…", el recuadro "Contacto que usa el bot" muestra el teléfono y
+   aparece `HANDOFF_CONTACT_MISSING`.
 3. Borra el teléfono del negocio. **Esperado**: `409`, el teléfono sigue guardado y el mensaje
    explica que el negocio activo se quedaría sin salida a una persona.
 4. Desactiva el negocio y repite el paso 3. **Esperado**: se guarda y aparece `HANDOFF_UNREACHABLE`.
@@ -119,6 +122,12 @@ condicional.
 
 Registra un negocio típico (datos, horario, 10 servicios, 3 recursos, 10 FAQ, políticas, tono
 y contacto) cronometrando. **Esperado**: menos de 30 minutos.
+
+### 9. Claridad del panel y enlace a mapa (feature 003)
+
+Quitar medios de derivación, el recuadro "Contacto que usa el bot", los mensajes al guardar,
+los resúmenes de la portada y el campo "Enlace a mapa" se validan con los escenarios de la
+[guía de la 003](../003-admin-panel-clarity/quickstart.md).
 
 ## Resultado de la validación (2026-09-24)
 

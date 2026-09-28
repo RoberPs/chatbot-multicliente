@@ -3,6 +3,7 @@
    const units = [['minutes', 'minutos'], ['hours', 'horas'], ['days', 'días']];
    const methods = (Array.isArray(v.payment_methods) ? v.payment_methods : []).concat(['', '']); %>
 <%~ include('/partials/general-error', { errors: it.errors, general: it.general, blocking: it.blocking, h: it.h }) %>
+<p class="hint">Cada negocio tiene un único conjunto de políticas. Al guardar, lo que hay en este formulario sustituye a lo anterior.</p>
 <form class="stack card" method="post" action="/admin/policies">
   <%~ include('/partials/csrf', { token: it.layout.csrf }) %>
   <label class="<%= e.cancellation_text ? 'has-error' : '' %>">Política de cancelación
