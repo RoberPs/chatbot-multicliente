@@ -29,6 +29,13 @@
       "when": 1790581186991,
       "tag": "0003_map_url",
       "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1790605452355,
+      "tag": "0004_handoff",
+      "breakpoints": true
     }
   ]
 }

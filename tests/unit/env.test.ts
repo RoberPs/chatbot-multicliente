@@ -160,4 +160,61 @@ describe('variables de la instancia', () => {
       expect(() => loadEnv({ ...base, PUBLIC_BASE_URL: value })).toThrow(/PUBLIC_BASE_URL/);
     });
   });
+
+  describe('avisos de derivación (005)', () => {
+    it('SMTP ausente → smtp null', () => {
+      expect(loadEnv(base).smtp).toBeNull();
+      expect(loadEnv({ ...base, SMTP_URL: '', SMTP_FROM: ' ' }).smtp).toBeNull();
+    });
+
+    it.each([
+      ['smtps', 'smtps://usuario:clave@correo.ejemplo.com:465'],
+      ['smtp con STARTTLS', 'smtp://usuario:clave@correo.ejemplo.com:587'],
+    ])('SMTP completo (%s) → url y remitente', (_name, url) => {
+      const env = loadEnv({ ...base, SMTP_URL: url, SMTP_FROM: ' Avisos@Ejemplo.com ' });
+      expect(env.smtp).toEqual({ url, from: 'avisos@ejemplo.com' });
+    });
+
+    it('solo una de las dos variables SMTP → error', () => {
+      expect(() => loadEnv({ ...base, SMTP_URL: 'smtp://correo.ejemplo.com:587' })).toThrow(
+        /SMTP_URL y SMTP_FROM/,
+      );
+      expect(() => loadEnv({ ...base, SMTP_FROM: 'avisos@ejemplo.com' })).toThrow(
+        /SMTP_URL y SMTP_FROM/,
+      );
+    });
+
+    it.each([
+      ['https', 'https://correo.ejemplo.com'],
+      ['sin esquema', 'correo.ejemplo.com:587'],
+      ['sin host', 'smtp://'],
+    ])('SMTP_URL con esquema no válido (%s) → error', (_name, url) => {
+      expect(() => loadEnv({ ...base, SMTP_URL: url, SMTP_FROM: 'avisos@ejemplo.com' })).toThrow(
+        /SMTP_URL/,
+      );
+    });
+
+    it('SMTP_FROM que no es un email → error', () => {
+      expect(() =>
+        loadEnv({ ...base, SMTP_URL: 'smtp://correo.ejemplo.com:587', SMTP_FROM: 'avisos' }),
+      ).toThrow(/SMTP_FROM/);
+    });
+
+    it('WHATSAPP_TEMPLATE_LANG: es por defecto; xx o xx_XX', () => {
+      expect(loadEnv(base).WHATSAPP_TEMPLATE_LANG).toBe('es');
+      expect(loadEnv({ ...base, WHATSAPP_TEMPLATE_LANG: '' }).WHATSAPP_TEMPLATE_LANG).toBe('es');
+      expect(loadEnv({ ...base, WHATSAPP_TEMPLATE_LANG: 'es_MX' }).WHATSAPP_TEMPLATE_LANG).toBe(
+        'es_MX',
+      );
+    });
+
+    it.each([['español'], ['ES'], ['es-ES'], ['es_mx']])(
+      'WHATSAPP_TEMPLATE_LANG con formato no válido (%s) → error',
+      (value) => {
+        expect(() => loadEnv({ ...base, WHATSAPP_TEMPLATE_LANG: value })).toThrow(
+          /WHATSAPP_TEMPLATE_LANG/,
+        );
+      },
+    );
+  });
 });

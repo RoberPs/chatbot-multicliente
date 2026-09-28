@@ -132,7 +132,47 @@ const envSchema = z.object({
         return origin;
       }),
   ),
+
+  // --- Avisos de derivación al negocio (feature 005) ---
+  /** Servidor SMTP de los avisos por email: `smtp://` (STARTTLS) o `smtps://`. */
+  SMTP_URL: optionalText.pipe(
+    z
+      .string()
+      .optional()
+      .refine(
+        (v) => v === undefined || isSmtpUrl(v),
+        'SMTP_URL debe ser una URL smtp:// o smtps:// con servidor (smtps://usuario:clave@host:465)',
+      ),
+  ),
+  /** Remitente de los avisos por email. */
+  SMTP_FROM: optionalText.pipe(
+    z
+      .email({ error: 'SMTP_FROM debe ser un email válido' })
+      .transform((v) => v.toLowerCase())
+      .optional(),
+  ),
+  /** Idioma de las plantillas de WhatsApp de los avisos (`xx` o `xx_XX`). */
+  WHATSAPP_TEMPLATE_LANG: optionalText.pipe(
+    z
+      .string()
+      .regex(/^[a-z]{2}(_[A-Z]{2})?$/, 'WHATSAPP_TEMPLATE_LANG debe tener el formato xx o xx_XX')
+      .default('es'),
+  ),
 });
+
+function isSmtpUrl(value: string): boolean {
+  try {
+    const url = new URL(value);
+    return (url.protocol === 'smtp:' || url.protocol === 'smtps:') && url.hostname !== '';
+  } catch {
+    return false;
+  }
+}
+
+export interface SmtpEnv {
+  url: string;
+  from: string;
+}
 
 const WHATSAPP_VARS = [
   'WHATSAPP_PHONE_NUMBER_ID',
@@ -211,7 +251,18 @@ const botSchema = envSchema.transform((raw, ctx) => {
     });
   }
 
-  return { ...raw, whatsapp, emergencyContactPhone, audioTranscription };
+  // SMTP de los avisos de derivación (005, R7): las dos variables juntas o ninguna.
+  let smtp: SmtpEnv | null = null;
+  if (raw.SMTP_URL !== undefined && raw.SMTP_FROM !== undefined) {
+    smtp = { url: raw.SMTP_URL, from: raw.SMTP_FROM };
+  } else if (raw.SMTP_URL !== undefined || raw.SMTP_FROM !== undefined) {
+    ctx.addIssue({
+      code: 'custom',
+      message: 'SMTP_URL y SMTP_FROM van juntas: indica las dos o ninguna',
+    });
+  }
+
+  return { ...raw, whatsapp, emergencyContactPhone, audioTranscription, smtp };
 });
 
 export type Env = z.infer<typeof botSchema>;

@@ -7,6 +7,7 @@ import {
   allTableNames,
   business,
   conversationTableNames,
+  handoffAlerts,
   webChatSettings,
 } from '../../src/db/schema.js';
 import type { KnowledgeDeps } from '../../src/knowledge/services/deps.js';
@@ -51,8 +52,9 @@ export async function createTestDatabase(): Promise<TestDatabase> {
 }
 
 /**
- * Vacía todas las tablas, deja el negocio vacío en "draft" y el chat web con sus valores por
- * defecto (es una fila única: se restablece, no se trunca).
+ * Vacía todas las tablas, deja el negocio vacío en "draft", el chat web con sus valores por
+ * defecto y los destinos de avisos de derivación vacíos (filas únicas: se restablecen, no se
+ * truncan).
  */
 export async function resetDb(db: Db): Promise<void> {
   const tables = sql.join(
@@ -66,4 +68,5 @@ export async function resetDb(db: Db): Promise<void> {
   await db
     .update(webChatSettings)
     .set({ enabled: false, allowedOrigins: [], privacyUrl: null, dailyCap: 200, monthlyCap: 3000 });
+  await db.update(handoffAlerts).set({ whatsappPhone: null, email: null });
 }

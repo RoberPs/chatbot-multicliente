@@ -7,6 +7,7 @@ import {
   boolean,
   char,
   check,
+  customType,
   date,
   index,
   integer,
@@ -284,8 +285,14 @@ export const messageStatus = pgEnum('message_status', [
   'sending',
   'sent',
   'failed',
+  'forwarded',
 ]);
 export const transcriptionStatus = pgEnum('transcription_status', ['pending', 'done', 'failed']);
+
+/** `bytea` de PostgreSQL como `Buffer` (drizzle no lo trae de serie). */
+const bytea = customType<{ data: Buffer; driverData: Buffer }>({
+  dataType: () => 'bytea',
+});
 
 const instant = (name: string) => timestamp(name, { withTimezone: true, mode: 'date' });
 
@@ -318,6 +325,12 @@ export const conversation = pgTable(
     lastInboundAt: instant('last_inbound_at').notNull(),
     lastMessageAt: instant('last_message_at').notNull(),
     greeted: boolean('greeted').notNull().default(false),
+    /** Nombre del cliente para la derivación (005): perfil de WhatsApp o el que dio. ≤ 80 car. */
+    contactName: text('contact_name'),
+    /** Teléfono del cliente para la derivación (005), en E.164. */
+    contactPhone: text('contact_phone'),
+    /** Paso previo a la derivación (005, R2): `offered` o `collecting`; ver `handoffStepSchema`. */
+    handoffStep: jsonb('handoff_step'),
   },
   (t) => [
     index('conversation_customer_last_inbound_idx').on(t.customerId, t.lastInboundAt.desc()),
@@ -378,8 +391,94 @@ export const webUsageDay = pgTable('web_usage_day', {
   replies: integer('replies').notNull().default(0),
 });
 
+// ---------------------------------------------------------------------------
+// Derivación de la conversación al negocio (feature 005, data-model.md).
+// ---------------------------------------------------------------------------
+
+export const handoffKind = pgEnum('handoff_kind', ['person', 'unresolved', 'complaint']);
+export const handoffStatus = pgEnum('handoff_status', ['active', 'ended']);
+export const handoffSummarySource = pgEnum('handoff_summary_source', ['model', 'fallback']);
+export const handoffActionVia = pgEnum('handoff_action_via', ['whatsapp', 'email']);
+export const handoffEndCause = pgEnum('handoff_end_cause', [
+  'business',
+  'inactivity',
+  'operator',
+  'playground',
+]);
+export const handoffNoticeType = pgEnum('handoff_notice_type', ['alert', 'reminder', 'forward']);
+export const handoffRoute = pgEnum('handoff_route', ['whatsapp', 'email', 'simulated']);
+export const handoffNoticeStatus = pgEnum('handoff_notice_status', ['sent', 'failed']);
+
+/** Derivación de una conversación al negocio. Como mucho una activa por conversación. */
+export const handoff = pgTable(
+  'handoff',
+  {
+    id: uuid('id').primaryKey(),
+    conversationId: uuid('conversation_id')
+      .notNull()
+      .references(() => conversation.id, { onDelete: 'cascade' }),
+    kind: handoffKind('kind').notNull(),
+    status: handoffStatus('status').notNull(),
+    summary: text('summary').notNull(),
+    summarySource: handoffSummarySource('summary_source').notNull(),
+    /** `sha256(token)`; el token en claro solo existe en memoria y en los avisos (R9). */
+    tokenHash: bytea('token_hash').notNull().unique(),
+    startedAt: instant('started_at').notNull(),
+    confirmedAt: instant('confirmed_at'),
+    confirmedVia: handoffActionVia('confirmed_via'),
+    reminderDueAt: instant('reminder_due_at'),
+    reminderSentAt: instant('reminder_sent_at'),
+    endedAt: instant('ended_at'),
+    endCause: handoffEndCause('end_cause'),
+  },
+  (t) => [
+    uniqueIndex('handoff_one_active_per_conversation')
+      .on(t.conversationId)
+      .where(sql`${t.status} = 'active'`),
+    index('handoff_status_reminder_idx').on(t.status, t.reminderDueAt),
+    check(
+      'handoff_ended',
+      sql`(${t.status} = 'ended') = (${t.endedAt} is not null and ${t.endCause} is not null)`,
+    ),
+    check('handoff_confirmed', sql`(${t.confirmedAt} is null) = (${t.confirmedVia} is null)`),
+  ],
+);
+
+/** Cada mensaje al negocio de una derivación, por vía. */
+export const handoffNotice = pgTable('handoff_notice', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  handoffId: uuid('handoff_id')
+    .notNull()
+    .references(() => handoff.id, { onDelete: 'cascade' }),
+  type: handoffNoticeType('type').notNull(),
+  route: handoffRoute('route').notNull(),
+  status: handoffNoticeStatus('status').notNull(),
+  /** Código corto de fallo; nunca textos del cliente. */
+  failure: text('failure'),
+  /** `wamid` o `Message-ID` del email. */
+  providerRef: text('provider_ref'),
+  messagesCovered: smallint('messages_covered'),
+  /** Solo con la vía simulada (playground): texto del aviso para el operador. */
+  body: text('body'),
+  createdAt: instant('created_at').notNull(),
+});
+
+/** Destinos de los avisos de derivación (R16): una sola fila, editable en el panel. */
+export const handoffAlerts = pgTable(
+  'handoff_alerts',
+  {
+    id: smallint('id').primaryKey().default(1),
+    whatsappPhone: text('whatsapp_phone'),
+    email: text('email'),
+    updatedAt: updatedAt(),
+  },
+  (t) => [check('handoff_alerts_singleton', sql`${t.id} = 1`)],
+);
+
 /** Tablas de conversaciones del bot (sin `updated_at`: no forman parte del snapshot). */
 export const conversationTableNames = [
+  'handoff_notice',
+  'handoff',
   'message',
   'conversation',
   'customer',
