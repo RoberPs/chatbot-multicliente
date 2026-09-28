@@ -22,6 +22,7 @@ const asset = (name: string) => readFileSync(`${assetsDir}/${name}`, 'utf8');
 
 const widgetSource = asset('widget.js');
 const frameScript = asset('frame.js');
+const linksScript = asset('links.js');
 const frameStyles = asset('frame.css');
 
 /** CSP del frame; solo cambia `frame-ancestors`. */
@@ -63,6 +64,9 @@ export async function webChatRoutes(chat: FastifyInstance): Promise<void> {
   chat.get('/widget.js', async (_request, reply) => cached(reply, 'text/javascript', widgetSource));
   chat.get('/assets/frame.js', async (_request, reply) =>
     cached(reply, 'text/javascript', frameScript),
+  );
+  chat.get('/assets/links.js', async (_request, reply) =>
+    cached(reply, 'text/javascript', linksScript),
   );
   chat.get('/assets/frame.css', async (_request, reply) => cached(reply, 'text/css', frameStyles));
 

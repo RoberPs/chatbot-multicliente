@@ -108,6 +108,11 @@ body {
   overflow-wrap: anywhere;
   font-size: 0.9rem;
 }
+/* Enlaces https:// de las respuestas del bot (FR-020a). */
+.messages .from-bot a {
+  color: var(--chat-accent);
+  text-decoration: underline;
+}
 .messages .from-visitor {
   margin-left: auto;
   background: var(--chat-accent);

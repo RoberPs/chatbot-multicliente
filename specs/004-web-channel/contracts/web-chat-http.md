@@ -110,6 +110,10 @@ menos de 24 h; si no hay, lista vacía).
 - Entrantes con estado `pending`, `answered` o `rate_limited`; salientes `sent`. Nunca
   `reply_trace`.
 - `after` devuelve solo lo posterior al cursor; sin `after`, toda la conversación vigente.
+- `text` es siempre texto plano, sin marcado. El iframe pinta los mensajes del visitante con
+  `textContent` y los del bot con `ChatLinks.split` (R15): cada enlace `https://` válido es un
+  `<a target="_blank" rel="noopener noreferrer nofollow">` creado con `createElement`, y el
+  resto, nodos de texto (FR-020a).
 - El iframe consulta cada 1,5 s mientras `waiting = true` (R5) y muestra "escribiendo…"
   (FR-021). Si pasan 45 s con `waiting = true`, muestra R-ERR con `contact` y deja de consultar.
 
@@ -148,4 +152,8 @@ El entrante se guarda con `sent_at = received_at = ahora` (hora del servidor) y
 8. Ningún registro contiene el token, el texto ni la IP (SC-008).
 9. El texto con `<script>` se devuelve tal cual en JSON; un test estático falla si los
    scripts de `src/channels/web/assets/` usan `innerHTML`, `outerHTML`,
-   `insertAdjacentHTML` o `document.write`, y el quickstart lo comprueba en el navegador.
+   `insertAdjacentHTML` o `document.write`, y el quickstart lo comprueba en el navegador. La
+   única salida distinta de texto son los enlaces `https://` de las respuestas del bot (R15,
+   FR-020a): una tabla de casos común comprueba que `links.js` y `message-links.ts` parten
+   igual el texto y que `javascript:`, `data:`, `http://` y los enlaces del visitante nunca
+   son enlaces.

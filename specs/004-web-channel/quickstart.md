@@ -52,6 +52,9 @@ WhatsApp en SC-001, SC-002 y SC-005 a SC-008 de la 002. SC-009 (audio y otros ti
 7. En otra pestaña cambia un precio en `/admin/services`; pregunta por él → precio nuevo.
 8. Pasa el negocio a "En preparación" → la página muestra el aviso y sigue respondiendo.
 9. Cierra sesión y abre `/admin/playground` → redirige al login.
+10. Con un "Enlace a mapa" guardado en Datos (003), pregunta "¿dónde estáis?" → el enlace de la
+    respuesta se puede pulsar y abre el mapa en una pestaña nueva. Escribe tú un mensaje con un
+    enlace `https://` → en tu mensaje se ve como texto, sin enlazar (FR-020a).
 
 ## Escenario 2 — Activar el chat web (US2)
 
@@ -105,6 +108,11 @@ Con el chat activado y el negocio activo, en `http://localhost:8080` en una vent
 9. Intenta enviar un mensaje de más de 1 000 caracteres → no se envía y se explica el motivo.
 10. Ventana privada → funciona, pero al recargar empieza conversación nueva con saludo.
 11. Pasa el negocio a "En preparación" y escribe → "no disponible" con el contacto.
+12. Con el negocio activo y un "Enlace a mapa" guardado, pregunta "¿dónde estáis?" → el enlace
+    se puede pulsar y abre el mapa en una pestaña nueva, fuera del chat. Escribe
+    `mira https://example.com/x` → en tu mensaje se ve como texto, sin enlazar (FR-020a,
+    US3-8). Los scripts del chat se cachean una hora: si el navegador ya lo había abierto antes
+    del cambio, recarga con `Ctrl+F5`.
 
 ## Escenario 4 — Límites y topes (US4)
 

@@ -4,7 +4,7 @@
  */
 import type { FastifyInstance, LightMyRequestResponse } from 'fastify';
 import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
-import { message } from '../../../src/db/schema.js';
+import { business, message } from '../../../src/db/schema.js';
 import {
   buildTestApp,
   cookieHeader,
@@ -20,6 +20,11 @@ import { createTestDatabase, type TestDatabase } from '../../helpers/db.js';
 import { reply } from '../../helpers/fakes.js';
 
 const HTMX = { 'hx-request': 'true' };
+
+const MAP_URL = 'https://maps.example.com/@40.41,-3.70,17z?q=Plaza+Mayor&z=1';
+/** Tal como sale en el HTML: Eta escapa el `&`. */
+const MAP_URL_HTML = MAP_URL.replace('&', '&amp;');
+const OPERATOR_URL = 'https://otra.example.com/sitio';
 
 const pollUrl = (html: string): string => {
   const match = /hx-get="(\/admin\/playground\/messages\?after=[^"]*)"/.exec(html);
@@ -154,6 +159,24 @@ describe('Probar el bot (/admin/playground)', () => {
     expect(arrived.body).toContain('Saludo añadido');
     expect(arrived.body).toContain('Sin rechazos');
     expect(arrived.body).toMatch(/Respondió en \d+,\d s/);
+  });
+
+  it('el enlace https:// de la respuesta se puede pulsar; el del operador, no (FR-020a)', async () => {
+    const b = await start();
+    // El verificador solo deja pasar enlaces registrados: se guarda el enlace a mapa (003).
+    await t.db.update(business).set({ mapUrl: MAP_URL });
+    b.model.queue(reply(`Estamos en Calle Mayor 1. Ubicación: ${MAP_URL}.`));
+    const posted = await send(`¿Es aquí? ${OPERATOR_URL}`, HTMX);
+    await b.settle();
+    const arrived = keep(await get(app, session, pollUrl(posted.body), HTMX));
+    expect(arrived.statusCode).toBe(200);
+    expect(arrived.body).toContain(
+      `<a href="${MAP_URL_HTML}" target="_blank" rel="noopener noreferrer nofollow">${MAP_URL_HTML}</a>.`,
+    );
+
+    const page = keep(await get(app, session, '/admin/playground'));
+    expect(page.body).toContain(`¿Es aquí? ${OPERATOR_URL}`);
+    expect(page.body).not.toContain(`href="${OPERATOR_URL}"`);
   });
 
   it('cursor no emitido por el servidor → 400', async () => {

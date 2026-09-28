@@ -5,6 +5,7 @@ import { loadKnowledgeState } from '../knowledge/state.js';
 import type { KnowledgeState, Warning, WarningTargetKind } from '../knowledge/types.js';
 import { computeWarnings } from '../knowledge/warnings.js';
 import { isHtmx } from './auth/plugin.js';
+import { splitLinks } from './message-links.js';
 import { describeTrace } from './playground-trace.js';
 import { formErrorResponse, type FieldErrors, type FormErrorResponse } from './form-errors.js';
 
@@ -45,6 +46,8 @@ export const viewHelpers = {
   newIndex: () => Date.now() * 10 + Math.floor(Math.random() * 10),
   /** Información técnica de una respuesta para "Probar el bot" (004, FR-009). */
   trace: describeTrace,
+  /** Trozos de una respuesta del bot, con sus enlaces `https://` (004, FR-020a). */
+  links: splitLinks,
 };
 
 function targetLink(kind: WarningTargetKind, id?: string): string {

@@ -90,15 +90,22 @@ describe('widget y frame del chat web', () => {
     expect(res.body).toContain('30 días');
     expect(res.body).toContain('/chat/assets/frame.js');
     expect(res.body).toContain('/chat/assets/frame.css');
+    // `links.js` (FR-020a) se carga antes que `frame.js`, que lo usa.
+    expect(res.body.indexOf('/chat/assets/links.js')).toBeGreaterThan(-1);
+    expect(res.body.indexOf('/chat/assets/links.js')).toBeLessThan(
+      res.body.indexOf('/chat/assets/frame.js'),
+    );
     expect(res.body).not.toContain(UNAVAILABLE);
   });
 
   it('los assets del frame se sirven y el resto de la app mantiene X-Frame-Options: DENY', async () => {
     const b = await createTestBot(t, { webChat: WEB_ON });
     bot = b;
-    const js = await b.app.inject({ method: 'GET', url: '/chat/assets/frame.js' });
-    expect(js.statusCode).toBe(200);
-    expect(js.headers['content-type']).toMatch(/text\/javascript/);
+    for (const url of ['/chat/assets/frame.js', '/chat/assets/links.js']) {
+      const js = await b.app.inject({ method: 'GET', url });
+      expect([url, js.statusCode]).toEqual([url, 200]);
+      expect(js.headers['content-type']).toMatch(/text\/javascript/);
+    }
     const css = await b.app.inject({ method: 'GET', url: '/chat/assets/frame.css' });
     expect(css.statusCode).toBe(200);
     expect(css.headers['content-type']).toMatch(/text\/css/);

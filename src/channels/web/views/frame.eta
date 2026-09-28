@@ -41,6 +41,7 @@
       </div>
     <% } %>
   </section>
+  <script src="/chat/assets/links.js" defer></script>
   <script src="/chat/assets/frame.js" defer></script>
 </body>
 </html>

@@ -267,6 +267,33 @@ alcanzado el chat muestra el contacto, el panel lo avisa y WhatsApp sigue respon
 
 ---
 
+## Phase 8: Enmienda 2026-09-28 — enlaces pulsables en las respuestas del bot (US1, US3)
+
+**Purpose**: FR-020a y [research R15](research.md#r15-enlaces-pulsables-en-las-respuestas-del-bot-fr-020a-enmienda-2026-09-28).
+Surge al validar la 003: el bot da el enlace a mapa, pero en el chat web y en "Probar el bot"
+no se puede pulsar.
+
+**Independent Test**: con un enlace a mapa guardado, preguntar "¿dónde estáis?" en "Probar el
+bot" y en el chat web; el enlace se pulsa y abre el mapa en otra pestaña. Un enlace escrito por
+el visitante o por el operador se sigue viendo como texto.
+
+### Tests ⚠️
+
+- [X] T081 [P] Tabla de casos común y tests en tests/unit/channels/message-links.test.ts: se ejecuta contra `splitLinks` de src/admin/message-links.ts y contra `ChatLinks.split` de src/channels/web/assets/links.js (con `node:vm`, como tests/unit/channels/web-widget.test.ts). Casos: texto sin enlaces; enlace al final con `.`, `,`, `)` o `»` detrás; dos enlaces; `HTTPS://` en mayúsculas; `http://`, `javascript:`, `data:`, `mailto:` y dominio sin esquema no se enlazan; `https://localhost` y `https://usuario:clave@…` no se enlazan; el texto de los trozos, unido, es exactamente el original
+- [X] T082 [P] Tests de contrato: en tests/contract/admin/playground.test.ts, una respuesta del bot con un enlace se pinta como `<a href=… target="_blank" rel="noopener noreferrer nofollow">` y un mensaje del operador con un enlace no; en tests/contract/web-chat-frame.test.ts, `/chat/assets/links.js` se sirve como JavaScript y el frame lo carga antes de `frame.js`
+
+### Implementation
+
+- [X] T083 [P] src/admin/message-links.ts: `splitLinks(text)` → `{ text, href? }[]` según R15
+- [X] T084 [P] src/channels/web/assets/links.js: `window.ChatLinks.split(text)` con la misma regla, sin `innerHTML` ni similares; servirlo en `/chat/assets/links.js` (src/channels/web/routes.ts) y cargarlo en src/channels/web/views/frame.eta antes de `frame.js`
+- [X] T085 src/channels/web/assets/frame.js: `addMessage` pinta los mensajes del bot con `ChatLinks.split` (`createElement('a')` + `textContent`) y los del visitante como hasta ahora; estilos del enlace en frame.css (depende de T084)
+- [X] T086 src/admin/views/partials/playground-message.eta: las respuestas del bot se pintan por trozos con `splitLinks` (cada trozo escapado con `<%= %>`); los mensajes del operador, igual que ahora; sin CSS nuevo: el estilo global de `a` del panel ya sirve (depende de T083)
+- [X] T087 Añadir a [quickstart.md](quickstart.md) los pasos del enlace pulsable en los escenarios de "Probar el bot" y del chat web
+- [X] T088 Ejecutar `pnpm lint && pnpm typecheck && pnpm test` y dejar todo en verde
+- [ ] T089 Recorrer en el navegador los pasos nuevos del quickstart (lo hace el usuario)
+
+---
+
 ## Dependencies & Execution Order
 
 ### Phase Dependencies

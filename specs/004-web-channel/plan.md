@@ -59,7 +59,8 @@ que el cliente ve la respuesta (3 s de espera + modelo + ≤ 1,5 s de sondeo); A
 
 **Constraints**: WhatsApp sin cambios de comportamiento (FR-004); misma cadena en todos los
 canales (FR-002); nada guardado ni respondido con el chat desactivado, el negocio no activo,
-una web no permitida o el tope alcanzado (SC-006); contenido del visitante siempre como texto;
+una web no permitida o el tope alcanzado (SC-006); contenido del visitante siempre como texto
+y del bot también, salvo sus enlaces `https://` (FR-020a, R15);
 sin IP en BD ni registros (FR-029, SC-008); snapshot y configuración leídos sin caché; horas
 y días en la zona del negocio
 
@@ -172,8 +173,9 @@ src/
 │       ├── routes.ts             # /chat/widget.js, /chat/frame, /chat/api/*
 │       ├── guards.ts             # origen, sesión, límites por IP
 │       ├── views/frame.eta
-│       └── assets/               # widget.js, frame.js, frame.css (vanilla, sin innerHTML)
+│       └── assets/               # widget.js, links.js, frame.js, frame.css (vanilla, sin innerHTML)
 ├── admin/
+│   ├── message-links.ts          # enlaces https:// de las respuestas del bot (FR-020a, R15)
 │   ├── routes/playground.ts      # NUEVO: Probar el bot
 │   ├── routes/web-chat.ts        # NUEVO: configuración, uso y fragmento
 │   ├── routes/dashboard.ts       # + estado del chat web
@@ -186,6 +188,7 @@ tests/
 ├── unit/conversation/            # channels, contact-reason, reply-trace
 ├── unit/webchat/                 # schemas, session-token, usage (medianoche local)
 ├── unit/channels/web-assets.test.ts   # sin innerHTML ni similares en los assets
+├── unit/channels/message-links.test.ts # misma tabla de casos para links.js y message-links.ts (R15)
 ├── contract/web-chat.test.ts
 ├── contract/admin/playground.test.ts
 ├── contract/admin/web-chat.test.ts

@@ -3,7 +3,8 @@
  *
  * Pide la sesión, carga el estado y el historial, envía mensajes y sondea la respuesta. Todo lo
  * que viene del visitante o del bot se escribe siempre con `textContent`: este fichero nunca
- * construye HTML a partir de texto (garantía 9).
+ * construye HTML a partir de texto (garantía 9). Los enlaces `https://` del bot son elementos
+ * `<a>` creados con `createElement` (FR-020a, `links.js`).
  */
 (function () {
   'use strict';
@@ -71,12 +72,38 @@
     if (status) status.textContent = text || '';
   }
 
+  /**
+   * Respuesta del bot: sus enlaces `https://` se pueden pulsar (FR-020a, `links.js`). Cada trozo
+   * se escribe con `textContent`; el enlace se crea con `createElement` y su `href`.
+   */
+  function fillBotText(item, text) {
+    var parts = window.ChatLinks ? window.ChatLinks.split(text) : [{ text: text }];
+    parts.forEach(function (part) {
+      if (!part.href) {
+        item.appendChild(document.createTextNode(part.text));
+        return;
+      }
+      var link = document.createElement('a');
+      link.href = part.href;
+      link.target = '_blank';
+      link.rel = 'noopener noreferrer nofollow';
+      link.textContent = part.text;
+      item.appendChild(link);
+    });
+  }
+
   function addMessage(msg) {
     if (!list || state.seen[msg.id]) return;
     state.seen[msg.id] = true;
     var item = document.createElement('li');
-    item.className = msg.from === 'bot' ? 'from-bot' : 'from-visitor';
-    item.textContent = msg.text;
+    if (msg.from === 'bot') {
+      item.className = 'from-bot';
+      fillBotText(item, msg.text);
+    } else {
+      // Lo que escribe el visitante nunca se enlaza.
+      item.className = 'from-visitor';
+      item.textContent = msg.text;
+    }
     list.appendChild(item);
     list.scrollTop = list.scrollHeight;
   }

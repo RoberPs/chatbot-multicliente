@@ -317,6 +317,43 @@ la restricción "Canales" y los Principios IV y V.
 
 ---
 
+## R15. Enlaces pulsables en las respuestas del bot (FR-020a, enmienda 2026-09-28)
+
+- **Decision**: una misma regla, implementada dos veces con la misma tabla de casos:
+  `src/admin/message-links.ts` (servidor, para "Probar el bot") y
+  `src/channels/web/assets/links.js` (navegador, para el chat web; se carga antes de
+  `frame.js` y expone `window.ChatLinks.split`). La regla parte el texto en trozos
+  `{ text, href? }`:
+  - Candidato: `https://` seguido de caracteres que no sean espacio ni `< > " ' )`, sin
+    distinguir mayúsculas en el esquema. Se corta donde lo hace el verificador de cifras
+    (`grounding.ts`), así que el enlace pulsable es el mismo que el verificador dio por bueno.
+  - Se quitan del final los signos que cierran la frase y no forman parte del enlace:
+    `. , ; : ! ? ] } »` (por ejemplo, "aquí: https://maps.example.com/abc.").
+  - Solo es enlace si `new URL()` lo acepta con protocolo `https:`, un dominio con punto y sin
+    usuario ni contraseña: la misma comprobación que el campo "Enlace a mapa" de la 003 (R7).
+    Si no, el trozo queda como texto.
+  - `http://`, `mailto:`, teléfonos y dominios sin esquema no se enlazan.
+  - Solo en mensajes del bot. Los del visitante (y los del operador en "Probar el bot") no
+    pasan por la regla.
+  - El `<a>` lleva `target="_blank"` y `rel="noopener noreferrer nofollow"`, y su texto es el
+    enlace tal cual.
+  - En el chat web el `<a>` se crea con `createElement`, `href` y `textContent`; sigue sin
+    usarse `innerHTML` ni similares (garantía 9 del contrato). En el panel, la plantilla Eta
+    escribe cada trozo con `<%= %>`, que escapa.
+- **Rationale**: es lo que ya hace WhatsApp con los enlaces del bot, y el caso que lo motiva es
+  el enlace a mapa de la 003. Limitarlo a `https://` y a las respuestas del bot deja fuera los
+  enlaces que pueda escribir un visitante y cualquier `javascript:`/`data:`. Los assets del
+  chat son JavaScript de navegador sin paso de compilación, así que no pueden importar el
+  módulo del servidor: la duplicación se controla con una sola tabla de casos que se ejecuta
+  contra las dos implementaciones.
+- **Alternatives considered**:
+  - *Que la API devuelva los trozos ya partidos*: cambia el contrato de
+    `GET /chat/api/messages` y no evita la regla en el panel.
+  - *Enlazar también lo que escribe el visitante*: no aporta nada al visitante y abre la puerta
+    a que el chat muestre como enlace texto ajeno al negocio.
+  - *Librería de autoenlazado (linkifyjs…)*: dependencia nueva en el navegador para una regla
+    de pocas líneas.
+
 ## Tabla de decisiones
 
 | Tema | Decisión |
@@ -335,3 +372,4 @@ la restricción "Canales" y los Principios IV y V.
 | Longitud máxima | 1 000 caracteres por mensaje web; cuerpo JSON ≤ 8 KB |
 | Arranque | Bot con `ANTHROPIC_API_KEY`; `EMERGENCY_CONTACT_PHONE` obligatoria con ella; `PUBLIC_BASE_URL` opcional (R11) |
 | Registros | Campo `via`, eventos `web_*`, sin IP en los registros de peticiones (R12) |
+| Enlaces | Solo `https://` en respuestas del bot, pestaña nueva, sin `innerHTML`; `links.js` + `message-links.ts` con una tabla de casos común (R15) |

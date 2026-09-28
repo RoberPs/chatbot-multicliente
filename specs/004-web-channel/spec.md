@@ -30,6 +30,14 @@ cambiar de proveedor de modelo."
   otro mensual, en número de respuestas del bot, configurables por el operador; por defecto 200
   al día y 3 000 al mes.
 
+### Session 2026-09-28
+
+- Q: Al validar la 003, el bot da el enlace a mapa del negocio, pero en el chat web y en "Probar
+  el bot" sale como texto que no se puede pulsar (en WhatsApp la propia app lo convierte en
+  enlace). ¿Se enlazan? → A: sí, solo los enlaces `https://` de las respuestas del bot, que se
+  abren en una pestaña nueva. Lo que escribe el visitante sigue siempre como texto y el chat
+  sigue sin construir HTML a partir de texto (FR-020a).
+
 ## Contexto
 
 La feature 002 atiende a los clientes finales por WhatsApp. Hoy no hay otra forma de hablar con el
@@ -147,6 +155,9 @@ comprobar saludo, respuestas y contacto; recargar la página y comprobar que la 
 7. **Given** el visitante espera una respuesta, **When** esta tarda, **Then** ve una indicación de
    que el bot está escribiendo y, si la respuesta no llega por un fallo, un mensaje de disculpa con
    el contacto del negocio.
+8. **Given** el negocio tiene un enlace a mapa, **When** el visitante pregunta dónde está el
+   negocio, **Then** el enlace de la respuesta se puede pulsar y abre el mapa en una pestaña
+   nueva; si el visitante escribe un enlace, se ve como texto (FR-020a).
 
 ---
 
@@ -260,7 +271,12 @@ que el chat deja de generar respuestas y lo indica con el contacto.
   navegador antes de 24 horas sin mensajes suyos; pasado ese tiempo, su siguiente mensaje MUST abrir
   una conversación nueva con saludo.
 - **FR-020**: El chat MUST aceptar solo mensajes de texto, con una longitud máxima por mensaje, y
-  MUST mostrar el contenido del visitante y del bot siempre como texto.
+  MUST mostrar el contenido del visitante y del bot siempre como texto, con la única excepción
+  de FR-020a.
+- **FR-020a**: En las respuestas del bot, tanto en el chat web como en "Probar el bot", cada
+  enlace `https://` MUST poder pulsarse y abrirse en una pestaña nueva, mostrando el enlace
+  exactamente como lo escribió el bot. El resto del texto, los enlaces que no empiezan por
+  `https://` y todo lo que escribe el visitante MUST seguir mostrándose como texto.
 - **FR-021**: Mientras se genera la respuesta, el chat MUST indicar que el bot está escribiendo. Si
   no hay respuesta por un fallo, MUST mostrar la disculpa con el contacto, como en WhatsApp.
 - **FR-022**: Con el negocio "en preparación" o el chat desactivado, el chat MUST NOT generar
