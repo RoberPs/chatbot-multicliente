@@ -110,4 +110,134 @@ describe('registro técnico del bot', () => {
     expect(lines[0]?.level).toBe(level);
     expect(eventLevels[event.event]).toBe(level);
   });
+
+  describe('eventos de la derivación (005)', () => {
+    const handoffId = '0f8fad5b-d9cb-469f-a165-70867728950e';
+    const handoffEvents: Array<[BotEvent, string]> = [
+      [{ event: 'handoff_offered' }, 'info'],
+      [{ event: 'handoff_contact_requested', missing: ['name', 'phone'], retry: false }, 'info'],
+      [
+        {
+          event: 'handoff_started',
+          handoffId,
+          kind: 'person',
+          routes: { whatsapp: 'sent', email: 'failed' },
+          summarySource: 'model',
+          afterHours: false,
+        },
+        'info',
+      ],
+      [{ event: 'handoff_not_started', kind: 'complaint', reason: 'no_routes' }, 'warn'],
+      [
+        {
+          event: 'handoff_alert_failed',
+          handoffId,
+          route: 'email',
+          noticeType: 'alert',
+          failure: 'smtp_5xx',
+        },
+        'warn',
+      ],
+      [{ event: 'handoff_summary_fallback', reason: 'unverified' }, 'warn'],
+      [
+        { event: 'handoff_forwarded', handoffId, messagesCovered: 2, routes: { email: 'sent' } },
+        'info',
+      ],
+      [{ event: 'handoff_forward_failed', handoffId, messagesCovered: 1 }, 'error'],
+      [{ event: 'handoff_confirmed', handoffId, via: 'email', minutesToConfirm: 12 }, 'info'],
+      [
+        {
+          event: 'handoff_reminder_sent',
+          handoffId,
+          routes: { whatsapp: 'sent' },
+          trigger: 'schedule',
+          customerNotified: true,
+        },
+        'warn',
+      ],
+      [
+        {
+          event: 'handoff_ended',
+          handoffId,
+          cause: 'business',
+          durationMinutes: 30,
+          confirmed: true,
+        },
+        'info',
+      ],
+      [{ event: 'handoff_action_ignored', reason: 'already_ended', via: 'whatsapp' }, 'debug'],
+      [{ event: 'handoff_business_message', kind: 'text', helpSent: true }, 'debug'],
+    ];
+
+    it.each(handoffEvents)('nivel de %o', (event, level) => {
+      const { logger, lines } = capture();
+      createActivityLog(logger, SECRET).log(event);
+      expect(lines[0]?.level).toBe(level);
+      expect(eventLevels[event.event]).toBe(level);
+    });
+
+    it('todos los eventos handoff_* tienen nivel y están probados', () => {
+      const tested = new Set(handoffEvents.map(([e]) => e.event));
+      const declared = Object.keys(eventLevels).filter((e) => e.startsWith('handoff_'));
+      expect(declared.sort()).toEqual([...tested].sort());
+    });
+
+    it('se serializan sin campos de texto libre', () => {
+      const { logger, lines } = capture();
+      const log = createActivityLog(logger, SECRET);
+      for (const [event] of handoffEvents) log.log(event);
+      const allowedStrings = new Set([
+        'bot',
+        handoffId,
+        'person',
+        'complaint',
+        'sent',
+        'failed',
+        'model',
+        'no_routes',
+        'email',
+        'whatsapp',
+        'alert',
+        'smtp_5xx',
+        'unverified',
+        'schedule',
+        'business',
+        'already_ended',
+        'text',
+        'name',
+        'phone',
+      ]);
+      const strings: string[] = [];
+      const walk = (v: unknown): void => {
+        if (typeof v === 'string') strings.push(v);
+        else if (Array.isArray(v)) v.forEach(walk);
+        else if (v && typeof v === 'object') Object.values(v).forEach(walk);
+      };
+      for (const line of lines) {
+        const { event: _name, ...rest } = line.obj;
+        walk(rest);
+      }
+      expect(strings.filter((s) => !allowedStrings.has(s))).toEqual([]);
+    });
+
+    it('los eventos del negocio no llevan customer ni el via del canal', () => {
+      const { logger, lines } = capture();
+      const log = createActivityLog(logger, SECRET);
+      log.log({ event: 'handoff_confirmed', handoffId, via: 'whatsapp', minutesToConfirm: 3 });
+      log.log({ event: 'handoff_action_ignored', reason: 'invalid', via: 'email' });
+      log.log({ event: 'handoff_business_message', kind: 'button', helpSent: false });
+      log.log({
+        event: 'handoff_ended',
+        handoffId,
+        cause: 'business',
+        durationMinutes: 5,
+        confirmed: true,
+      });
+      for (const line of lines) {
+        expect(line.obj).not.toHaveProperty('customer');
+        expect(line.obj).not.toHaveProperty('conversationId');
+      }
+      expect(lines.map((l) => l.obj.via)).toEqual(['whatsapp', 'email', undefined, undefined]);
+    });
+  });
 });

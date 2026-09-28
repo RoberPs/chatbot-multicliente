@@ -6,7 +6,15 @@
  */
 import { createHmac, hkdfSync } from 'node:crypto';
 import type { Channel } from './channels.js';
-import type { MessageKind, REPLY_TEMPLATES } from './types.js';
+import type {
+  ContactField,
+  HandoffActionVia,
+  HandoffEndCause,
+  HandoffKind,
+  RouteName,
+  RouteResults,
+} from '../handoff/types.js';
+import type { HandoffAction, MessageKind, REPLY_TEMPLATES } from './types.js';
 
 /** `disabled`: chat web desactivado; `quota`: tope del chat web alcanzado (004). */
 export type DiscardReason =
@@ -16,6 +24,66 @@ export type TranscriptionFailure =
 export type ReplyTemplate = (typeof REPLY_TEMPLATES)[number];
 /** Motivos de rechazo del chat web antes de la recepción (FR-025, FR-027). */
 export type WebRejection = 'origin' | 'session' | 'session_limit' | 'ip_limit' | 'invalid';
+export type HandoffNoticeType = 'alert' | 'reminder' | 'forward';
+
+/**
+ * Eventos de la derivación (005, contracts/activity-log.md). `handoffId` es un UUID sin datos
+ * personales; `failure` es un código corto de la vía, nunca un texto del cliente. Los que
+ * provoca el negocio (`handoff_confirmed`, `handoff_ended` por `business`,
+ * `handoff_action_ignored`, `handoff_business_message`) se emiten sin contexto de cliente.
+ */
+export type HandoffEvent =
+  | { event: 'handoff_offered' }
+  | { event: 'handoff_contact_requested'; missing: ContactField[]; retry: boolean }
+  | {
+      event: 'handoff_started';
+      handoffId: string;
+      kind: HandoffKind;
+      routes: RouteResults;
+      summarySource: 'model' | 'fallback';
+      afterHours: boolean;
+    }
+  | {
+      event: 'handoff_not_started';
+      kind: HandoffKind;
+      reason: 'no_routes' | 'delivery_failed' | 'contact_refused';
+    }
+  | {
+      event: 'handoff_alert_failed';
+      handoffId?: string;
+      route: RouteName;
+      noticeType: HandoffNoticeType;
+      failure: string;
+    }
+  | { event: 'handoff_summary_fallback'; reason: 'timeout' | 'model_error' | 'unverified' }
+  | { event: 'handoff_forwarded'; handoffId: string; messagesCovered: number; routes: RouteResults }
+  | { event: 'handoff_forward_failed'; handoffId: string; messagesCovered: number }
+  | {
+      event: 'handoff_confirmed';
+      handoffId: string;
+      via: HandoffActionVia;
+      minutesToConfirm: number;
+    }
+  | {
+      event: 'handoff_reminder_sent';
+      handoffId: string;
+      routes: RouteResults;
+      trigger: 'schedule' | 'inactivity';
+      customerNotified: boolean;
+    }
+  | {
+      event: 'handoff_ended';
+      handoffId: string;
+      cause: HandoffEndCause;
+      durationMinutes: number;
+      confirmed: boolean;
+    }
+  | {
+      event: 'handoff_action_ignored';
+      reason: 'invalid' | 'already_ended' | 'already_confirmed';
+      via: HandoffActionVia;
+    }
+  | { event: 'handoff_business_message'; kind: 'button' | 'text' | 'other'; helpSent: boolean };
 
 export type BotEvent =
   | { event: 'message_received'; kind: MessageKind; otherType?: string }
@@ -34,6 +102,8 @@ export type BotEvent =
       template?: ReplyTemplate;
       /** Borradores rechazados por el verificador (0 – 2), sin sus valores. */
       groundingRejections: number;
+      /** Qué hizo la derivación en esta respuesta (005). */
+      handoffAction?: HandoffAction;
     }
   | { event: 'transcription_failed'; reason: TranscriptionFailure }
   | { event: 'knowledge_read_failed'; errorClass: string; stage: 'intake' | 'processor' }
@@ -48,7 +118,8 @@ export type BotEvent =
   | { event: 'retention_purged'; conversations: number; customers: number }
   | { event: 'web_session_created' }
   | { event: 'web_rejected'; reason: WebRejection }
-  | { event: 'web_quota_reached'; period: 'day' | 'month'; cap: number };
+  | { event: 'web_quota_reached'; period: 'day' | 'month'; cap: number }
+  | HandoffEvent;
 
 export type BotEventName = BotEvent['event'];
 type Level = 'debug' | 'info' | 'warn' | 'error';
@@ -69,6 +140,19 @@ export const eventLevels: Record<BotEventName, Level> = {
   web_session_created: 'debug',
   web_rejected: 'warn',
   web_quota_reached: 'warn',
+  handoff_offered: 'info',
+  handoff_contact_requested: 'info',
+  handoff_started: 'info',
+  handoff_not_started: 'warn',
+  handoff_alert_failed: 'warn',
+  handoff_summary_fallback: 'warn',
+  handoff_forwarded: 'info',
+  handoff_forward_failed: 'error',
+  handoff_confirmed: 'info',
+  handoff_reminder_sent: 'warn',
+  handoff_ended: 'info',
+  handoff_action_ignored: 'debug',
+  handoff_business_message: 'debug',
 };
 
 /** Lo mínimo que se necesita de un logger (pino lo cumple). */

@@ -203,16 +203,17 @@ export class FakeMediaFetcher implements MediaFetcher {
 /** Registro técnico que guarda los eventos en memoria. */
 export class RecordingActivityLog implements ActivityLog {
   readonly events: Array<
-    BotEvent & { via?: Channel; customer?: string; conversationId?: string }
+    BotEvent & { via?: Channel | string; customer?: string; conversationId?: string }
   > = [];
   log(event: BotEvent, context: EventContext = {}): void {
     const { channel, customerKey } = context;
+    // Los eventos del negocio (005) llevan su propio `via` y se emiten sin contexto de cliente.
     this.events.push({
       ...event,
       ...(channel ? { via: channel } : {}),
       ...(channel && customerKey ? { customer: this.pseudonym(channel, customerKey) } : {}),
       ...(context.conversationId ? { conversationId: context.conversationId } : {}),
-    });
+    } as (typeof this.events)[number]);
   }
   pseudonym(channel: Channel, customerKey: string): string {
     return createHash('sha256').update(`${channel}:${customerKey}`).digest('hex').slice(0, 12);

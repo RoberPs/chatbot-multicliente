@@ -99,8 +99,8 @@ la cadena).
 
 ### Registros técnicos
 
-- [ ] T018 Añadir a src/conversation/activity-log.ts los eventos `handoff_*` de [contracts/activity-log.md](contracts/activity-log.md) con sus campos tipados (sin texto libre) y su nivel en `eventLevels`; `reply_sent` gana `handoffAction?`; los eventos del negocio (`handoff_confirmed`, `handoff_ended` por `business`, `handoff_action_ignored`, `handoff_business_message`) se emiten sin contexto de cliente
-- [ ] T019 [P] Ampliar tests/unit/conversation/activity-log.test.ts: cada evento nuevo tiene nivel, se serializa sin campos de texto y los eventos del negocio no llevan `customer` ni `via`
+- [X] T018 Añadir a src/conversation/activity-log.ts los eventos `handoff_*` de [contracts/activity-log.md](contracts/activity-log.md) con sus campos tipados (sin texto libre) y su nivel en `eventLevels`; `reply_sent` gana `handoffAction?`; los eventos del negocio (`handoff_confirmed`, `handoff_ended` por `business`, `handoff_action_ignored`, `handoff_business_message`) se emiten sin contexto de cliente
+- [X] T019 [P] Ampliar tests/unit/conversation/activity-log.test.ts: cada evento nuevo tiene nivel, se serializa sin campos de texto y los eventos del negocio no llevan `customer` ni `via`
 
 ### Repositorios
 
