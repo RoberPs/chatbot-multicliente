@@ -5,6 +5,7 @@
  * El modelo solo aporta el cuerpo y unas banderas; el código decide el contacto y los
  * mensajes fijos para garantizar los Principios IV y V.
  */
+import type { HandoffStep } from '../handoff/types.js';
 import type { KnowledgeSnapshot } from '../knowledge/types.js';
 import type { ActivityLog, ReplyTemplate } from './activity-log.js';
 import type { Channel } from './channels.js';
@@ -55,6 +56,10 @@ export interface RespondInput {
   channel: Channel;
   customerKey: string;
   conversationId: string;
+  /** Paso previo a la derivación (005); por defecto ninguno. */
+  handoffStep?: HandoffStep | null;
+  /** Hubo una derivación terminada en esta conversación (005). */
+  handoffEnded?: boolean;
 }
 
 export interface Response {
@@ -196,6 +201,8 @@ export function createResponder(deps: ResponderDeps) {
         pending: input.pending,
         greetingPrepended: !input.greeted,
         addressForm: snapshot.tone.addressForm,
+        handoffStep: input.handoffStep ?? null,
+        handoffEnded: input.handoffEnded ?? false,
       };
       const logContext = {
         channel: input.channel,

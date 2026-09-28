@@ -34,6 +34,8 @@ describe('parser del webhook de WhatsApp', () => {
       mediaId: null,
       otherType: null,
       isGroup: false,
+      profileName: null,
+      buttonPayload: null,
     });
   });
 

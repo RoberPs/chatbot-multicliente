@@ -237,6 +237,8 @@ export async function createTestBot(t: TestDatabase, opts: TestBotOptions = {}):
           mediaId: null,
           otherType: null,
           isGroup: false,
+          profileName: null,
+          buttonPayload: null,
         },
       ]);
       if (!outcome) throw new Error('La recepción no devolvió resultado');

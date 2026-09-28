@@ -40,6 +40,11 @@ export const reply = (body: string, flags: Partial<ModelReply> = {}): ModelReply
   bookingRequested: false,
   needsRephrase: false,
   mentionedServiceIds: [],
+  complaint: false,
+  acceptsHandoff: false,
+  refusesContact: false,
+  contactName: null,
+  contactPhone: null,
   ...flags,
 });
 

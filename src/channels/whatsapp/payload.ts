@@ -75,6 +75,8 @@ function toEvent(m: z.infer<typeof messageSchema>, audioTranscription: boolean):
     channelMessageId: m.id,
     sentAt: new Date(Number(m.timestamp) * 1000),
     isGroup: m.group_id !== undefined,
+    profileName: null,
+    buttonPayload: null,
   };
   if (m.type === 'text' && m.text) {
     return {

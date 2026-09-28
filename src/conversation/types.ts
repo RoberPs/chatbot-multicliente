@@ -1,5 +1,6 @@
 /** Tipos del dominio de conversación (contracts/chat-model.md y data-model.md). */
 import { z } from 'zod';
+import { HANDOFF_KINDS, type HandoffStep } from '../handoff/types.js';
 import type { Interval } from '../knowledge/time/intervals.js';
 import type {
   AddressForm,
@@ -30,6 +31,10 @@ export const inboundEventSchema = z
     /** Tipo de WhatsApp cuando `kind = other` (`image`, `sticker`, `audio`…). */
     otherType: z.string().nullable(),
     isGroup: z.boolean(),
+    /** Nombre de perfil de WhatsApp (005); `null` en web y playground. */
+    profileName: z.string().nullable(),
+    /** Payload de un botón de respuesta rápida de una plantilla (005); `null` si no lo es. */
+    buttonPayload: z.string().nullable(),
   })
   .superRefine((event, ctx) => {
     if (!channelUserIdSchema(event.channel).safeParse(event.channelUserId).success) {
@@ -42,13 +47,48 @@ export const inboundEventSchema = z
   });
 export type InboundEvent = z.infer<typeof inboundEventSchema>;
 
-/** Por qué una respuesta lleva el bloque de contacto (004, R7). */
-export type ContactReason =
-  | 'handoff_requested'
-  | 'offer_contact'
-  | 'booking_requested'
-  | 'price_on_request'
-  | 'template';
+/**
+ * Por qué una respuesta lleva el bloque de contacto (004, R7). 005: `handoff_unavailable`
+ * (petición o queja sin vías o con el aviso no entregado) y `contact_refused` (el cliente no dio
+ * sus datos).
+ */
+export const CONTACT_REASONS = [
+  'handoff_requested',
+  'offer_contact',
+  'booking_requested',
+  'price_on_request',
+  'template',
+  'handoff_unavailable',
+  'contact_refused',
+] as const;
+export type ContactReason = (typeof CONTACT_REASONS)[number];
+
+export const REPLY_TEMPLATES = [
+  'R-SAFE',
+  'R-ERR',
+  'R-MEDIA',
+  'R-AUDIO',
+  'R-LIMIT',
+  'R-UNAVAILABLE',
+  'R-HANDOFF-ASK',
+  'R-HANDOFF-PHONE',
+  'R-HANDOFF-OK',
+  'R-HANDOFF-COMPLAINT',
+  'R-HANDOFF-LATE',
+] as const;
+
+/** Qué hizo la derivación en una respuesta (005); sin textos. */
+export const HANDOFF_ACTIONS = [
+  'offered',
+  'asked',
+  'asked_again',
+  'started',
+  'not_started',
+  'late_notice',
+] as const;
+export type HandoffAction = (typeof HANDOFF_ACTIONS)[number];
+
+const routeResult = z.enum(['sent', 'failed']);
 
 /**
  * Cómo se compuso una respuesta (FR-009, R7). Se guarda en cada saliente; sin textos ni
@@ -56,17 +96,27 @@ export type ContactReason =
  */
 export const replyTraceSchema = z
   .object({
-    template: z.enum(['R-SAFE', 'R-ERR', 'R-MEDIA', 'R-AUDIO', 'R-LIMIT', 'R-UNAVAILABLE']).nullable(),
+    template: z.enum(REPLY_TEMPLATES).nullable(),
     greeting: z.boolean(),
     contact: z.object({
       added: z.boolean(),
-      reason: z
-        .enum(['handoff_requested', 'offer_contact', 'booking_requested', 'price_on_request', 'template'])
-        .nullable(),
+      reason: z.enum(CONTACT_REASONS).nullable(),
     }),
     groundingRejections: z.number().int().min(0).max(2),
     modelMs: z.number().int().min(0).nullable(),
     latencyMs: z.number().int().min(0),
+    /** Derivación en esta respuesta (005): acción, tipo y resultado por vía, sin textos. */
+    handoff: z
+      .object({
+        action: z.enum(HANDOFF_ACTIONS),
+        kind: z.enum(HANDOFF_KINDS).nullable(),
+        routes: z.object({
+          whatsapp: routeResult.optional(),
+          email: routeResult.optional(),
+          simulated: routeResult.optional(),
+        }),
+      })
+      .optional(),
   })
   .refine((t) => t.contact.added || t.contact.reason === null, {
     path: ['contact', 'reason'],
@@ -112,6 +162,10 @@ export interface ReplyContext {
   pending: PendingItem[];
   greetingPrepended: boolean;
   addressForm: AddressForm | null;
+  /** Paso previo a la derivación (005): el prompt lo convierte en indicaciones. */
+  handoffStep: HandoffStep | null;
+  /** Hubo una derivación terminada en esta conversación (005, FR-018). */
+  handoffEnded: boolean;
 }
 
 /** Salida estructurada del modelo. */
@@ -122,6 +176,16 @@ export const modelReplySchema = z.object({
   bookingRequested: z.boolean(),
   needsRephrase: z.boolean(),
   mentionedServiceIds: z.array(z.string()),
+  /** Queja o reclamación (005, FR-003). */
+  complaint: z.boolean().default(false),
+  /** Acepta la derivación ofrecida; solo se lee con `handoff_step = offered`. */
+  acceptsHandoff: z.boolean().default(false),
+  /** No quiere dar sus datos; solo se lee con `handoff_step = collecting`. */
+  refusesContact: z.boolean().default(false),
+  /** Copia literal del nombre que dio el cliente; solo con `collecting`. */
+  contactName: z.string().nullable().default(null),
+  /** Copia literal del teléfono que dio el cliente; solo con `collecting`. */
+  contactPhone: z.string().nullable().default(null),
 });
 export type ModelReply = z.infer<typeof modelReplySchema>;
 

@@ -197,7 +197,14 @@ function lastEvent(
   question: EvalQuestion,
   audio: boolean,
 ): Omit<InboundEvent, 'channel' | 'channelUserId' | 'channelMessageId' | 'sentAt'> {
-  const base = { caption: null, mediaId: null, otherType: null, isGroup: false };
+  const base = {
+    caption: null,
+    mediaId: null,
+    otherType: null,
+    isGroup: false,
+    profileName: null,
+    buttonPayload: null,
+  };
   const media = question.media;
   if (!media) return { ...base, kind: 'text', text: question.text };
   if (media.type === 'audio' && audio && media.file) {
@@ -313,6 +320,8 @@ export async function createSectorRunner(
                   mediaId: null,
                   otherType: null,
                   isGroup: false,
+                  profileName: null,
+                  buttonPayload: null,
                 }),
           },
         ]);

@@ -13,6 +13,11 @@ const TEMPLATE_NAMES: Record<NonNullable<ReplyTrace['template']>, string> = {
   'R-AUDIO': 'audio no entendido',
   'R-LIMIT': 'límite de mensajes',
   'R-UNAVAILABLE': 'chat no disponible',
+  'R-HANDOFF-ASK': 'pide los datos de contacto',
+  'R-HANDOFF-PHONE': 'pide de nuevo el teléfono',
+  'R-HANDOFF-OK': 'derivación confirmada',
+  'R-HANDOFF-COMPLAINT': 'queja',
+  'R-HANDOFF-LATE': 'el negocio aún no ha respondido',
 };
 
 const CONTACT_REASONS: Record<ContactReason, string> = {
@@ -21,6 +26,8 @@ const CONTACT_REASONS: Record<ContactReason, string> = {
   booking_requested: 'pidió reservar',
   price_on_request: 'precio a consultar',
   template: 'lo incluye la plantilla',
+  handoff_unavailable: 'no se pudo avisar al negocio',
+  contact_refused: 'no dio sus datos de contacto',
 };
 
 /** Segundos con una decimal y coma decimal ("6,1"). */

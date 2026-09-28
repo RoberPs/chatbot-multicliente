@@ -16,6 +16,15 @@ const validReply = {
   mentionedServiceIds: [],
 };
 
+/** Campos de la derivación (005) con su valor por defecto. */
+const handoffDefaults = {
+  complaint: false,
+  acceptsHandoff: false,
+  refusesContact: false,
+  contactName: null,
+  contactPhone: null,
+};
+
 function message(overrides: Partial<Anthropic.Message> & { text?: string } = {}) {
   const { text = JSON.stringify(validReply), ...rest } = overrides;
   return {
@@ -48,7 +57,10 @@ describe('ChatModel de Anthropic', () => {
   it('forma de la petición: modelo, esfuerzo, formato, caché y orden de bloques', async () => {
     const { model, create } = modelWith(message());
     const s = signal();
-    await expect(model.reply(replyContext(), { signal: s })).resolves.toEqual(validReply);
+    await expect(model.reply(replyContext(), { signal: s })).resolves.toEqual({
+      ...validReply,
+      ...handoffDefaults,
+    });
 
     const [params, options] = create.mock.calls[0] as unknown as [
       Anthropic.MessageCreateParamsNonStreaming,
@@ -74,8 +86,38 @@ describe('ChatModel de Anthropic', () => {
   it('el JSON Schema no lleva restricciones de longitud y cierra los objetos', () => {
     const schema = replyJsonSchema();
     expect(JSON.stringify(schema)).not.toContain('maxLength');
+    expect(JSON.stringify(schema)).not.toContain('"default"');
     expect(schema).not.toHaveProperty('$schema');
     expect(schema).toMatchObject({ type: 'object', additionalProperties: false });
+  });
+
+  it('los campos de la derivación están en el esquema pero no son obligatorios', () => {
+    const schema = replyJsonSchema() as { properties: object; required: string[] };
+    for (const field of Object.keys(handoffDefaults)) {
+      expect(schema.properties).toHaveProperty(field);
+      expect(schema.required).not.toContain(field);
+    }
+    expect(schema.required).toContain('handoffRequested');
+  });
+
+  it('salida sin los campos de la derivación → valores por defecto', async () => {
+    const { model } = modelWith(message());
+    await expect(model.reply(replyContext(), { signal: signal() })).resolves.toMatchObject(
+      handoffDefaults,
+    );
+  });
+
+  it('salida con los campos de la derivación → se conservan', async () => {
+    const withHandoff = {
+      ...validReply,
+      complaint: true,
+      acceptsHandoff: true,
+      refusesContact: false,
+      contactName: 'Lucía',
+      contactPhone: '611 22 23 33',
+    };
+    const { model } = modelWith(message({ text: JSON.stringify(withHandoff) }));
+    await expect(model.reply(replyContext(), { signal: signal() })).resolves.toEqual(withHandoff);
   });
 
   it.each<[string, Anthropic.Message | Error, string, number?]>([

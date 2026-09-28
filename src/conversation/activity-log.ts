@@ -6,14 +6,14 @@
  */
 import { createHmac, hkdfSync } from 'node:crypto';
 import type { Channel } from './channels.js';
-import type { MessageKind } from './types.js';
+import type { MessageKind, REPLY_TEMPLATES } from './types.js';
 
 /** `disabled`: chat web desactivado; `quota`: tope del chat web alcanzado (004). */
 export type DiscardReason =
   'not_active' | 'group' | 'outside_window' | 'deactivated' | 'disabled' | 'quota';
 export type TranscriptionFailure =
   'too_large' | 'too_long' | 'language' | 'empty' | 'timeout' | 'provider_error';
-export type ReplyTemplate = 'R-SAFE' | 'R-ERR' | 'R-MEDIA' | 'R-AUDIO' | 'R-LIMIT' | 'R-UNAVAILABLE';
+export type ReplyTemplate = (typeof REPLY_TEMPLATES)[number];
 /** Motivos de rechazo del chat web antes de la recepción (FR-025, FR-027). */
 export type WebRejection = 'origin' | 'session' | 'session_limit' | 'ip_limit' | 'invalid';
 

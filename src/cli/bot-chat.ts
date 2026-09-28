@@ -123,6 +123,8 @@ const send = (text: string) =>
       mediaId: null,
       otherType: null,
       isGroup: false,
+      profileName: null,
+      buttonPayload: null,
     },
   ]);
 

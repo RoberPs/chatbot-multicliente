@@ -148,6 +148,8 @@ export async function playgroundRoutes(app: FastifyInstance): Promise<void> {
         mediaId: null,
         otherType: null,
         isGroup: false,
+        profileName: null,
+        buttonPayload: null,
       },
     ]);
     if (!isHtmx(request)) return reply.redirect('/admin/playground', 303);

@@ -58,6 +58,8 @@ export function replyContext(overrides: Partial<ReplyContext> = {}): ReplyContex
     pending: [{ kind: 'text', text: '¿A qué hora abrís?' }],
     greetingPrepended: false,
     addressForm: null,
+    handoffStep: null,
+    handoffEnded: false,
     ...overrides,
   };
 }

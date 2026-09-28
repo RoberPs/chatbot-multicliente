@@ -32,6 +32,8 @@ describe('políticas de canal (R1)', () => {
       requiresActiveBusiness: true,
       requiresWebChatEnabled: false,
       usageCap: false,
+      contactFromChannel: true,
+      simulateAlerts: false,
     });
     expect(policies.web).toEqual({
       sender: storedDelivery,
@@ -39,6 +41,8 @@ describe('políticas de canal (R1)', () => {
       requiresActiveBusiness: true,
       requiresWebChatEnabled: true,
       usageCap: true,
+      contactFromChannel: false,
+      simulateAlerts: false,
     });
     expect(policies.playground).toEqual({
       sender: storedDelivery,
@@ -46,6 +50,8 @@ describe('políticas de canal (R1)', () => {
       requiresActiveBusiness: false,
       requiresWebChatEnabled: false,
       usageCap: false,
+      contactFromChannel: false,
+      simulateAlerts: true,
     });
   });
 

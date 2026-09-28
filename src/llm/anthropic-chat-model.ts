@@ -24,16 +24,17 @@ const MAX_RETRIES = 1;
 
 /**
  * JSON Schema para `output_config.format`. Las restricciones de longitud no se admiten en
- * salida estructurada: se quitan aquí y las comprueba Zod al recibir la respuesta.
+ * salida estructurada: se quitan aquí y las comprueba Zod al recibir la respuesta. Los campos de
+ * la derivación (005) son opcionales en la respuesta: si faltan, Zod pone su valor por defecto.
  */
 export function replyJsonSchema(): Record<string, unknown> {
-  const schema = z.toJSONSchema(modelReplySchema) as Record<string, unknown>;
+  const schema = z.toJSONSchema(modelReplySchema, { io: 'input' }) as Record<string, unknown>;
   const clean = (node: unknown): unknown => {
     if (Array.isArray(node)) return node.map(clean);
     if (node === null || typeof node !== 'object') return node;
     const out: Record<string, unknown> = {};
     for (const [key, value] of Object.entries(node)) {
-      if (key === '$schema' || key === 'maxLength' || key === 'minLength') continue;
+      if (['$schema', 'maxLength', 'minLength', 'default'].includes(key)) continue;
       out[key] = clean(value);
     }
     if (out.type === 'object') out.additionalProperties = false;

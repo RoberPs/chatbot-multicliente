@@ -40,6 +40,13 @@ export interface ChannelPolicy {
   requiresWebChatEnabled: boolean;
   /** Cuenta para los topes diario y mensual del chat web (FR-026). */
   usageCap: boolean;
+  /**
+   * El canal da los datos de contacto (005, R15): en WhatsApp el teléfono es el
+   * `channel_user_id` y el nombre, el de perfil; en web y playground se piden al cliente.
+   */
+  contactFromChannel: boolean;
+  /** Los avisos al negocio se simulan y no salen de la instancia (005, FR-021). */
+  simulateAlerts: boolean;
 }
 
 /** Sin WhatsApp configurado su política no existe (y el webhook no se registra). */
@@ -64,6 +71,8 @@ export function buildChannelPolicies(opts: {
             requiresActiveBusiness: true,
             requiresWebChatEnabled: false,
             usageCap: false,
+            contactFromChannel: true,
+            simulateAlerts: false,
           },
         }
       : {}),
@@ -73,6 +82,8 @@ export function buildChannelPolicies(opts: {
       requiresActiveBusiness: true,
       requiresWebChatEnabled: true,
       usageCap: true,
+      contactFromChannel: false,
+      simulateAlerts: false,
     },
     playground: {
       sender: stored,
@@ -80,6 +91,8 @@ export function buildChannelPolicies(opts: {
       requiresActiveBusiness: false,
       requiresWebChatEnabled: false,
       usageCap: false,
+      contactFromChannel: false,
+      simulateAlerts: true,
     },
   };
 }

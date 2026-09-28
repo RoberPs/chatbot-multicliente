@@ -269,6 +269,8 @@ export async function webChatApi(api: FastifyInstance, deps: WebApiDeps): Promis
               mediaId: null,
               otherType: null,
               isGroup: false,
+              profileName: null,
+              buttonPayload: null,
             },
           ]);
         } catch {
