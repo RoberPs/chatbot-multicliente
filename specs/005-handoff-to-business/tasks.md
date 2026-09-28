@@ -112,8 +112,8 @@ la cadena).
 
 ### Horario de atención (R13)
 
-- [ ] T025 [P] Test unitario tests/unit/handoff/schedule.test.ts: horario del contacto de derivación con franjas frente al del negocio (FR-011), cierre puntual que tapa la próxima franja, franja que ya ha empezado (abierto → `null`), negocio sin franjas (siempre abierto, `addOpenMinutes` en tiempo real), cierre largo sin franja en 60 días (`null` en los dos cálculos), `addOpenMinutes(120)` que salta la noche y el fin de semana, cambio de hora de marzo y de octubre en `Europe/Madrid` (hora inexistente → primer minuto válido), otra zona (`America/Mexico_City`), y el texto "hoy a las 16:00" / "mañana a las 9:00" / "el lunes 5 de octubre a las 9:00"
-- [ ] T026 Crear src/handoff/schedule.ts con funciones puras sobre el snapshot: `applicableHours(snapshot)`, `isOpenAt(snapshot, at)`, `nextOpening(snapshot, at)` (horizonte 60 días), `addOpenMinutes(snapshot, at, minutes)` y `describeOpening(instant, now, timezone)`, reutilizando `effectiveIntervals` de src/knowledge/time/intervals.ts y la conversión local→instante con `Intl`
+- [X] T025 [P] Test unitario tests/unit/handoff/schedule.test.ts: horario del contacto de derivación con franjas frente al del negocio (FR-011), cierre puntual que tapa la próxima franja, franja que ya ha empezado (abierto → `null`), negocio sin franjas (siempre abierto, `addOpenMinutes` en tiempo real), cierre largo sin franja en 60 días (`null` en los dos cálculos), `addOpenMinutes(120)` que salta la noche y el fin de semana, cambio de hora de marzo y de octubre en `Europe/Madrid` (hora inexistente → primer minuto válido), otra zona (`America/Mexico_City`), y el texto "hoy a las 16:00" / "mañana a las 9:00" / "el lunes 5 de octubre a las 9:00"
+- [X] T026 Crear src/handoff/schedule.ts con funciones puras sobre el snapshot: `applicableHours(snapshot)`, `isOpenAt(snapshot, at)`, `nextOpening(snapshot, at)` (horizonte 60 días), `addOpenMinutes(snapshot, at, minutes)` y `describeOpening(instant, now, timezone)`, reutilizando `effectiveIntervals` de src/knowledge/time/intervals.ts y la conversión local→instante con `Intl`
 
 ### Tokens (R9)
 
