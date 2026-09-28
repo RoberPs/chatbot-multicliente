@@ -32,6 +32,19 @@ estos problemas. El sistema se comporta según su spec, pero el panel no explica
 - En **Cómo llegar** no queda claro qué escribir ni cómo lo usará el bot. Tampoco hay forma de
   dar un enlace a un mapa, que es lo habitual cuando alguien pregunta "¿dónde estáis?".
 
+## Clarifications
+
+### Session 2026-09-28
+
+- Q: Al guardar Datos o Derivación, ¿el mensaje de confirmación muestra siempre a quién pasará el
+  bot la conversación, o solo cuando ese contacto cambia? → A: Cuando cambia el contacto del bot o
+  cuando el guardado toca el teléfono del negocio o los medios de derivación, aunque el contacto
+  del bot no cambie; en ese caso el mensaje explica por qué sigue siendo el mismo.
+- Q: ¿Entra en esta spec el hallazgo H1 (avisar cuando una FAQ contradice un dato
+  estructurado)? → A: No; pasa a su propia spec de núcleo y aquí queda solo como referencia.
+- Q: ¿"Enlace a mapa" acepta enlaces `http://` o solo `https://`? → A: Solo `https://`; los
+  `http://` se rechazan con un mensaje que pide el enlace seguro.
+
 ## User Scenarios & Testing *(mandatory)*
 
 ### User Story 1 - Quitar medios del contacto de derivación (Priority: P1)
@@ -191,6 +204,8 @@ todos los resultados esperados.
   se genera ningún aviso nuevo.
 - **Enlace a mapa sin protocolo** (por ejemplo, `maps.example.com/abc`): se rechaza con un
   mensaje que pide el enlace completo, empezando por `https://`.
+- **Enlace a mapa con `http://`** (por ejemplo, `http://maps.example.com/abc`): se rechaza con un
+  mensaje que pide el enlace seguro, empezando por `https://`. No se convierte automáticamente.
 - **Enlace a un sitio que no es un mapa**: el sistema no puede comprobarlo y lo guarda. Es
   responsabilidad del operador, que puede abrirlo desde el panel para revisarlo.
 - **Mensaje de contacto sin JavaScript**: el mensaje de US2 MUST mostrarse igual con JavaScript
@@ -216,9 +231,13 @@ todos los resultados esperados.
 - **FR-005**: Las pantallas de Datos y de Derivación MUST mostrar el contacto que usa el bot en
   ese momento para pasar la conversación a una persona y su origen: contacto configurado,
   teléfono del negocio o ninguno.
-- **FR-006**: Al guardar Datos o Derivación, si cambia el origen o el valor del contacto que usa
-  el bot, el mensaje de confirmación MUST indicarlo. Por ejemplo: "Guardado. El bot pasará las
-  conversaciones al contacto de derivación configurado".
+- **FR-006**: Al guardar Datos o Derivación, el mensaje de confirmación MUST indicar el contacto
+  que usa el bot y su origen en dos casos: (a) si cambia el origen o el valor de ese contacto, y
+  (b) si el guardado modifica el teléfono del negocio o los medios de derivación aunque el
+  contacto del bot no cambie. En el caso (b), el mensaje MUST explicar por qué el contacto sigue
+  siendo el mismo. Por ejemplo: "Guardado. El teléfono del negocio ya no se usa; el bot sigue
+  pasando las conversaciones al contacto de derivación configurado". Los guardados que no tocan
+  ni el teléfono ni los medios y no cambian el contacto del bot MUST NOT añadir este mensaje.
 - **FR-007**: Si el cambio deja un negocio en preparación sin salida a una persona, el mensaje de
   confirmación MUST decirlo y recordar que el negocio no se podrá activar hasta tenerla.
 
@@ -239,9 +258,9 @@ todos los resultados esperados.
   sector.
 - **FR-011**: Los datos del negocio MUST incluir un campo opcional "Enlace a mapa", editable desde
   la pantalla de Datos.
-- **FR-012**: El sistema MUST aceptar en "Enlace a mapa" solo enlaces web completos (`http://` o
-  `https://`) de 500 caracteres como máximo, y rechazar el resto con el error junto al campo.
-  MUST NOT limitarlo a un proveedor de mapas concreto.
+- **FR-012**: El sistema MUST aceptar en "Enlace a mapa" solo enlaces web completos que empiecen
+  por `https://`, de 500 caracteres como máximo, y rechazar el resto (incluidos los `http://`)
+  con el error junto al campo. MUST NOT limitarlo a un proveedor de mapas concreto.
 - **FR-013**: Cuando hay un enlace guardado, el panel MUST permitir abrirlo en una pestaña nueva
   desde el formulario.
 - **FR-014**: La vista de la información que recibe el bot MUST incluir el enlace a mapa junto a
@@ -272,7 +291,8 @@ todos los resultados esperados.
 - **SC-002**: Quitar un medio de derivación se hace en 2 acciones como máximo: quitarlo y
   guardar.
 - **SC-003**: En el 100 % de los guardados de Datos y Derivación que cambian el contacto que usa
-  el bot, el operador ve un mensaje con el nuevo contacto y su origen.
+  el bot o que modifican el teléfono del negocio o los medios de derivación, el operador ve un
+  mensaje con el contacto que usa el bot y su origen.
 - **SC-004**: Desde la portada, el operador sabe si Políticas, Tono y Derivación están
   configuradas sin entrar en ellas.
 - **SC-005**: El enlace a mapa aparece en la información del bot en la primera consulta después
@@ -301,20 +321,23 @@ todos los resultados esperados.
 
 ## Hallazgos posteriores (2026-09-25, validación de la feature 004)
 
-Anotados al recorrer el escenario 1 del quickstart de la 004 ("Probar el bot"). Ninguno está
-todavía convertido en historia de usuario ni en requisito; quedan aquí para decidirlo cuando
-esta spec pase a plan.
+Anotados al recorrer el escenario 1 del quickstart de la 004 ("Probar el bot"). Ninguno forma
+parte del alcance de esta spec: cada uno necesita su propia spec y aquí quedan solo como
+referencia para que no se pierdan.
 
-### H1 — El panel no avisa de que una FAQ contradice un dato estructurado (candidato a esta spec)
+### H1 — El panel no avisa de que una FAQ contradice un dato estructurado (necesita spec propia)
 
 Con `payment_methods = {Efectivo}` y la FAQ "¿Aceptáis tarjeta? → Sí.", el bot contesta que el
 único método registrado es el efectivo. Es el comportamiento especificado (regla 5 del prompt de
 la 002: ante contradicción prevalece el dato estructurado), pero el operador cree haber
 contestado la duda en las FAQ y nunca se le dice que esa FAQ no se está usando.
 
-Encaja con el contexto de esta spec ("el sistema se comporta según su spec, pero el panel no
-explica lo que pasa"). La forma natural sería un aviso no crítico de `computeWarnings` sobre la
-FAQ, con enlace al dato estructurado que prevalece.
+Aunque se parece al contexto de esta spec ("el sistema se comporta según su spec, pero el panel
+no explica lo que pasa"), **queda fuera** (aclaración del 2026-09-28): detectar la contradicción
+entre texto libre y datos estructurados exige decidir entre reglas fijas, que dejan casos sin
+detectar, y el modelo, que tiene coste y no es determinista. Lo decidirá una spec de núcleo
+aparte. La forma natural sería un aviso no crítico de `computeWarnings` sobre la FAQ, con enlace
+al dato estructurado que prevalece.
 
 ### H2 — El bot repite el bloque de contacto (necesita spec propia)
 
