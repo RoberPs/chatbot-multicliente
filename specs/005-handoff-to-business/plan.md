@@ -24,7 +24,8 @@ ve los mensajes del cliente, verificada y con respaldo por código. Los avisos s
 "Terminado", y email por SMTP (nodemailer) con enlaces a una página que confirma con `POST`. Cada
 derivación tiene un token de 128 bits (solo su hash en BD) que liga botones y enlaces a ella. Los
 mensajes del cliente durante la derivación se agrupan como siempre y se marcan `forwarded`. Un
-barrido cada 60 s cierra por inactividad y envía el recordatorio a las 2 h de horario. Migración
+barrido cada 60 s cierra por inactividad y envía el recordatorio a las 2 h de horario (o al
+cerrarse por inactividad si aún no se había confirmado ni enviado). Migración
 `0004_handoff`. Detalle en [research.md](research.md).
 
 ## Technical Context

@@ -85,6 +85,10 @@ Con un reloj de pruebas (tests de integración) o poniendo un cierre puntual hoy
    primera franja tras el cierre; el aviso sale en el momento.
 2. Sin confirmar, deja pasar 2 horas **de horario** → llega un recordatorio al negocio y el cliente
    recibe un único mensaje con el contacto directo. No se repite.
+3. (Solo con reloj de pruebas) Deriva el viernes por la noche con apertura el lunes, sin confirmar
+   ni escribir más → a las 24 h la conversación vuelve al bot sin mensaje al cliente y el negocio
+   recibe el recordatorio en ese momento; el lunes no llega nada más. Si después pulsa un botón o
+   enlace, la respuesta dice que la conversación ya volvió al asistente y le da el teléfono.
 
 ## Escenario 6 — Panel y fallos (FR-012, FR-016a)
 

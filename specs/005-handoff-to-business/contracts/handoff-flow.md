@@ -229,7 +229,7 @@ entrantes limitados no se reenvían (R11, FR-013, FR-014).
 - **FR-010/012**: R-HANDOFF-OK solo existe si hay una fila `handoff` `active` con ≥ 1
   `handoff_notice` `sent`.
 - **FR-013 / SC-004**: con derivación activa no se crea ningún saliente salvo R-HANDOFF-LATE (una
-  vez por derivación).
+  vez por derivación) y R-LIMIT (con CONTACTO, como en la 002).
 - **FR-015**: la derivación de una conversación no cambia cómo se procesa otra del mismo
   proceso (test con dos clientes a la vez).
 - **FR-024**: `src/handoff`, las plantillas y los prompts pasan el test de neutralidad sectorial.

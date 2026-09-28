@@ -263,7 +263,7 @@ por cliente y se agrupan con la misma espera de 3 s). Al reclamar el lote, el pr
 la conversación tiene una derivación activa y, en lugar de responder, llama a
 `HandoffService.forward`: compone un único reenvío con los textos del lote (FR-014), lo manda por
 las vías disponibles y marca los entrantes con el estado nuevo `forwarded`. No se crea ningún
-saliente, no hay saludo ni R-MEDIA (FR-013); un archivo sin texto se reenvía como
+saliente salvo R-LIMIT (ver abajo), no hay saludo ni R-MEDIA (FR-013); un archivo sin texto se reenvía como
 "[imagen]"/"[audio]"… con su tipo. Si fallan todas las vías, los entrantes quedan igualmente
 `forwarded` y se registra el fallo (no se reintenta en bucle).
 

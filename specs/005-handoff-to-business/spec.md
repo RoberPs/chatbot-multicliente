@@ -128,7 +128,8 @@ comprobar que el bot no contesta ninguno y que el negocio los recibe.
 
 **Acceptance Scenarios**:
 
-1. **Given** una conversación derivada, **When** el cliente escribe, **Then** el bot no responde.
+1. **Given** una conversación derivada, **When** el cliente escribe, **Then** el bot no responde
+   (salvo el aviso de límite de mensajes y el de FR-019).
 2. **Given** una conversación derivada, **When** el cliente escribe, **Then** el negocio recibe
    ese mensaje reenviado por las mismas vías que el aviso (WhatsApp y email), identificando al
    cliente; si el cliente envía varios mensajes seguidos, se agrupan y se reenvían en un único

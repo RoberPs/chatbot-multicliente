@@ -89,6 +89,8 @@ Estados:
          "Le atiendo" ─▶ confirmed_at      ├─ operador en el panel ─────────▶ ended(operator)
          2 h de horario sin confirmar      └─ operador en "Probar el bot" ──▶ ended(playground)
            ─▶ reminder_sent_at (una vez)
+         cierre por inactividad sin confirmar ni recordatorio
+           ─▶ reminder_sent_at en el mismo cierre (FR-019, sin mensaje al cliente)
 ```
 
 Una derivación `ended` no vuelve a `active`; una nueva petición crea otra fila.

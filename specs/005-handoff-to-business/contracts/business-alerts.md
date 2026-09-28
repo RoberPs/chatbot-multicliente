@@ -149,7 +149,8 @@ asistente (y, si no habías confirmado, te enviaremos el recordatorio en ese mom
 - El recordatorio repite los datos del aviso y termina con una de dos frases: a las 2 h de
   horario, "Le hemos dado tu contacto directo por si prefiere llamarte."; al cerrarse por
   inactividad, "Como el cliente no ha escrito en 24 horas, la conversación ha vuelto al asistente,
-  pero sigue esperando que le contactes." En el segundo caso no lleva enlaces.
+  pero sigue esperando que le contactes." Los dos llevan los enlaces (FR-008a); tras el cierre
+  llevan a la página de "derivación terminada", que da el teléfono del cliente.
 - El reenvío lleva el texto completo de cada mensaje del lote (sin recortar), en orden, con su
   hora local, y los mismos dos enlaces.
 - Recordatorio y reenvíos: `In-Reply-To` y `References` = `Message-ID` del aviso
