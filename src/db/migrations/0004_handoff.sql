@@ -18,6 +18,7 @@ CREATE TABLE "handoff" (
 	"summary" text NOT NULL,
 	"summary_source" "handoff_summary_source" NOT NULL,
 	"token_hash" bytea NOT NULL,
+	"token_enc" bytea NOT NULL,
 	"started_at" timestamp with time zone NOT NULL,
 	"confirmed_at" timestamp with time zone,
 	"confirmed_via" "handoff_action_via",

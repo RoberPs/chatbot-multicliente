@@ -1,5 +1,5 @@
 {
-  "id": "879edb65-cad6-4f6d-8cc6-969521c4d058",
+  "id": "6b64084a-ca6c-4321-87f4-7804c39ea0e0",
   "prevId": "039ad6ca-50aa-4ad8-a879-e88de23dbfef",
   "version": "7",
   "dialect": "postgresql",
@@ -483,6 +483,12 @@
         },
         "token_hash": {
           "name": "token_hash",
+          "type": "bytea",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "token_enc": {
+          "name": "token_enc",
           "type": "bytea",
           "primaryKey": false,
           "notNull": true

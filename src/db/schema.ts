@@ -423,6 +423,12 @@ export const handoff = pgTable(
     summarySource: handoffSummarySource('summary_source').notNull(),
     /** `sha256(token)`; el token en claro solo existe en memoria y en los avisos (R9). */
     tokenHash: bytea('token_hash').notNull().unique(),
+    /**
+     * Token cifrado con AES-256-GCM y una clave derivada de SESSION_SECRET: los reenvíos y el
+     * recordatorio llevan los mismos botones y enlaces que el aviso. Sin el secreto, una copia
+     * de la BD no permite actuar (R9).
+     */
+    tokenEnc: bytea('token_enc').notNull(),
     startedAt: instant('started_at').notNull(),
     confirmedAt: instant('confirmed_at'),
     confirmedVia: handoffActionVia('confirmed_via'),

@@ -101,8 +101,8 @@ describe('migración 0004_handoff con datos', () => {
     const insertHandoff = (conversationId: string, status: 'active' | 'ended') =>
       q(
         `insert into handoff (id, conversation_id, kind, status, summary, summary_source, token_hash,
-           started_at, ended_at, end_cause)
-         values ($1, $2, 'person', $3, 'Motivo', 'model', $4, $5, $6, $7) returning id`,
+           token_enc, started_at, ended_at, end_cause)
+         values ($1, $2, 'person', $3, 'Motivo', 'model', $4, $4, $5, $6, $7) returning id`,
         [
           randomUUID(),
           conversationId,
@@ -124,8 +124,9 @@ describe('migración 0004_handoff con datos', () => {
     // `ended` exige fecha y causa; la confirmación va con su vía.
     await expect(
       q(
-        `insert into handoff (id, conversation_id, kind, status, summary, summary_source, token_hash, started_at)
-         values ($1, $2, 'person', 'ended', 'M', 'model', $3, $4)`,
+        `insert into handoff (id, conversation_id, kind, status, summary, summary_source, token_hash,
+           token_enc, started_at)
+         values ($1, $2, 'person', 'ended', 'M', 'model', $3, $3, $4)`,
         [randomUUID(), c2, Buffer.from('x'), at],
       ),
     ).rejects.toThrow(/handoff_ended/);

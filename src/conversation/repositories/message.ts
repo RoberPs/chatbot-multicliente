@@ -73,8 +73,10 @@ export async function pendingFor(tx: DbOrTx, conversationId: string): Promise<In
 }
 
 /**
- * Últimos `limit` mensajes ya tratados de la conversación (entrantes contestados y
- * salientes enviados), en orden cronológico. Los pendientes van aparte.
+ * Últimos `limit` mensajes ya tratados de la conversación (entrantes contestados o reenviados
+ * al negocio durante una derivación, y salientes enviados), en orden cronológico. Los
+ * pendientes van aparte. Los reenviados entran para que el bot los tenga en cuenta cuando la
+ * conversación vuelve (005, FR-018).
  */
 export async function history(
   tx: DbOrTx,
@@ -93,7 +95,7 @@ export async function history(
       and(
         eq(message.conversationId, conversationId),
         or(
-          and(eq(message.direction, 'inbound'), eq(message.status, 'answered')),
+          and(eq(message.direction, 'inbound'), inArray(message.status, ['answered', 'forwarded'])),
           and(eq(message.direction, 'outbound'), eq(message.status, 'sent')),
         ),
       ),
@@ -101,6 +103,44 @@ export async function history(
     .orderBy(desc(message.sentAt), desc(message.receivedAt))
     .limit(limit);
   return rows.reverse();
+}
+
+/**
+ * Pasa entrantes pendientes a `forwarded` (005, R11): se reenviaron al negocio en lugar de
+ * contestarse. Es terminal: `claimReady` ya no los reclama.
+ */
+export async function markForwarded(tx: DbOrTx, ids: string[]): Promise<void> {
+  if (ids.length === 0) return;
+  await tx
+    .update(message)
+    .set({ status: 'forwarded' })
+    .where(and(inArray(message.id, ids), eq(message.status, 'pending')));
+}
+
+/**
+ * Últimos `limit` textos del cliente en la conversación, en orden (005, R4): la única entrada
+ * del resumen de la derivación. Incluye pendientes, contestados y reenviados; nunca respuestas
+ * del bot.
+ */
+export async function customerTexts(
+  tx: DbOrTx,
+  conversationId: string,
+  limit: number,
+): Promise<string[]> {
+  const rows = await tx
+    .select({ body: message.body })
+    .from(message)
+    .where(
+      and(
+        eq(message.conversationId, conversationId),
+        eq(message.direction, 'inbound'),
+        inArray(message.status, ['pending', 'answered', 'forwarded']),
+        sql`${message.body} is not null and btrim(${message.body}) <> ''`,
+      ),
+    )
+    .orderBy(desc(message.sentAt), desc(message.receivedAt))
+    .limit(limit);
+  return rows.map((r) => r.body ?? '').reverse();
 }
 
 /**
@@ -244,8 +284,8 @@ export function decodeCursor(cursor: string): { sentAt: Date; id: string } | nul
 
 /**
  * Mensajes visibles de una conversación para el playground y la web (R5, R6): entrantes
- * `pending`, `answered` o `rate_limited` y salientes `sent`, en orden. Con `after`, solo los
- * posteriores a ese cursor.
+ * `pending`, `answered`, `rate_limited` o `forwarded` (005) y salientes `sent`, en orden. Con
+ * `after`, solo los posteriores a ese cursor.
  */
 export async function listForConversation(
   tx: DbOrTx,
@@ -267,7 +307,7 @@ export async function listForConversation(
         or(
           and(
             eq(message.direction, 'inbound'),
-            inArray(message.status, ['pending', 'answered', 'rate_limited']),
+            inArray(message.status, ['pending', 'answered', 'rate_limited', 'forwarded']),
           ),
           and(eq(message.direction, 'outbound'), eq(message.status, 'sent')),
         ),

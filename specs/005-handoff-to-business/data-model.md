@@ -62,7 +62,8 @@ sentencia propia (no se usa en la misma transacción).
 | `status` | `handoff_status` NOT NULL | enum `active` · `ended` |
 | `summary` | `text` NOT NULL | resumen del motivo, ≤ 300 caracteres, una línea (R4) |
 | `summary_source` | `handoff_summary_source` NOT NULL | enum `model` · `fallback` (para la evaluación de SC-003) |
-| `token_hash` | `bytea` NOT NULL UNIQUE | `sha256(token)` (R9) |
+| `token_hash` | `bytea` NOT NULL UNIQUE | `sha256(token)` (R9); búsqueda de botones y enlaces |
+| `token_enc` | `bytea` NOT NULL | token cifrado con AES-256-GCM (clave HKDF de `SESSION_SECRET`): los reenvíos y el recordatorio llevan los mismos botones y enlaces que el aviso (R9) |
 | `started_at` | `timestamptz` NOT NULL | |
 | `confirmed_at` | `timestamptz` | "Le atiendo" o "Terminado" (FR-016) |
 | `confirmed_via` | `handoff_action_via` | enum `whatsapp` · `email`; nulo si no se confirmó |

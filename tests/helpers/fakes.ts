@@ -203,7 +203,7 @@ export class FakeMediaFetcher implements MediaFetcher {
 /** Registro técnico que guarda los eventos en memoria. */
 export class RecordingActivityLog implements ActivityLog {
   readonly events: Array<
-    BotEvent & { via?: Channel | string; customer?: string; conversationId?: string }
+    BotEvent & { via?: string; customer?: string; conversationId?: string }
   > = [];
   log(event: BotEvent, context: EventContext = {}): void {
     const { channel, customerKey } = context;

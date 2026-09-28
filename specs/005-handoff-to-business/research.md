@@ -223,8 +223,15 @@ guarda `sha256(token)` con índice único. Una acción:
   así que si llegan por las dos vías solo cuenta la primera.
 
 **Motivo**: el token liga cada botón o enlace a una sola derivación (SC-010) sin necesidad de
-saber qué mensaje se pulsó ni quién lo pulsa. Guardar solo el hash evita que una copia de la BD
+saber qué mensaje se pulsó ni quién lo pulsa. Buscar por el hash evita que una copia de la BD
 permita actuar.
+
+**Ajuste en la implementación**: los reenvíos (FR-014) y el recordatorio (FR-019) llevan los
+mismos botones y enlaces que el aviso, y se componen cuando el token ya no está en memoria. Por
+eso `handoff` guarda además `token_enc`: el token cifrado con AES-256-GCM y una clave derivada de
+`SESSION_SECRET` con HKDF (como el seudónimo de los registros, R17). Una copia de la BD sin el
+secreto sigue sin permitir actuar; rotar `SESSION_SECRET` deja sin botones los reenvíos y
+recordatorios de las derivaciones activas, pero los del aviso ya enviado siguen funcionando.
 
 **Alternativas**: HMAC del id de la derivación con una clave derivada de `SESSION_SECRET` (no se
 puede revocar uno concreto y cambia si se rota el secreto); relacionar el `context.id` del botón
