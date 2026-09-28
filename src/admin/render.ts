@@ -1,5 +1,6 @@
 import type { FastifyReply, FastifyRequest } from 'fastify';
-import { withReadSnapshot, type Db } from '../db/client.js';
+import { withReadSnapshot } from '../db/client.js';
+import type { KnowledgeDeps } from '../knowledge/services/deps.js';
 import { formatCents } from '../knowledge/money.js';
 import { loadKnowledgeState } from '../knowledge/state.js';
 import type { KnowledgeState, Warning, WarningTargetKind } from '../knowledge/types.js';
@@ -56,6 +57,8 @@ function targetLink(kind: WarningTargetKind, id?: string): string {
       return '/admin/hours';
     case 'handoff':
       return '/admin/handoff';
+    case 'handoff_alerts':
+      return '/admin/handoffs';
     case 'service':
       return id ? `/admin/services/${id}` : '/admin/services';
     case 'resource':
@@ -63,8 +66,11 @@ function targetLink(kind: WarningTargetKind, id?: string): string {
   }
 }
 
-export function readState(db: Db): Promise<KnowledgeState> {
-  return withReadSnapshot(db, (tx) => loadKnowledgeState(tx));
+/** Estado de la instancia para el panel, con las vías de aviso que puede usar (005). */
+export function readState(deps: KnowledgeDeps): Promise<KnowledgeState> {
+  return withReadSnapshot(deps.db, (tx) =>
+    loadKnowledgeState(tx, { alertRoutes: deps.alertRoutes }),
+  );
 }
 
 export interface PageData {
@@ -164,7 +170,7 @@ export async function renderNotFound(
   request: FastifyRequest,
   reply: FastifyReply,
 ): Promise<FastifyReply> {
-  const state = await readState(request.server.knowledge.db);
+  const state = await readState(request.server.knowledge);
   return renderPage(request, reply, 'not-found', { state, title: 'No encontrado' }, 404);
 }
 

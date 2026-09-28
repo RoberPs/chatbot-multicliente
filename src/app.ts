@@ -111,7 +111,15 @@ export async function buildApp({
   app.removeContentTypeParser(['application/json', 'text/plain']);
 
   app.decorate('env', env);
-  app.decorate('knowledge', { db, phoneRegion: env.DEFAULT_PHONE_REGION as CountryCode });
+  app.decorate('knowledge', {
+    db,
+    phoneRegion: env.DEFAULT_PHONE_REGION as CountryCode,
+    // Vías de aviso de derivación que la instancia puede usar (005, R16).
+    alertRoutes: {
+      whatsapp: env.whatsapp !== null,
+      email: env.smtp !== null && env.PUBLIC_BASE_URL !== undefined,
+    },
+  });
   const channel = (typeof bot === 'function' ? bot(app.log) : bot) ?? null;
   app.decorate('bot', channel);
 

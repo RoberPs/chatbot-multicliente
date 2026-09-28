@@ -88,7 +88,7 @@ export async function playgroundRoutes(app: FastifyInstance): Promise<void> {
       reply,
       'playground',
       {
-        state: await readState(db),
+        state: await readState(app.knowledge),
         title: TITLE,
         botPresent: app.bot !== null,
         messages: thread.messages,

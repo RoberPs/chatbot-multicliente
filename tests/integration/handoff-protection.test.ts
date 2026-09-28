@@ -114,7 +114,7 @@ describe('003 US1: quitar medios con la casilla "Quitar" sigue protegido por FR-
     await activateBusiness(t.db);
     const error = await saveHandoff(t.deps, removeOnly).catch((e: unknown) => e);
     expect(error).toBeInstanceOf(CriticalWarningError);
-    const state = await readState(t.db);
+    const state = await readState(t.deps);
     expect(state.handoff?.channels.map((c) => c.value)).toEqual(['a@b.es']);
   });
 
@@ -123,6 +123,6 @@ describe('003 US1: quitar medios con la casilla "Quitar" sigue protegido por FR-
     await saveHandoff(t.deps, { channels: [{ type: 'email', value: 'a@b.es' }] });
     await activateBusiness(t.db);
     await saveHandoff(t.deps, removeOnly);
-    expect(effectiveHandoff(await readState(t.db)).source).toBe('business_phone');
+    expect(effectiveHandoff(await readState(t.deps)).source).toBe('business_phone');
   });
 });

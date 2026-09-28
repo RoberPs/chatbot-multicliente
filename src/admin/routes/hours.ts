@@ -57,11 +57,11 @@ export async function hoursRoutes(app: FastifyInstance): Promise<void> {
     );
 
   app.get('/hours', async (request, reply) =>
-    renderHours(request, reply, await readState(deps.db)),
+    renderHours(request, reply, await readState(deps)),
   );
 
   app.get<{ Params: Params }>('/closures/:id', async (request, reply) => {
-    const state = await readState(deps.db);
+    const state = await readState(deps);
     const editing = state.closures.find((c) => c.id === request.params.id);
     if (!editing) return renderNotFound(request, reply);
     return renderHours(request, reply, state, { editing });
@@ -73,7 +73,7 @@ export async function hoursRoutes(app: FastifyInstance): Promise<void> {
       run: () => saveBusinessHours(deps, { slots }),
       redirectTo: '/admin/hours',
       onError: async (error) =>
-        renderHours(request, reply, await readState(deps.db), { slots, errorsFor: 'hours', error }),
+        renderHours(request, reply, await readState(deps), { slots, errorsFor: 'hours', error }),
     });
   });
 
@@ -83,7 +83,7 @@ export async function hoursRoutes(app: FastifyInstance): Promise<void> {
       run: () => createClosure(deps, form),
       redirectTo: '/admin/hours',
       onError: async (error) =>
-        renderHours(request, reply, await readState(deps.db), {
+        renderHours(request, reply, await readState(deps), {
           closureForm: form,
           errorsFor: 'closure',
           error,
@@ -97,7 +97,7 @@ export async function hoursRoutes(app: FastifyInstance): Promise<void> {
       run: () => updateClosure(deps, request.params.id, form),
       redirectTo: '/admin/hours',
       onError: async (error) => {
-        const state = await readState(deps.db);
+        const state = await readState(deps);
         const editing = state.closures.find((c) => c.id === request.params.id);
         return renderHours(request, reply, state, {
           editing,
@@ -115,7 +115,7 @@ export async function hoursRoutes(app: FastifyInstance): Promise<void> {
       redirectTo: '/admin/hours',
       message: 'Cierre eliminado',
       onError: async (error) =>
-        renderHours(request, reply, await readState(deps.db), { errorsFor: 'closure', error }),
+        renderHours(request, reply, await readState(deps), { errorsFor: 'closure', error }),
     }),
   );
 }

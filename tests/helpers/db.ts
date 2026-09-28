@@ -70,3 +70,14 @@ export async function resetDb(db: Db): Promise<void> {
     .set({ enabled: false, allowedOrigins: [], privacyUrl: null, dailyCap: 200, monthlyCap: 3000 });
   await db.update(handoffAlerts).set({ whatsappPhone: null, email: null });
 }
+
+/** Guarda los destinos de los avisos de derivación (005) directamente en la fila única. */
+export async function setHandoffAlerts(
+  db: Db,
+  values: { whatsapp?: string | null; email?: string | null },
+): Promise<void> {
+  await db.update(handoffAlerts).set({
+    ...(values.whatsapp === undefined ? {} : { whatsappPhone: values.whatsapp }),
+    ...(values.email === undefined ? {} : { email: values.email }),
+  });
+}

@@ -11,10 +11,12 @@ export const WEEKDAY_SHORT = ['lun', 'mar', 'mié', 'jue', 'vie', 'sáb', 'dom']
 const weekdayShort = (weekday: Weekday): string => WEEKDAY_SHORT[weekday - 1] ?? String(weekday);
 
 const HANDOFF_LABEL = 'Contacto de derivación';
+const HANDOFF_ALERTS_LABEL = 'Avisos al negocio';
 
 export function computeWarnings(state: KnowledgeState): Warning[] {
   const warnings: Warning[] = [
     ...handoffWarnings(state),
+    ...handoffAlertsWarnings(state),
     ...businessWarnings(state),
     ...serviceWarnings(state),
     ...resourceWarnings(state),
@@ -58,6 +60,47 @@ function handoffWarnings(state: KnowledgeState): Warning[] {
         field: 'channels',
         message:
           'No hay contacto de derivación ni teléfono del negocio: el bot no tendría a quién pasar la conversación.',
+      },
+    ];
+  }
+  return [];
+}
+
+/**
+ * Vías para avisar al negocio de las derivaciones (005, R16). Una vía cuenta si tiene destino y
+ * la instancia puede enviar por ella. Son normales: sin vías el bot sigue dando el contacto de
+ * derivación, así que no bloquean la activación.
+ */
+function handoffAlertsWarnings(state: KnowledgeState): Warning[] {
+  const { whatsapp, email, routes } = state.handoffAlerts;
+  const available = {
+    whatsapp: whatsapp !== null && routes.whatsapp,
+    email: email !== null && routes.email,
+  };
+  const target = { kind: 'handoff_alerts' as const, label: HANDOFF_ALERTS_LABEL };
+  if (!available.whatsapp && !available.email) {
+    return [
+      {
+        code: 'HANDOFF_ALERTS_NONE',
+        severity: 'normal',
+        target,
+        field: 'alerts',
+        message:
+          'No hay ninguna vía para avisar al negocio de las derivaciones; el bot dará el contacto de derivación.',
+      },
+    ];
+  }
+  if (available.whatsapp !== available.email) {
+    const [only, other, field] = available.whatsapp
+      ? ['WhatsApp', 'el email', 'email']
+      : ['email', 'el WhatsApp', 'whatsapp'];
+    return [
+      {
+        code: 'HANDOFF_ALERTS_SINGLE',
+        severity: 'normal',
+        target,
+        field,
+        message: `Los avisos de derivación solo llegan por ${only}; configura también ${other} para que quede registro en las dos.`,
       },
     ];
   }

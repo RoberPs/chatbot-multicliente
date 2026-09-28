@@ -33,7 +33,7 @@ export async function webChatPageRoutes(app: FastifyInstance): Promise<void> {
 
   /** Datos de la página: configuración, uso y fragmento, todo leído sin caché. */
   async function pageData(request: FastifyRequest) {
-    const state = await readState(db);
+    const state = await readState(app.knowledge);
     const settings = await readWebChatSettings(db);
     const now = app.bot?.clock.now() ?? new Date();
     const usage = await readWebUsage(db, now, state.business.timezone);

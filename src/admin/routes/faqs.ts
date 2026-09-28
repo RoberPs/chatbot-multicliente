@@ -20,7 +20,7 @@ export async function faqRoutes(app: FastifyInstance): Promise<void> {
       reply,
       'faqs',
       {
-        state: await readState(deps.db),
+        state: await readState(deps),
         title: 'Preguntas frecuentes',
         errorsFor: opts.errorsFor,
         values: opts.values ?? {},

@@ -70,7 +70,7 @@ export async function resourceRoutes(app: FastifyInstance): Promise<void> {
     id: string,
     opts: ResourcePageOptions,
   ) => {
-    const state = await readState(deps.db);
+    const state = await readState(deps);
     const resource = state.resources.find((r) => r.id === id);
     if (!resource) return renderNotFound(request, reply);
     return renderForm(request, reply, state, resource, opts);
@@ -78,13 +78,13 @@ export async function resourceRoutes(app: FastifyInstance): Promise<void> {
 
   app.get('/resources', async (request, reply) =>
     renderPage(request, reply, 'resources/list', {
-      state: await readState(deps.db),
+      state: await readState(deps),
       title: 'Recursos',
     }),
   );
 
   app.get('/resources/new', async (request, reply) =>
-    renderForm(request, reply, await readState(deps.db), undefined),
+    renderForm(request, reply, await readState(deps), undefined),
   );
 
   app.get<{ Params: Params }>('/resources/:id', async (request, reply) =>
@@ -94,7 +94,7 @@ export async function resourceRoutes(app: FastifyInstance): Promise<void> {
   app.get<{ Params: AbsenceParams }>(
     '/resources/:id/absences/:absenceId',
     async (request, reply) => {
-      const state = await readState(deps.db);
+      const state = await readState(deps);
       const resource = state.resources.find((r) => r.id === request.params.id);
       const absence = resource?.absences.find((a) => a.id === request.params.absenceId);
       if (!resource || !absence) return renderNotFound(request, reply);
@@ -108,7 +108,7 @@ export async function resourceRoutes(app: FastifyInstance): Promise<void> {
       run: () => createResource(deps, form),
       redirectTo: (id) => `/admin/resources/${id}`,
       onError: async (error) =>
-        renderForm(request, reply, await readState(deps.db), undefined, {
+        renderForm(request, reply, await readState(deps), undefined, {
           values: form,
           errorsFor: 'resource',
           error,
@@ -157,7 +157,7 @@ export async function resourceRoutes(app: FastifyInstance): Promise<void> {
         run: () => updateAbsence(deps, id, absenceId, form),
         redirectTo: `/admin/resources/${id}`,
         onError: async (error) => {
-          const state = await readState(deps.db);
+          const state = await readState(deps);
           const resource = state.resources.find((r) => r.id === id);
           if (!resource) return renderNotFound(request, reply);
           return renderForm(request, reply, state, resource, {
@@ -194,7 +194,7 @@ export async function resourceRoutes(app: FastifyInstance): Promise<void> {
           request,
           reply,
           'resources/list',
-          { state: await readState(deps.db), title: 'Recursos', ...formErrorData(error) },
+          { state: await readState(deps), title: 'Recursos', ...formErrorData(error) },
           error.status,
         ),
     }),

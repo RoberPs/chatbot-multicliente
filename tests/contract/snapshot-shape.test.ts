@@ -2,8 +2,9 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { z } from 'zod';
 import { createKnowledgeReader } from '../../src/knowledge/snapshot.js';
+import { hairSalon } from '../fixtures/hair-salon.js';
 import { allFixtures, loadFixture } from '../fixtures/load.js';
-import { createTestDatabase, resetDb, type TestDatabase } from '../helpers/db.js';
+import { createTestDatabase, resetDb, setHandoffAlerts, type TestDatabase } from '../helpers/db.js';
 
 const localTime = z.string().regex(/^\d{2}:\d{2}$/);
 const isoDate = z.string().regex(/^\d{4}-\d{2}-\d{2}$/);
@@ -129,4 +130,17 @@ describe('forma de KnowledgeSnapshot', () => {
       assertNoUndefined(snap);
     },
   );
+
+  it('con destinos de avisos de derivación, el snapshot no los contiene (005, R16)', async () => {
+    await loadFixture(t.deps, hairSalon);
+    await setHandoffAlerts(t.db, {
+      whatsapp: '+34699887766',
+      email: 'avisos-internos@ejemplo.com',
+    });
+    const snap = await createKnowledgeReader(t.db).getSnapshot();
+    expect(() => snapshotSchema.parse(snap)).not.toThrow();
+    const json = JSON.stringify(snap);
+    expect(json).not.toContain('699887766');
+    expect(json).not.toContain('avisos-internos@ejemplo.com');
+  });
 });

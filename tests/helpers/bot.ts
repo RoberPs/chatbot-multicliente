@@ -29,10 +29,12 @@ import { hairSalon } from '../fixtures/hair-salon.js';
 import { loadFixture } from '../fixtures/load.js';
 import type { BusinessFixture } from '../fixtures/types.js';
 import { buildTestApp, TEST_EMERGENCY_PHONE } from './app.js';
-import { resetDb, type TestDatabase } from './db.js';
+import { resetDb, setHandoffAlerts, type TestDatabase } from './db.js';
 import {
   FakeChannelSender,
   FakeChatModel,
+  type FakeAlertRoute,
+  type FakeSummarizer,
   ManualClock,
   RecordingActivityLog,
   type FakeMediaFetcher,
@@ -108,6 +110,12 @@ export interface TestBotOptions {
   whatsapp?: boolean;
   /** Configuración del chat web (por defecto la de la migración: desactivado). */
   webChat?: Partial<WebChatSettings>;
+  /** Destinos de los avisos de derivación a guardar en `handoff_alerts` (005). */
+  handoffAlerts?: { whatsapp?: string | null; email?: string | null };
+  /** Vías de aviso falsas (005); por defecto, una por vía que siempre entrega. */
+  alertRoutes?: { whatsapp?: FakeAlertRoute; email?: FakeAlertRoute };
+  /** Resumidor falso del motivo de la derivación (005). */
+  summarizer?: FakeSummarizer;
 }
 
 export const TEST_SESSION_SECRET = 'secreto-de-sesion-de-prueba-con-32-caracteres';
@@ -117,6 +125,8 @@ export async function createTestBot(t: TestDatabase, opts: TestBotOptions = {}):
   const fixture = opts.fixture === undefined ? hairSalon : opts.fixture;
   if (fixture) await loadFixture(t.deps, fixture);
   if (opts.activate ?? true) await activateBusiness(t.db);
+
+  if (opts.handoffAlerts) await setHandoffAlerts(t.db, opts.handoffAlerts);
 
   const clock = new ManualClock(opts.start ?? '2026-09-24T08:00:00Z');
   const model = new FakeChatModel(clock);

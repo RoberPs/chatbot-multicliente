@@ -30,21 +30,21 @@ export async function serviceRoutes(app: FastifyInstance): Promise<void> {
 
   app.get('/services', async (request, reply) =>
     renderPage(request, reply, 'services/list', {
-      state: await readState(deps.db),
+      state: await readState(deps),
       title: 'Servicios',
     }),
   );
 
   app.get('/services/new', async (request, reply) =>
     renderPage(request, reply, 'services/form', {
-      state: await readState(deps.db),
+      state: await readState(deps),
       title: 'Nuevo servicio',
       values: NEW_SERVICE,
     }),
   );
 
   app.get<{ Params: Params }>('/services/:id', async (request, reply) => {
-    const state = await readState(deps.db);
+    const state = await readState(deps);
     const service = state.services.find((s) => s.id === request.params.id);
     if (!service) return renderNotFound(request, reply);
     return renderPage(request, reply, 'services/form', {
@@ -66,7 +66,7 @@ export async function serviceRoutes(app: FastifyInstance): Promise<void> {
           reply,
           'services/form',
           {
-            state: await readState(deps.db),
+            state: await readState(deps),
             title: 'Nuevo servicio',
             values: form,
             ...formErrorData(error),
@@ -86,7 +86,7 @@ export async function serviceRoutes(app: FastifyInstance): Promise<void> {
           request,
           reply,
           'services/list',
-          { state: await readState(deps.db), title: 'Servicios', ...formErrorData(error) },
+          { state: await readState(deps), title: 'Servicios', ...formErrorData(error) },
           error.status,
         ),
     }),
@@ -98,7 +98,7 @@ export async function serviceRoutes(app: FastifyInstance): Promise<void> {
       run: () => updateService(deps, request.params.id, form),
       redirectTo: '/admin/services',
       onError: async (error) => {
-        const state = await readState(deps.db);
+        const state = await readState(deps);
         const service = state.services.find((s) => s.id === request.params.id);
         return renderPage(
           request,
@@ -127,7 +127,7 @@ export async function serviceRoutes(app: FastifyInstance): Promise<void> {
           request,
           reply,
           'services/list',
-          { state: await readState(deps.db), title: 'Servicios', ...formErrorData(error) },
+          { state: await readState(deps), title: 'Servicios', ...formErrorData(error) },
           error.status,
         ),
     }),

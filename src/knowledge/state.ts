@@ -6,6 +6,7 @@ import type {
   AddressForm,
   BusinessStatus,
   HandoffChannelType,
+  AlertRouteAvailability,
   KnowledgeState,
   PriceType,
   WeeklySlot,
@@ -88,6 +89,7 @@ interface RawState {
     sort_order: number;
   }>;
   handoff_hours: SlotRow[];
+  handoff_alerts: { whatsapp_phone: string | null; email: string | null } | null;
   max_updated_at: string | null;
 }
 
@@ -135,15 +137,26 @@ function stateQuery() {
     'handoff_contact', (select row_to_json(hc) from handoff_contact hc limit 1),
     'handoff_channels', ${list(sql`select json_agg(ch order by ch.sort_order) from handoff_channel ch`)},
     'handoff_hours', ${list(sql`select json_agg(h order by h.weekday, h.start_time) from handoff_hours h`)},
+    'handoff_alerts', (select row_to_json(a) from handoff_alerts a limit 1),
     'max_updated_at', (select to_char(max(u) at time zone 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"') from (${maxParts}) m)
   ) as state`;
 }
+
+export interface LoadStateOptions {
+  /** Vías de aviso de la instancia (005, R16); por defecto, ninguna. */
+  alertRoutes?: AlertRouteAvailability;
+}
+
+const NO_ROUTES: AlertRouteAvailability = { whatsapp: false, email: false };
 
 /**
  * Carga el estado completo de la instancia dentro de la transacción recibida.
  * Es la base de `computeWarnings` y de `buildSnapshot`.
  */
-export async function loadKnowledgeState(tx: Tx): Promise<KnowledgeState> {
+export async function loadKnowledgeState(
+  tx: Tx,
+  opts: LoadStateOptions = {},
+): Promise<KnowledgeState> {
   const result = await tx.execute<{ state: RawState }>(stateQuery());
   const raw = result.rows[0]?.state;
   if (!raw?.business) {
@@ -232,6 +245,11 @@ export async function loadKnowledgeState(tx: Tx): Promise<KnowledgeState> {
           updatedAt: toIsoTimestamp(raw.handoff_contact.updated_at),
         }
       : null,
+    handoffAlerts: {
+      whatsapp: raw.handoff_alerts?.whatsapp_phone ?? null,
+      email: raw.handoff_alerts?.email ?? null,
+      routes: opts.alertRoutes ?? NO_ROUTES,
+    },
     maxUpdatedAt: raw.max_updated_at ?? new Date(0).toISOString(),
   };
 }

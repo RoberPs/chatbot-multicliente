@@ -16,6 +16,15 @@ import {
   type SpeechToText,
 } from '../../src/conversation/ports.js';
 import type { ModelReply, ReplyContext } from '../../src/conversation/types.js';
+import type { DbOrTx } from '../../src/conversation/repositories/customer.js';
+import type {
+  AlertRoute,
+  AlertRoutesProvider,
+  AlertSendResult,
+  HandoffSummarizer,
+} from '../../src/handoff/ports.js';
+import { readHandoffAlerts } from '../../src/handoff/settings.js';
+import type { BusinessNotice, HandoffKind, RouteName } from '../../src/handoff/types.js';
 
 export class ManualClock implements Clock {
   private current: number;
@@ -202,9 +211,8 @@ export class FakeMediaFetcher implements MediaFetcher {
 
 /** Registro técnico que guarda los eventos en memoria. */
 export class RecordingActivityLog implements ActivityLog {
-  readonly events: Array<
-    BotEvent & { via?: string; customer?: string; conversationId?: string }
-  > = [];
+  readonly events: Array<BotEvent & { via?: string; customer?: string; conversationId?: string }> =
+    [];
   log(event: BotEvent, context: EventContext = {}): void {
     const { channel, customerKey } = context;
     // Los eventos del negocio (005) llevan su propio `via` y se emiten sin contexto de cliente.
@@ -220,5 +228,113 @@ export class RecordingActivityLog implements ActivityLog {
   }
   named<N extends BotEvent['event']>(name: N): Array<Extract<BotEvent, { event: N }>> {
     return this.events.filter((e) => e.event === name) as Array<Extract<BotEvent, { event: N }>>;
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Derivación al negocio (005): vías de aviso y resumen.
+// ---------------------------------------------------------------------------
+
+/** Guion de una vía de aviso falsa. */
+export type AlertStep =
+  | { ok: true; ref?: string | null }
+  | { fail: string }
+  /** No responde hasta que se cancela (plazo de 15 s de la vía). */
+  | { hang: true };
+
+/** Vía de aviso falsa: guarda los avisos recibidos y responde según su guion. */
+export class FakeAlertRoute implements AlertRoute {
+  readonly received: BusinessNotice[] = [];
+  private readonly steps: AlertStep[] = [];
+  private counter = 0;
+
+  constructor(
+    readonly name: RouteName,
+    private fallback: AlertStep = { ok: true },
+  ) {}
+
+  /** Programa las respuestas siguientes, en orden. Sin pasos programados, usa `fallback`. */
+  queue(...steps: AlertStep[]): this {
+    this.steps.push(...steps);
+    return this;
+  }
+
+  /** Cambia la respuesta por defecto (p. ej. para que falle siempre). */
+  always(step: AlertStep): this {
+    this.fallback = step;
+    return this;
+  }
+
+  async send(notice: BusinessNotice, opts: { signal: AbortSignal }): Promise<AlertSendResult> {
+    this.received.push(notice);
+    const step = this.steps.shift() ?? this.fallback;
+    if ('hang' in step) {
+      return new Promise((resolve) => {
+        const done = () => { resolve({ ok: false, failure: 'timeout' }); };
+        if (opts.signal.aborted) done();
+        else opts.signal.addEventListener('abort', done, { once: true });
+      });
+    }
+    if ('fail' in step) return { ok: false, failure: step.fail };
+    this.counter += 1;
+    return {
+      ok: true,
+      ref: step.ref === undefined ? `${this.name}-ref-${this.counter}` : step.ref,
+    };
+  }
+}
+
+/** Guion del resumidor falso. */
+export type SummaryStep = { summary: string } | { fail: true } | { hang: true };
+
+/** Resumidor falso: guarda las entradas y responde según su guion. */
+export class FakeSummarizer implements HandoffSummarizer {
+  readonly calls: Array<{ kind: HandoffKind; customerTexts: string[] }> = [];
+  private readonly steps: SummaryStep[] = [];
+
+  constructor(
+    private readonly fallback: SummaryStep = { summary: 'Resumen de prueba del motivo.' },
+  ) {}
+
+  queue(...steps: SummaryStep[]): this {
+    this.steps.push(...steps);
+    return this;
+  }
+
+  async summarize(
+    input: { kind: HandoffKind; customerTexts: string[] },
+    opts: { signal: AbortSignal },
+  ): Promise<{ summary: string }> {
+    this.calls.push({ kind: input.kind, customerTexts: [...input.customerTexts] });
+    const step = this.steps.shift() ?? this.fallback;
+    if ('hang' in step) {
+      return new Promise((_resolve, reject) => {
+        const done = () => { reject(new Error('timeout')); };
+        if (opts.signal.aborted) done();
+        else opts.signal.addEventListener('abort', done, { once: true });
+      });
+    }
+    if ('fail' in step) throw new Error('fallo del resumidor');
+    return { summary: step.summary };
+  }
+}
+
+/**
+ * Proveedor de vías falso: devuelve las vías dadas cuyo destino está configurado en
+ * `handoff_alerts` (leído sin caché, como el real) y, en el playground, solo la simulada.
+ */
+export class FakeAlertRoutesProvider implements AlertRoutesProvider {
+  constructor(
+    private readonly routes: { whatsapp?: AlertRoute; email?: AlertRoute },
+    private readonly simulated: AlertRoute,
+  ) {}
+
+  async available(tx: DbOrTx, opts: { simulate: boolean }): Promise<AlertRoute[]> {
+    if (opts.simulate) return [this.simulated];
+    const alerts = await readHandoffAlerts(tx);
+    const out: AlertRoute[] = [];
+    if (this.routes.whatsapp && alerts.whatsapp) out.push(this.routes.whatsapp);
+    if (this.routes.email && alerts.email) out.push(this.routes.email);
+    return out;
   }
 }

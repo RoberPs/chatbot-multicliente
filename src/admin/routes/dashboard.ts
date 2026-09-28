@@ -28,7 +28,7 @@ export async function dashboardRoutes(app: FastifyInstance): Promise<void> {
   const { db } = app.knowledge;
 
   const page = async () => {
-    const state = await readState(db);
+    const state = await readState(app.knowledge);
     const now = app.bot?.clock.now() ?? new Date();
     return {
       state,

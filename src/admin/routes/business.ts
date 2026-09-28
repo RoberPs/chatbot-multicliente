@@ -26,7 +26,7 @@ export async function businessRoutes(app: FastifyInstance): Promise<void> {
   const title = 'Datos del negocio';
 
   app.get('/business', async (request, reply) => {
-    const state = await readState(deps.db);
+    const state = await readState(deps);
     return renderPage(request, reply, 'business', {
       state,
       title,
@@ -42,7 +42,7 @@ export async function businessRoutes(app: FastifyInstance): Promise<void> {
       redirectTo: '/admin/business',
       message: (change) => handoffChangeMessage(change, 'business'),
       onError: async (error) => {
-        const state = await readState(deps.db);
+        const state = await readState(deps);
         return renderPage(
           request,
           reply,

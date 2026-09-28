@@ -30,7 +30,7 @@ export async function policiesRoutes(app: FastifyInstance): Promise<void> {
   const title = 'Políticas';
 
   app.get('/policies', async (request, reply) => {
-    const state = await readState(deps.db);
+    const state = await readState(deps);
     return renderPage(request, reply, 'policies', { state, title, values: policiesValues(state) });
   });
 
@@ -45,7 +45,7 @@ export async function policiesRoutes(app: FastifyInstance): Promise<void> {
           reply,
           'policies',
           {
-            state: await readState(deps.db),
+            state: await readState(deps),
             title,
             values: { ...form, payment_methods: asList(form.payment_methods) },
             ...formErrorData(error),

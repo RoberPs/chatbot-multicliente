@@ -6,8 +6,7 @@ import type { DbOrTx } from '../conversation/repositories/customer.js';
 import type { BusinessNotice, HandoffKind, RouteName } from './types.js';
 
 export type AlertSendResult =
-  | { ok: true; ref: string | null; body?: string }
-  | { ok: false; failure: string };
+  { ok: true; ref: string | null; body?: string } | { ok: false; failure: string };
 
 export interface AlertRoute {
   readonly name: RouteName;

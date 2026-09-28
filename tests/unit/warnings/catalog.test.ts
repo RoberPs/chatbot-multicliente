@@ -6,6 +6,7 @@ import { describe, expect, it } from 'vitest';
 import { computeWarnings } from '../../../src/knowledge/warnings.js';
 import type { KnowledgeState, Warning } from '../../../src/knowledge/types.js';
 import {
+  bothAlertRoutes,
   configuredHandoff,
   emptyState,
   resource,
@@ -22,17 +23,30 @@ describe('catálogo de avisos: tabla de ejemplos del contrato', () => {
   const state = emptyState();
 
   it('instancia recién creada', () => {
-    expect(codes(state)).toEqual(['HANDOFF_UNREACHABLE', 'BUSINESS_HOURS_MISSING']);
+    expect(codes(state)).toEqual([
+      'HANDOFF_UNREACHABLE',
+      'BUSINESS_HOURS_MISSING',
+      'HANDOFF_ALERTS_NONE',
+    ]);
   });
 
   it('+ teléfono del negocio', () => {
     state.business.phone = '+34600123456';
-    expect(codes(state).sort()).toEqual(['BUSINESS_HOURS_MISSING', 'HANDOFF_CONTACT_MISSING']);
+    expect(codes(state).sort()).toEqual([
+      'BUSINESS_HOURS_MISSING',
+      'HANDOFF_ALERTS_NONE',
+      'HANDOFF_CONTACT_MISSING',
+    ]);
   });
 
-  it('+ horario + contacto de derivación → ninguno', () => {
+  it('+ horario + contacto de derivación → solo falta avisar al negocio (005)', () => {
     state.businessHours = typicalWeek();
     state.handoff = configuredHandoff();
+    expect(codes(state)).toEqual(['HANDOFF_ALERTS_NONE']);
+  });
+
+  it('+ las dos vías de aviso al negocio → ninguno', () => {
+    state.handoffAlerts = bothAlertRoutes();
     expect(codes(state)).toEqual([]);
   });
 
@@ -111,6 +125,7 @@ describe('catálogo de avisos: reglas generales', () => {
     expect(summary(state)).toEqual([
       'HANDOFF_UNREACHABLE:Contacto de derivación',
       'BUSINESS_HOURS_MISSING:Negocio',
+      'HANDOFF_ALERTS_NONE:Avisos al negocio',
       'SERVICE_DURATION_MISSING:Alfa',
       'SERVICE_DURATION_MISSING:Zeta',
     ]);
@@ -120,6 +135,7 @@ describe('catálogo de avisos: reglas generales', () => {
     const state = emptyState({
       businessHours: typicalWeek(),
       handoff: configuredHandoff(),
+      handoffAlerts: bothAlertRoutes(),
       services: [service({ active: false, durationMinutes: null, priceCents: null })],
       resources: [resource({ active: false, hours: [slot(7, '10:00', '12:00')] })],
     });
@@ -129,6 +145,7 @@ describe('catálogo de avisos: reglas generales', () => {
   it('RESOURCE_HOURS_OUTSIDE_BUSINESS no se evalúa sin horario del negocio', () => {
     const state = emptyState({
       handoff: configuredHandoff(),
+      handoffAlerts: bothAlertRoutes(),
       resources: [resource({ hours: [slot(7, '10:00', '12:00')] })],
     });
     expect(codes(state)).toEqual(['BUSINESS_HOURS_MISSING']);
@@ -138,6 +155,7 @@ describe('catálogo de avisos: reglas generales', () => {
     const state = emptyState({
       businessHours: typicalWeek(),
       handoff: configuredHandoff(),
+      handoffAlerts: bothAlertRoutes(),
       resources: [resource({ name: 'R', hours: [slot(1, '08:00', '15:00')] })],
     });
     const [w] = computeWarnings(state) as [Warning];
@@ -159,7 +177,9 @@ describe('catálogo de avisos: reglas generales', () => {
     const phone = emptyState();
     phone.business.phone = '+34600123456';
     for (const s of [none, phone]) {
-      const handoffCodes = codes(s).filter((c) => c.startsWith('HANDOFF'));
+      const handoffCodes = codes(s).filter(
+        (c) => c === 'HANDOFF_CONTACT_MISSING' || c === 'HANDOFF_UNREACHABLE',
+      );
       expect(handoffCodes).toHaveLength(1);
     }
   });
@@ -175,7 +195,11 @@ describe('catálogo de avisos: reglas generales', () => {
 
   it('el enlace a mapa no genera avisos, con o sin dirección (003, FR-015)', () => {
     const base = () => {
-      const s = emptyState({ businessHours: typicalWeek(), handoff: configuredHandoff() });
+      const s = emptyState({
+        businessHours: typicalWeek(),
+        handoff: configuredHandoff(),
+        handoffAlerts: bothAlertRoutes(),
+      });
       s.business.phone = '+34600123456';
       return s;
     };

@@ -111,6 +111,24 @@ export interface HandoffRecord {
   updatedAt: string;
 }
 
+/** Vías de aviso de derivación que esta instancia puede usar (005, R16). */
+export interface AlertRouteAvailability {
+  /** Hay canal de WhatsApp configurado. */
+  whatsapp: boolean;
+  /** Hay `SMTP_URL`, `SMTP_FROM` y `PUBLIC_BASE_URL`. */
+  email: boolean;
+}
+
+/**
+ * Destinos de los avisos de derivación (005, R16) y vías de la instancia. Solo para los avisos
+ * del panel: no entra en el `KnowledgeSnapshot`, el bot no debe conocerlos.
+ */
+export interface HandoffAlertsState {
+  whatsapp: string | null;
+  email: string | null;
+  routes: AlertRouteAvailability;
+}
+
 export interface KnowledgeState {
   business: BusinessRecord;
   businessHours: WeeklySlot[];
@@ -124,6 +142,8 @@ export interface KnowledgeState {
   tone: ToneRecord | null;
   /** `null` si no hay contacto de derivación configurado. */
   handoff: HandoffRecord | null;
+  /** Destinos de los avisos de derivación (005). */
+  handoffAlerts: HandoffAlertsState;
   /** Máximo `updated_at` de todas las tablas, ISO 8601. */
   maxUpdatedAt: string;
 }
@@ -228,6 +248,8 @@ export interface KnowledgeReader {
 export type WarningSeverity = 'normal' | 'critical';
 
 export type WarningCode =
+  | 'HANDOFF_ALERTS_NONE'
+  | 'HANDOFF_ALERTS_SINGLE'
   | 'SERVICE_DURATION_MISSING'
   | 'BUSINESS_HOURS_MISSING'
   | 'SERVICE_PRICE_MISSING'
@@ -236,7 +258,7 @@ export type WarningCode =
   | 'HANDOFF_CONTACT_MISSING'
   | 'HANDOFF_UNREACHABLE';
 
-export type WarningTargetKind = 'business' | 'service' | 'resource' | 'handoff';
+export type WarningTargetKind = 'business' | 'service' | 'resource' | 'handoff' | 'handoff_alerts';
 
 export interface Warning {
   code: WarningCode;

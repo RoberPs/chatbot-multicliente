@@ -9,7 +9,7 @@ export async function toneRoutes(app: FastifyInstance): Promise<void> {
   const title = 'Tono';
 
   app.get('/tone', async (request, reply) => {
-    const state = await readState(deps.db);
+    const state = await readState(deps);
     return renderPage(request, reply, 'tone', {
       state,
       title,
@@ -30,7 +30,7 @@ export async function toneRoutes(app: FastifyInstance): Promise<void> {
           request,
           reply,
           'tone',
-          { state: await readState(deps.db), title, values: form, ...formErrorData(error) },
+          { state: await readState(deps), title, values: form, ...formErrorData(error) },
           error.status,
         ),
     });

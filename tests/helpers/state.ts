@@ -32,6 +32,7 @@ export function emptyState(overrides: Partial<KnowledgeState> = {}): KnowledgeSt
     policies: null,
     tone: null,
     handoff: null,
+    handoffAlerts: { whatsapp: null, email: null, routes: { whatsapp: false, email: false } },
     maxUpdatedAt: T,
     ...overrides,
   };
@@ -92,4 +93,11 @@ export const configuredHandoff = (): KnowledgeState['handoff'] => ({
   channels: [{ id: nextId(), type: 'whatsapp', value: '+34611222333', sortOrder: 0 }],
   hours: [],
   updatedAt: T,
+});
+
+/** Destinos de avisos de derivación con las dos vías disponibles (005): sin avisos de vías. */
+export const bothAlertRoutes = (): KnowledgeState['handoffAlerts'] => ({
+  whatsapp: '+34611000111',
+  email: 'avisos@ejemplo.com',
+  routes: { whatsapp: true, email: true },
 });

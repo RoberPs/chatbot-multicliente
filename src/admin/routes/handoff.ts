@@ -20,7 +20,7 @@ export async function handoffRoutes(app: FastifyInstance): Promise<void> {
   const title = 'Contacto de derivación';
 
   app.get('/handoff', async (request, reply) => {
-    const state = await readState(deps.db);
+    const state = await readState(deps);
     return renderPage(request, reply, 'handoff', {
       state,
       title,
@@ -40,7 +40,7 @@ export async function handoffRoutes(app: FastifyInstance): Promise<void> {
       redirectTo: '/admin/handoff',
       message: (change) => handoffChangeMessage(change, 'handoff'),
       onError: async (error) => {
-        const state = await readState(deps.db);
+        const state = await readState(deps);
         // 409 (FR-032): no se ha guardado nada; se muestran los medios guardados, sin marcas
         // de quitar (003, FR-003). 422: se conservan los valores y las marcas del operador.
         const shown = error.status === 409 ? handoffValues(state) : values;
