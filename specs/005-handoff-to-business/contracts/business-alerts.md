@@ -38,8 +38,13 @@ Contacta con el cliente desde tu teléfono. Pulsa «Le atiendo» cuando lo hagas
 ```text
 Recordatorio: {{1}} ({{2}}) sigue esperando respuesta desde {{3}}.
 Motivo: {{4}}
-Le hemos dado tu contacto directo. Pulsa «Le atiendo» si ya le estás atendiendo o «Terminado» si ya acabaste.
+Contacta con el cliente desde tu teléfono. Pulsa «Le atiendo» si ya le estás atendiendo o «Terminado» si ya acabaste.
 ```
+
+El texto es el mismo para los dos momentos del recordatorio (FR-019): a las 2 h de horario y al
+cerrarse por inactividad sin confirmar. Por eso no dice si el cliente ha recibido el contacto
+directo ni si la conversación sigue derivada; si el negocio pulsa un botón tras el cierre, el
+acuse de "ya terminada" se lo explica. El email sí distingue los dos casos (§ Email).
 
 ### `derivacion_mensaje`
 
@@ -104,7 +109,7 @@ Acuses y ayuda (texto libre; la ventana del negocio está abierta porque acaba d
 | `attend` hecho | "Anotado: atiendes a {nombre}. Pulsa «Terminado» cuando acabes." |
 | `end` hecho | "Anotado: derivación de {nombre} terminada. El asistente vuelve a atenderle." |
 | ya confirmada (`attend`) | "Ya estaba anotado que atiendes a {nombre}." |
-| ya terminada | "Esa derivación ya había terminado; no se ha cambiado nada." |
+| ya terminada | "Esa derivación ya había terminado y la conversación ha vuelto al asistente; no se ha cambiado nada. Si aún no has contactado con {nombre}, su teléfono es {teléfono}." |
 | token no válido | "No reconozco ese botón; no se ha cambiado nada." |
 | ayuda (FR-008b) | "Este número es el del asistente automático y no reenvía lo que escribes al cliente. Contesta al cliente desde tu teléfono y usa los botones «Le atiendo» y «Terminado» de cada aviso." |
 
@@ -138,9 +143,13 @@ Terminado:  {PUBLIC_BASE_URL}/handoff/{token}/end
 
 Si no confirmas en 2 horas de tu horario de atención, te enviaremos un recordatorio y daremos al
 cliente tu contacto directo. Si el cliente no escribe en 24 horas, la conversación vuelve al
-asistente.
+asistente (y, si no habías confirmado, te enviaremos el recordatorio en ese momento).
 ```
 
+- El recordatorio repite los datos del aviso y termina con una de dos frases: a las 2 h de
+  horario, "Le hemos dado tu contacto directo por si prefiere llamarte."; al cerrarse por
+  inactividad, "Como el cliente no ha escrito en 24 horas, la conversación ha vuelto al asistente,
+  pero sigue esperando que le contactes." En el segundo caso no lleva enlaces.
 - El reenvío lleva el texto completo de cada mensaje del lote (sin recortar), en orden, con su
   hora local, y los mismos dos enlaces.
 - Recordatorio y reenvíos: `In-Reply-To` y `References` = `Message-ID` del aviso
@@ -161,7 +170,7 @@ Límite por IP: 30 peticiones / 15 min (en memoria, como el chat web; la IP no s
 | Caso | Respuesta |
 |------|-----------|
 | formato no válido o token desconocido | `404`, página "Este enlace no es válido." |
-| derivación terminada | `200`, "Esta derivación ya ha terminado." sin botón |
+| derivación terminada | `200`, "Esta derivación ya ha terminado y la conversación ha vuelto al asistente. Si aún no has contactado con {nombre}, su teléfono es {teléfono}." sin botón |
 | `attend` y ya confirmada | `200`, "Ya está anotado que atiendes a {nombre}." + botón "Terminado" (a `…/end`) |
 | resto | `200`, "{nombre} ({teléfono}) · {tipo} · desde {desde}" y un formulario `POST` a la misma URL con el botón "Le atiendo" o "Terminado" |
 
@@ -170,7 +179,7 @@ Límite por IP: 30 peticiones / 15 min (en memoria, como el chat web; la IP no s
 Cuerpo vacío o `application/x-www-form-urlencoded` ignorado. Llama a
 `handoff.act(token, action, 'email')` y responde `200` con el resultado
 ("Anotado: atiendes a {nombre}.", "Anotado: derivación terminada. El asistente vuelve a atender a
-{nombre}.", "Ya estaba…", "Esta derivación ya había terminado; no se ha cambiado nada."), o `404`
+{nombre}.", "Ya estaba…", o el texto de "derivación terminada" del `GET`), o `404`
 si el token no es válido. Repetir el `POST` no cambia nada (idempotente).
 
 ## Garantías verificables (contrato e integración)

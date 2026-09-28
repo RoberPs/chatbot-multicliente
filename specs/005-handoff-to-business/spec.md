@@ -164,8 +164,8 @@ tiempo de inactividad.
 2. **Given** dos derivaciones activas de clientes distintos, **When** el negocio pulsa "Terminado"
    en el aviso de una de ellas, **Then** solo termina esa derivación.
 3. **Given** una conversación derivada, **When** el negocio escribe texto libre al número del bot
-   en lugar de pulsar un botón, **Then** recibe una ayuda breve sobre cómo usar los botones y
-   ninguna derivación cambia de estado.
+   en lugar de pulsar un botón, **Then** recibe una ayuda breve sobre cómo usar los botones (si no
+   la ha recibido en los últimos 15 minutos) y ninguna derivación cambia de estado.
 4. **Given** una conversación derivada, **When** pasan 24 horas sin mensajes del cliente,
    **Then** vuelve al bot.
 5. **Given** una derivación activa, **When** el operador la termina desde el panel, **Then** el
@@ -258,7 +258,12 @@ que es una queja.
   derivación para seguir probando.
 - **Límite de mensajes por cliente o tope del chat web alcanzado**: la petición de persona sigue
   atendiéndose con el aviso con el contacto de esos límites (spec 002, FR-004a; spec 004); los
-  mensajes que el cliente envía durante la derivación cuentan para el límite por cliente.
+  mensajes que el cliente envía durante la derivación cuentan para el límite por cliente; si lo
+  supera, recibe el aviso de límite con el contacto del negocio y esos mensajes no se reenvían.
+- **Derivación fuera de horario que caduca antes de la apertura** (por ejemplo, viernes por la
+  noche con apertura el lunes): a las 24 horas sin mensajes del cliente vuelve al bot y el negocio
+  recibe en ese momento el recordatorio (FR-019). Si el negocio pulsa después un botón o enlace,
+  se le indica que la conversación ya volvió al bot y se le recuerda el teléfono del cliente.
 - **La conversación derivada caduca** (30 días sin mensajes): se borra como cualquier otra, y con
   ella el estado de derivación.
 - **Cliente que escribe por WhatsApp y por la web**: son dos conversaciones independientes (spec
@@ -292,7 +297,10 @@ que es una queja.
   (petición de persona, consulta sin resolver o queja) y un resumen breve del motivo sacado de la
   conversación.
 - **FR-007**: El resumen del motivo MUST basarse solo en lo que el cliente ha escrito en la
-  conversación y MUST NOT añadir datos que el cliente no haya dado.
+  conversación y MUST NOT añadir datos que el cliente no haya dado. El sistema MUST comprobar que
+  los datos concretos del resumen (teléfonos, importes, fechas, horas y direcciones web, los mismos
+  que verifica la spec 002) aparecen en lo que escribió el cliente y, si no, MUST usar un resumen
+  construido sin el modelo. El resto del contenido se valida con la evaluación de SC-003.
 - **FR-008**: El aviso MUST enviarse por todas las vías disponibles de las dos previstas:
   WhatsApp (desde el número del bot al WhatsApp de avisos del negocio) y email (al email de avisos
   del negocio). Una vía está disponible si el operador ha configurado su destino y, en el caso de
@@ -304,7 +312,8 @@ que es una queja.
   "Terminado", que actúan solo sobre la derivación de ese mensaje. Por email, MUST llevar dos
   enlaces equivalentes, que MUST funcionar sin iniciar sesión y solo para esa derivación.
 - **FR-008b**: Si el negocio escribe texto libre al número del bot en lugar de pulsar un botón, el
-  sistema MUST contestarle con una ayuda breve sobre los botones y MUST NOT cambiar el estado de
+  sistema MUST contestarle con una ayuda breve sobre los botones, como mucho una vez cada 15
+  minutos por número, y MUST NOT cambiar el estado de
   ninguna derivación ni tratar ese mensaje como de un cliente.
 - **FR-009**: El aviso MUST enviarse en el momento de la derivación, también fuera del horario del
   negocio.
@@ -325,7 +334,8 @@ que es una queja.
 
 - **FR-013**: Mientras una conversación está derivada, el bot MUST NOT generar respuestas
   automáticas en ella, tampoco saludos, avisos de tipo de mensaje no atendido ni ofertas de
-  derivación.
+  derivación. Solo hay dos excepciones: el mensaje de FR-019 y el aviso de límite de mensajes de
+  la spec 002 (FR-004a), que incluye el contacto del negocio.
 - **FR-013a**: Mientras una conversación del chat web está derivada, el chat MUST mostrar un aviso
   fijo de la interfaz (no un mensaje del bot) que indique que el negocio contactará al visitante
   en el teléfono que ha dado y que lo que escriba también le llega. El aviso MUST desaparecer al
@@ -333,7 +343,8 @@ que es una queja.
 - **FR-014**: Mientras una conversación está derivada, los mensajes nuevos del cliente MUST
   reenviarse al negocio por las mismas vías que el aviso, identificando al cliente y la
   derivación, sin generar avisos de derivación nuevos. Los mensajes seguidos MUST agruparse como
-  los mensajes normales (spec 002, FR-004) y reenviarse en un único mensaje por grupo.
+  los mensajes normales (spec 002, FR-004) y reenviarse en un único mensaje por grupo. Los
+  mensajes que superan el límite por cliente (spec 002, FR-004a) MUST NOT reenviarse.
 - **FR-015**: La derivación MUST afectar solo a la conversación derivada; el bot sigue atendiendo
   el resto de conversaciones de la instancia.
 
@@ -350,13 +361,16 @@ que es una queja.
   haya confirmado o no el negocio.
 - **FR-018**: Al terminar una derivación, por cualquier causa, el bot MUST NOT enviar ningún
   mensaje al cliente. Una vez de vuelta, el siguiente mensaje del cliente MUST contestarlo el bot,
-  que MUST tener en cuenta la conversación anterior sin volver a derivar por el mismo motivo salvo
-  que el cliente lo pida.
+  que MUST tener en cuenta la conversación anterior y MUST NOT iniciar por su cuenta otra
+  derivación por el mismo motivo. Ofrecerla (FR-002) y que el cliente acepte cuenta como pedirla.
 - **FR-019**: Si el negocio no confirma que atiende la derivación en 2 horas contadas solo dentro
   de su horario de atención (FR-011), el sistema MUST enviarle un recordatorio por las mismas vías
   que el aviso, una sola vez por derivación, y el bot MUST enviar al cliente un único mensaje con
   el contacto de derivación del negocio (spec 002, FR-016) para que pueda contactar directamente.
-  La conversación sigue derivada.
+  La conversación sigue derivada. Si la derivación termina por inactividad (FR-017) sin haberse
+  confirmado ni enviado el recordatorio, el recordatorio MUST enviarse al negocio en ese momento,
+  indicando que la conversación ha vuelto al bot y que el cliente sigue esperando su contacto. En
+  ese caso no se envía nada al cliente (FR-018).
 
 **Configuración, pruebas y registros**
 
@@ -403,10 +417,11 @@ que es una queja.
 - **SC-002**: El negocio recibe el aviso por al menos una vía en menos de 1 minuto desde que el
   cliente completa la petición (incluidos, si hacían falta, su nombre y teléfono).
 - **SC-003**: En una evaluación con el negocio leyendo solo el aviso, al menos el 90 % de los
-  avisos permite identificar al cliente y el motivo sin consultar la conversación, y ninguno
-  contiene datos que el cliente no haya dado.
+  avisos permite identificar al cliente y el motivo sin consultar la conversación y, en la
+  revisión manual, ninguno contiene datos que el cliente no haya dado (tampoco servicios, nombres o
+  hechos no mencionados).
 - **SC-004**: El 0 % de los mensajes que un cliente envía en una conversación derivada recibe
-  respuesta automática.
+  respuesta automática, salvo el aviso de límite de mensajes y el mensaje de FR-019.
 - **SC-005**: El 100 % de las derivaciones fuera de horario indica la próxima franja de atención
   correcta, incluidos los casos con cierres puntuales.
 - **SC-006**: En una evaluación con quejas y comentarios negativos que no lo son, al menos el 95 %
@@ -416,8 +431,9 @@ que es una queja.
   hay al menos una vía de aviso disponible.
 - **SC-008**: El 100 % de las conversaciones derivadas vuelve al bot como mucho 24 horas después
   del último mensaje del cliente.
-- **SC-009**: El 100 % de las derivaciones no confirmadas en 2 horas de horario de atención genera
-  un único recordatorio al negocio y un único mensaje al cliente con el contacto del negocio.
+- **SC-009**: El 100 % de las derivaciones que no se confirman en 2 horas de horario de atención,
+  o que terminan por inactividad antes de confirmarse, genera un único recordatorio al negocio.
+  Solo en el primer caso se envía además un único mensaje al cliente con el contacto del negocio.
 - **SC-010**: El 100 % de las pulsaciones de "Le atiendo" o "Terminado" cambia solo la derivación
   a la que pertenece el mensaje, también con varias derivaciones activas a la vez.
 

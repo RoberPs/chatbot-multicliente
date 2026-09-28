@@ -20,7 +20,7 @@ datos personales y permite seguir una derivación de principio a fin.
 | `handoff_forwarded` | `handoffId`, `messagesCovered`, `routes` | info | reenvío de un lote |
 | `handoff_forward_failed` | `handoffId`, `messagesCovered` | error | fallan todas las vías de un reenvío |
 | `handoff_confirmed` | `handoffId`, `via: 'whatsapp'\|'email'`, `minutesToConfirm` | info | "Le atiendo" o "Terminado" sin confirmar antes |
-| `handoff_reminder_sent` | `handoffId`, `routes`, `customerNotified: boolean` | warn | FR-019 |
+| `handoff_reminder_sent` | `handoffId`, `routes`, `trigger: 'schedule'\|'inactivity'`, `customerNotified: boolean` | warn | FR-019 (a las 2 h de horario, o al cerrarse por inactividad sin confirmar) |
 | `handoff_ended` | `handoffId`, `cause: 'business'\|'inactivity'\|'operator'\|'playground'`, `durationMinutes`, `confirmed: boolean` | info | fin por cualquier causa |
 | `handoff_action_ignored` | `reason: 'invalid'\|'already_ended'\|'already_confirmed'`, `via` | debug | botón o enlace sin efecto |
 | `handoff_business_message` | `kind: 'button'\|'text'\|'other'`, `helpSent: boolean` | debug | el WhatsApp de avisos escribe al bot |

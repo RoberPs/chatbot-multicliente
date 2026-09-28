@@ -71,7 +71,7 @@ Se evalúa en este orden; gana la primera fila que aplica:
 | 4 | `request` y no `hasRoutes` | no derivar (002) | cuerpo del modelo + CONTACTO (`handoff_requested`) | `null` |
 | 5 | `step = collecting` | completar datos (§ Datos) | según § Datos | según § Datos |
 | 6 | `step = offered` y `model.acceptsHandoff` | derivar `unresolved` | como en la fila 1 | `collecting` o `null` |
-| 7 | (`model.offerContact` o `model.bookingRequested`) y `hasRoutes` y no `handoffEnded` y no `needsRephrase` | ofrecer (FR-002) | cuerpo del modelo + OFERTA, sin CONTACTO | `offered` |
+| 7 | (`model.offerContact` o `model.bookingRequested`) y `hasRoutes` y no `needsRephrase` | ofrecer (FR-002) | cuerpo del modelo + OFERTA, sin CONTACTO | `offered` |
 | 8 | resto | respuesta normal de la 002 (incluye CONTACTO por oferta, reserva o precio a consultar) | cuerpo del modelo (+ CONTACTO según la 002) | `null` |
 
 Notas:
@@ -80,8 +80,9 @@ Notas:
   presenta una queja o vuelve a pedir una persona, se recalcula el tipo y se siguen pidiendo los
   datos que falten.
 - `step = offered` caduca en cualquier fila distinta de la 6 (US2-3: rechaza o cambia de tema).
-- `handoffEnded` (fila 7): tras una derivación terminada, lo que no se sabe se resuelve con el
-  CONTACTO de la 002 y no se vuelve a ofrecer; una petición explícita (filas 1–4) sí crea una
+- `handoffEnded` no cambia la tabla: solo se usa en el prompt (no saludar y tener en cuenta lo
+  hablado). Tras una derivación terminada, una consulta sin dato vuelve a ofrecer la derivación
+  (FR-002), y solo se deriva si el cliente acepta; una petición explícita (filas 1–4) crea una
   derivación nueva (FR-018, edge case "vuelve a escribir").
 - En las filas 1, 3 y 6 el cuerpo del modelo se descarta (R3, regla 3).
 - Petición de persona en mitad de otra gestión: gana la fila 3 sobre cualquier intercambio
@@ -163,7 +164,8 @@ y chat activado y antes de la ventana de WhatsApp:
    respuesta con las plantillas de arriba y, si toca, `handoff.start(...)` antes de `deliver`.
 4. `handoff_step` y los datos de contacto se guardan en la misma transacción que el saliente.
 
-`rateLimitNotice` no envía R-LIMIT si la conversación tiene derivación activa (R11).
+`rateLimitNotice` envía R-LIMIT (con CONTACTO) también con derivación activa, como en la 002; los
+entrantes limitados no se reenvían (R11, FR-013, FR-014).
 
 ## Reenvío durante la derivación (`forward`, FR-014)
 
@@ -177,7 +179,11 @@ y chat activado y antes de la ventana de WhatsApp:
 ## Barrido (`sweep`, R14), cada 60 s
 
 1. Inactividad: `UPDATE handoff SET status='ended', ended_at=now, end_cause='inactivity' FROM
-   conversation WHERE … last_inbound_at <= now − 24 h`. Sin mensaje al cliente (FR-018).
+   conversation WHERE … last_inbound_at <= now − 24 h`. Sin mensaje al cliente (FR-018). Las que
+   se cierran sin `confirmed_at` y sin `reminder_sent_at` se marcan con `reminder_sent_at` en la
+   misma sentencia (`RETURNING`) y, fuera de la transacción, reciben el aviso `reminder` por las
+   vías, sin R-HANDOFF-LATE; `handoff_reminder_sent` con `trigger: 'inactivity'` y
+   `customerNotified: false` (FR-019).
 2. Recordatorio: `SELECT … WHERE status='active' AND confirmed_at IS NULL AND reminder_sent_at IS
    NULL AND reminder_due_at <= now FOR UPDATE SKIP LOCKED`, marca `reminder_sent_at` y, fuera de la
    transacción: aviso `reminder` por las vías + R-HANDOFF-LATE al cliente con la entrega de su

@@ -269,8 +269,9 @@ saliente, no hay saludo ni R-MEDIA (FR-013); un archivo sin texto se reenvía co
 
 Otras reglas durante la derivación:
 
-- Límite por cliente superado: no se envía R-LIMIT (FR-013 manda) y los mensajes limitados no se
-  reenvían (protege al negocio de una ráfaga).
+- Límite por cliente superado: se envía R-LIMIT como en la 002, que ya lleva CONTACTO (Principio
+  V: el cliente sabe que esos mensajes no llegan y cómo contactar; FR-013 lo admite como
+  excepción), y los mensajes limitados no se reenvían (protege al negocio de una ráfaga).
 - Una nueva petición de persona o insistencia se reenvía como un mensaje más; no genera aviso
   nuevo (US3-4).
 - `history()` incluye los entrantes `forwarded`, así el bot los tiene en cuenta cuando la
@@ -346,7 +347,12 @@ el procesador:
 - **Inactividad** (FR-017): derivaciones activas cuya conversación tiene
   `last_inbound_at ≤ now − 24 h` → terminadas con causa `inactivity`. Coincide con la regla de la
   002 (a las 24 h el siguiente mensaje abre una conversación nueva), así que el cliente nunca
-  queda mudo más de 24 h.
+  queda mudo más de 24 h. Las que se cierran sin `confirmed_at` y sin `reminder_sent_at` se marcan
+  con `reminder_sent_at` en la misma sentencia (`RETURNING`) y, fuera de la transacción, reciben el
+  aviso `reminder` por las vías, sin R-HANDOFF-LATE (FR-019, FR-018). Se registra
+  `handoff_reminder_sent` con `trigger: 'inactivity'` y `customerNotified: false`. Así el
+  recordatorio llega también cuando las 2 h de horario caerían después del cierre (por ejemplo,
+  derivación el viernes por la noche con apertura el lunes).
 - **Recordatorio** (FR-019): activas, sin confirmar, sin recordatorio, con
   `reminder_due_at ≤ now` → recordatorio al negocio por las vías y un único mensaje al cliente
   (R-HANDOFF-LATE con CONTACTO). El mensaje al cliente usa la entrega del canal y respeta la
@@ -456,7 +462,7 @@ teléfonos; el cliente, como hasta ahora, solo por seudónimo y `via`; la deriva
 | Enlaces | `GET` página + `POST` acción; 30 peticiones/15 min por IP | R8 |
 | Tokens | 128 bits, uno por derivación, solo hash en BD | R9 |
 | Negocio → bot | enrutado antes de la recepción; ayuda como mucho cada 15 min | R10 |
-| Durante | estado `forwarded`; sin R-LIMIT; limitados no se reenvían | R11 |
+| Durante | estado `forwarded`; R-LIMIT con CONTACTO como en la 002; limitados no se reenvían | R11 |
 | Inicio | enviar primero, guardar después en una transacción | R12 |
 | Horario | contacto → negocio, con cierres; 60 días de horizonte; `reminder_due_at` precalculado | R13 |
 | Plazos | barrido cada 60 s: 24 h de inactividad y recordatorio único | R14 |
