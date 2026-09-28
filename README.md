@@ -8,6 +8,7 @@ Estados: especificada → planificada → en implementación → completada (o a
 | 002 | Atención de dudas y precios por WhatsApp | Núcleo | En implementación | `002-whatsapp-faq-bot` | [spec](specs/002-whatsapp-faq-bot/spec.md) · [plan](specs/002-whatsapp-faq-bot/plan.md) · [tareas](specs/002-whatsapp-faq-bot/tasks.md) | 2026-09-25  |
 | 003 | Claridad del panel del operador y enlace a mapa | Núcleo | En implementación | `004-web-channel` | [spec](specs/003-admin-panel-clarity/spec.md) · [plan](specs/003-admin-panel-clarity/plan.md) · [tareas](specs/003-admin-panel-clarity/tasks.md) | 2026-09-28  |
 | 004 | Canal web del bot de atención | Núcleo | Completada | `004-web-channel` | [spec](specs/004-web-channel/spec.md) · [plan](specs/004-web-channel/plan.md) · [tareas](specs/004-web-channel/tasks.md) | 2026-09-28  |
+| 005 | Derivación de la conversación al negocio | Núcleo | Especificada | `005-handoff-to-business` | [spec](specs/005-handoff-to-business/spec.md) | 2026-09-28  |
 
 ---
 
