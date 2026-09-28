@@ -24,6 +24,7 @@
     "db:migrate": "tsx src/db/migrate.ts",
     "kb:snapshot": "tsx src/cli/snapshot.ts",
     "bot:chat": "tsx src/cli/bot-chat.ts",
+    "handoff:templates": "tsx src/cli/handoff-templates.ts",
     "operator:hash-password": "tsx src/cli/hash-password.ts"
   },
   "dependencies": {
@@ -40,6 +41,7 @@
     "fastify-plugin": "^6.0.0",
     "htmx.org": "^2.0.11",
     "libphonenumber-js": "^1.13.13",
+    "nodemailer": "^10.0.12",
     "pg": "^8.23.0",
     "zod": "^4.6.5"
   },
@@ -47,6 +49,7 @@
     "@eslint/js": "^10.0.1",
     "@testcontainers/postgresql": "^12.1.0",
     "@types/node": "^22.0.0",
+    "@types/nodemailer": "^8.0.2",
     "@types/pg": "^8.23.1",
     "drizzle-kit": "^0.31.11",
     "eslint": "^10.11.0",

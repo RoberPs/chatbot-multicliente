@@ -59,9 +59,9 @@ del bot. Cada historia añade después su parte de la tabla de decisión
 
 **Purpose**: dependencia de email, variables de entorno nuevas y empaquetado de las vistas nuevas.
 
-- [ ] T001 Añadir `nodemailer` a `dependencies` y `@types/nodemailer` a `devDependencies` en package.json (con `pnpm add`), y el script `"handoff:templates": "tsx src/cli/handoff-templates.ts"`
-- [ ] T002 [P] Documentar en .env.example `SMTP_URL=` (`smtps://usuario:clave@host:465` o `smtp://…:587`), `SMTP_FROM=` y `WHATSAPP_TEMPLATE_LANG=es`, indicando que la vía email necesita además `PUBLIC_BASE_URL` y que la vía WhatsApp necesita las tres plantillas aprobadas (`pnpm handoff:templates`)
-- [ ] T003 [P] Ampliar scripts/copy-assets.mjs para copiar `src/channels/handoff-links/views` (y su CSS) a `dist/src/channels/handoff-links/`
+- [X] T001 Añadir `nodemailer` a `dependencies` y `@types/nodemailer` a `devDependencies` en package.json (con `pnpm add`), y el script `"handoff:templates": "tsx src/cli/handoff-templates.ts"`
+- [X] T002 [P] Documentar en .env.example `SMTP_URL=` (`smtps://usuario:clave@host:465` o `smtp://…:587`), `SMTP_FROM=` y `WHATSAPP_TEMPLATE_LANG=es`, indicando que la vía email necesita además `PUBLIC_BASE_URL` y que la vía WhatsApp necesita las tres plantillas aprobadas (`pnpm handoff:templates`)
+- [X] T003 [P] Ampliar scripts/copy-assets.mjs para copiar `src/channels/handoff-links/views` (y su CSS) a `dist/src/channels/handoff-links/`
 
 ---
 
