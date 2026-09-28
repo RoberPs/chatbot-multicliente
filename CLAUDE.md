@@ -1,6 +1,6 @@
 # CLAUDE.md
 
-Chatbot de WhatsApp para atender a los clientes de pequeños negocios; cada cliente tiene su propia instancia, construida sobre un núcleo común y su configuración.
+Chatbot para atender a los clientes de pequeños negocios por WhatsApp y chat web, con la misma cadena de respuesta en todos los canales; cada cliente tiene su propia instancia, construida sobre un núcleo común y su configuración.
 
 ## Stack y decisiones vigentes
 - TypeScript 5 (strict), Node.js 22, pnpm 9, Fastify 5; panel de operador renderizado en servidor con Eta + htmx.
@@ -28,7 +28,7 @@ pnpm lint && pnpm typecheck
 ## Convenciones
 - Todo cambio empieza con una spec (`/speckit-specify` → plan → tasks → implement), y cada spec dice si es de núcleo o de extensión.
 - En `src/` no puede haber nombres ni lógica de un sector o cliente; solo pueden aparecer en `tests/fixtures/`.
-- El dominio (`src/knowledge`, más adelante `src/conversation`…) no depende de HTTP; el panel vive en `src/admin`.
+- El dominio (`src/knowledge`, `src/conversation`, `src/webchat`) no depende de HTTP; los adaptadores de canal viven en `src/channels` y el panel en `src/admin`.
 - Horarios en hora local (`time` + día ISO, donde 1 = lunes) y zona horaria IANA; nada se pasa a UTC.
 - Importes en céntimos; duraciones y antelaciones en minutos.
 - Specs, comentarios y mensajes, en español.
