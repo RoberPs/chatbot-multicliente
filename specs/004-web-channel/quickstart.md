@@ -26,12 +26,17 @@ pnpm dev                 # http://localhost:3000/admin
 pnpm test                          # unit + contract + integration (incluye las de la 002: SC-001)
 pnpm test channels                 # paridad entre canales y migración 0001 → 0002
 pnpm test web-chat                 # contrato del chat público y del panel
-EVAL_CHANNEL=web pnpm test:eval   # SC-002 con el modelo real (coste; fuera de pnpm test)
 pnpm lint && pnpm typecheck
+
+# SC-002 con el modelo real (coste; fuera de pnpm test). Con `--reporter=verbose`, porque el
+# reporter por defecto descarta la salida de los ficheros que pasan y esconde sus porcentajes.
+npx vitest run --project eval --reporter=verbose
+EVAL_CHANNEL=web npx vitest run --project eval --reporter=verbose
 ```
 
 Resultado esperado: todo en verde; la evaluación con `web` da los mismos porcentajes que con
-WhatsApp en SC-001, SC-002 y SC-005 a SC-008 de la 002.
+WhatsApp en SC-001, SC-002 y SC-005 a SC-008 de la 002. SC-009 (audio y otros tipos) se omite con
+`EVAL_CHANNEL=web`, porque la web solo admite texto (FR-020).
 
 ## Escenario 1 — Probar el bot desde el panel (US1)
 
@@ -106,7 +111,8 @@ Con el chat activado y el negocio activo, en `http://localhost:8080` en una vent
 1. En `/admin/web-chat` pon el tope diario en `3` y el mensual en `3000`.
 2. Haz 3 preguntas en el chat; la cuarta → "Ahora mismo no puedo atenderte por este chat" con
    el contacto. El panel muestra "Hoy: 3 de 3" y el aviso de tope alcanzado; la portada también.
-3. Mientras tanto, `pnpm bot:chat` sigue respondiendo (WhatsApp no se ve afectado).
+3. Para `pnpm dev` y comprueba que `pnpm bot:chat` sigue respondiendo (WhatsApp no se ve
+   afectado). **No vale con el servidor levantado**: ver el aviso del escenario 6.
 4. Restaura el tope. Límite por visitante: envía 31 mensajes seguidos desde la consola del
    navegador de la página del chat (el test de integración lo automatiza) → un único aviso
    con el contacto y después silencio.
@@ -118,13 +124,27 @@ Con el chat activado y el negocio activo, en `http://localhost:8080` en una vent
 Con `pnpm dev` y la salida del servidor en un fichero (`pnpm dev > server.log`):
 
 ```bash
-grep -E 'Bearer|"text"|127\.0\.0\.1|::1' server.log     # sin resultados
-grep '"via":"web"' server.log | head                    # eventos del canal web con seudónimo
+# Ni el token, ni la IP del visitante, ni cookies o cabeceras de autorización
+grep -E 'Bearer|remoteAddress|x-forwarded|authorization|cookie' server.log   # sin resultados
+# Ni el texto del visitante ni el de la respuesta (pon una palabra de tu pregunta)
+grep -i sábado server.log                                                    # sin resultados
+# Las IP solo salen en las direcciones de escucha que imprime Fastify al arrancar
+grep -v 'Server listening' server.log | grep -E '127\.0\.0\.1|::1'           # sin resultados
+grep '"via":"web"' server.log | head            # eventos del canal web con seudónimo
 ```
+
+El seudónimo (`customer`) y el `conversationId` sí aparecen; el `channel_user_id` del visitante y
+el id de su sesión, no. Al escribir el grep, cuidado con `"text"` a secas: casa con
+`"kind":"text"` de `message_received`, que es el tipo del mensaje y no su contenido.
 
 ## Escenario 6 — WhatsApp sin cambios (SC-001, FR-005)
 
 1. Con una BD que ya tenía conversaciones de la 002, `pnpm db:migrate` → siguen todas, con su
    estado (se comprueba también en `pnpm test`).
-2. `pnpm bot:chat` → mismas respuestas que antes; la ventana de 24 h y los tipos de mensaje de
-   WhatsApp se comportan igual.
+2. **Para `pnpm dev` antes de abrir `pnpm bot:chat`.** Los dos traen su propio procesador sobre
+   la misma BD, y el del servidor no tiene sender de la Graph API (R1), así que descarta los
+   entrantes de WhatsApp del CLI con `message_discarded{reason:"disabled"}` antes de que el CLI
+   los conteste: el CLI recibe el mensaje y sale sin respuesta. No es un problema de producción,
+   donde el servidor es el único procesador y tiene WhatsApp configurado.
+3. `pnpm bot:chat` → mismas respuestas que antes; la ventana de 24 h y los tipos de mensaje de
+   WhatsApp se comportan igual (la ventana y los tipos los cubre `pnpm test`).
