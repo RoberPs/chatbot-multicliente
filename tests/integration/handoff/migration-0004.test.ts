@@ -55,13 +55,13 @@ describe('migración 0004_handoff con datos', () => {
       `insert into customer (channel, channel_user_id) values ('whatsapp', '+34600111222'),
        ('web', 'abc') returning id`,
     );
-    const [u1, u2] = customers.map((r) => (r as { id: string }).id);
+    const [u1, u2] = customers.map((r) => (r as { id: string }).id) as [string, string];
     const { rows: convs } = await q(
       `insert into conversation (customer_id, started_at, last_inbound_at, last_message_at, greeted)
        values ($1, $3, $3, $3, true), ($2, $3, $3, $3, false) returning id`,
       [u1, u2, at],
     );
-    const [c1, c2] = convs.map((r) => (r as { id: string }).id);
+    const [c1, c2] = convs.map((r) => (r as { id: string }).id) as [string, string];
     await q(
       `insert into message (conversation_id, direction, kind, channel_message_id, body, sent_at, received_at, status)
        values ($1, 'inbound', 'text', 'wamid.in.1', 'Hola', $3, $3, 'answered'),
