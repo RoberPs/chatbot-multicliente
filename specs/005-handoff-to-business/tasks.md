@@ -117,8 +117,8 @@ la cadena).
 
 ### Tokens (R9)
 
-- [ ] T027 [P] Test unitario tests/unit/handoff/tokens.test.ts: token de 22 caracteres base64url y distinto en cada llamada, `hashToken` estable de 32 bytes, `parseButtonPayload` acepta `h1:attend:<token>` y `h1:end:<token>` y rechaza versión, acción o longitud no válidas, `isTokenFormat` para las rutas
-- [ ] T028 [P] Crear src/handoff/tokens.ts: `issueToken()` (`randomBytes(16)` base64url), `hashToken(token)` (`sha256`), `buttonPayload(action, token)`, `parseButtonPayload(payload)` e `isTokenFormat(token)`
+- [X] T027 [P] Test unitario tests/unit/handoff/tokens.test.ts: token de 22 caracteres base64url y distinto en cada llamada, `hashToken` estable de 32 bytes, `parseButtonPayload` acepta `h1:attend:<token>` y `h1:end:<token>` y rechaza versión, acción o longitud no válidas, `isTokenFormat` para las rutas
+- [X] T028 [P] Crear src/handoff/tokens.ts: `issueToken()` (`randomBytes(16)` base64url), `hashToken(token)` (`sha256`), `buttonPayload(action, token)`, `parseButtonPayload(payload)` e `isTokenFormat(token)`
 
 ### Destinos de avisos, vías disponibles y avisos del panel (R16)
 
