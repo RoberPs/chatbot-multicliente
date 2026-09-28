@@ -148,6 +148,8 @@ hace en el panel, sin desplegar. El webhook de WhatsApp escucha en `/webhooks/wh
 `/chat` (fragmento, iframe y su API JSON). Las conversaciones se borran a los 30 días y los
 registros técnicos no guardan textos, números, tokens ni la IP de los visitantes.
 
+Alta, aislamiento, actualización y baja de clientes, y specs de operación pendientes: [docs/operacion-multicliente.md](docs/operacion-multicliente.md).
+
 ## Estructura
 
 ```text
