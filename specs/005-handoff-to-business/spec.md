@@ -35,6 +35,21 @@ fuera de alcance.
   mensajes del cliente. Si el negocio no confirma que atiende en 2 horas contadas dentro de su
   horario de atención, se le envía un recordatorio (una vez) y el bot da al cliente el contacto
   directo del negocio.
+- Q: ¿Cómo indica el negocio por WhatsApp si confirma que atiende o si da por terminada la
+  derivación, y cómo se sabe a qué derivación se refiere cuando hay varias activas? → A: El aviso,
+  el recordatorio y los mensajes reenviados llevan dos botones, "Le atiendo" y "Terminado", ligados
+  a esa derivación. Si el negocio escribe texto libre, recibe una ayuda breve y no cambia nada.
+- Q: En el chat web, ¿qué ve el visitante que escribe durante una derivación, si el bot no
+  responde? → A: Un aviso fijo de la interfaz mientras dure la derivación (el negocio le contactará
+  en el teléfono que ha dado y lo que escriba también le llega). No es un mensaje del bot.
+- Q: ¿Puede el operador ver y terminar derivaciones activas desde el panel, fuera de "Probar el
+  bot"? → A: Sí: el panel lista las derivaciones activas (sin textos de mensajes) y permite
+  terminarlas.
+- Q: ¿Avisa el bot al cliente cuando la conversación vuelve al bot? → A: No; la vuelta es
+  silenciosa. En el chat web desaparece el aviso fijo de derivación.
+- Q: Si el cliente envía varios mensajes seguidos durante la derivación, ¿se reenvía cada uno por
+  separado? → A: No; se agrupan como los mensajes normales (spec 002, FR-004) y se reenvía un
+  único mensaje por grupo.
 
 ## User Scenarios & Testing *(mandatory)*
 
@@ -116,12 +131,16 @@ comprobar que el bot no contesta ninguno y que el negocio los recibe.
 1. **Given** una conversación derivada, **When** el cliente escribe, **Then** el bot no responde.
 2. **Given** una conversación derivada, **When** el cliente escribe, **Then** el negocio recibe
    ese mensaje reenviado por las mismas vías que el aviso (WhatsApp y email), identificando al
-   cliente.
+   cliente; si el cliente envía varios mensajes seguidos, se agrupan y se reenvían en un único
+   mensaje.
 3. **Given** una conversación derivada de un cliente, **When** otro cliente escribe al bot,
    **Then** el bot atiende al otro cliente con normalidad: la derivación afecta solo a esa
    conversación.
 4. **Given** una conversación derivada, **When** el cliente vuelve a pedir una persona o insiste
    en que le contesten, **Then** no se genera un aviso nuevo ni respuesta automática.
+5. **Given** una conversación derivada en el chat web, **When** el visitante la tiene abierta o
+   escribe, **Then** el chat muestra un aviso fijo indicando que el negocio le contactará en el
+   teléfono que ha dado y que lo que escriba también le llega, sin ningún mensaje del bot.
 
 ---
 
@@ -139,12 +158,21 @@ tiempo de inactividad.
 
 **Acceptance Scenarios**:
 
-1. **Given** una conversación derivada, **When** el negocio indica que ha terminado respondiendo
-   al aviso de WhatsApp o con el enlace del email, **Then** el siguiente mensaje del cliente lo
-   contesta el bot.
-2. **Given** una conversación derivada, **When** pasan 24 horas sin mensajes del cliente,
+1. **Given** una conversación derivada, **When** el negocio pulsa "Terminado" en un mensaje de
+   WhatsApp de esa derivación o usa el enlace del email, **Then** el siguiente mensaje del cliente
+   lo contesta el bot.
+2. **Given** dos derivaciones activas de clientes distintos, **When** el negocio pulsa "Terminado"
+   en el aviso de una de ellas, **Then** solo termina esa derivación.
+3. **Given** una conversación derivada, **When** el negocio escribe texto libre al número del bot
+   en lugar de pulsar un botón, **Then** recibe una ayuda breve sobre cómo usar los botones y
+   ninguna derivación cambia de estado.
+4. **Given** una conversación derivada, **When** pasan 24 horas sin mensajes del cliente,
    **Then** vuelve al bot.
-3. **Given** una conversación que ha vuelto al bot, **When** el cliente escribe, **Then** el bot
+5. **Given** una derivación activa, **When** el operador la termina desde el panel, **Then** el
+   siguiente mensaje del cliente lo contesta el bot.
+6. **Given** una derivación que termina por cualquier causa, **When** termina, **Then** el bot no
+   envía ningún mensaje al cliente y, en el chat web, desaparece el aviso fijo de derivación.
+7. **Given** una conversación que ha vuelto al bot, **When** el cliente escribe, **Then** el bot
    responde sin repetir el saludo inicial si la conversación sigue abierta (spec 002, FR-021) y
    sin volver a derivar por el motivo anterior salvo que el cliente lo pida.
 
@@ -209,6 +237,11 @@ que es una queja.
   de atención, recibe un recordatorio (una sola vez) y el bot da al cliente el contacto directo del
   negocio. La conversación sigue derivada: el bot no vuelve a responder hasta que termine la
   derivación (FR-017, FR-019).
+- **El negocio olvida terminar y avisa al operador**: el operador puede terminar la derivación
+  desde el panel (FR-016a).
+- **El negocio escribe texto libre al número del bot**: recibe una ayuda breve; no se trata como
+  mensaje de cliente ni cambia ninguna derivación (FR-008b).
+- **Botón o enlace de una derivación ya terminada**: no tiene efecto.
 - **Solo una vía disponible**: si la instancia no tiene WhatsApp configurado o el negocio no tiene
   email de avisos, el aviso se envía por la vía que exista; basta con que se entregue por una.
 - **Una vía falla y la otra no**: la derivación sigue adelante y el fallo queda registrado.
@@ -266,9 +299,13 @@ que es una queja.
   WhatsApp, la instancia tiene el canal de WhatsApp configurado. El aviso se considera entregado si
   llega por al menos una vía.
 - **FR-008a**: El aviso MUST indicar al negocio que contacte con el cliente por sus propios medios
-  y cómo confirmar que lo atiende y cómo dar por terminada la derivación: respondiendo al aviso de
-  WhatsApp o mediante enlaces del email, que MUST funcionar sin iniciar sesión y solo para esa
-  derivación.
+  y cómo confirmar que lo atiende y cómo dar por terminada la derivación. Por WhatsApp, el aviso,
+  el recordatorio y cada mensaje reenviado del cliente MUST llevar dos botones, "Le atiendo" y
+  "Terminado", que actúan solo sobre la derivación de ese mensaje. Por email, MUST llevar dos
+  enlaces equivalentes, que MUST funcionar sin iniciar sesión y solo para esa derivación.
+- **FR-008b**: Si el negocio escribe texto libre al número del bot en lugar de pulsar un botón, el
+  sistema MUST contestarle con una ayuda breve sobre los botones y MUST NOT cambiar el estado de
+  ninguna derivación ni tratar ese mensaje como de un cliente.
 - **FR-009**: El aviso MUST enviarse en el momento de la derivación, también fuera del horario del
   negocio.
 
@@ -289,22 +326,32 @@ que es una queja.
 - **FR-013**: Mientras una conversación está derivada, el bot MUST NOT generar respuestas
   automáticas en ella, tampoco saludos, avisos de tipo de mensaje no atendido ni ofertas de
   derivación.
+- **FR-013a**: Mientras una conversación del chat web está derivada, el chat MUST mostrar un aviso
+  fijo de la interfaz (no un mensaje del bot) que indique que el negocio contactará al visitante
+  en el teléfono que ha dado y que lo que escriba también le llega. El aviso MUST desaparecer al
+  terminar la derivación.
 - **FR-014**: Mientras una conversación está derivada, los mensajes nuevos del cliente MUST
   reenviarse al negocio por las mismas vías que el aviso, identificando al cliente y la
-  derivación, sin generar avisos de derivación nuevos.
+  derivación, sin generar avisos de derivación nuevos. Los mensajes seguidos MUST agruparse como
+  los mensajes normales (spec 002, FR-004) y reenviarse en un único mensaje por grupo.
 - **FR-015**: La derivación MUST afectar solo a la conversación derivada; el bot sigue atendiendo
   el resto de conversaciones de la instancia.
 
 **Fin de la derivación**
 
 - **FR-016**: El negocio MUST poder confirmar que atiende una derivación y MUST poder indicar que
-  ha terminado, sin acceso al panel del operador, por cualquiera de las vías del aviso (FR-008a).
-  Terminar implica también confirmar. Si se indica por las dos vías, solo cuenta la primera.
+  ha terminado, sin acceso al panel del operador, con los botones de WhatsApp o los enlaces del
+  email (FR-008a). Terminar implica también confirmar. Si se indica por las dos vías, solo cuenta
+  la primera; pulsar un botón o enlace de una derivación ya terminada no tiene efecto.
+- **FR-016a**: El operador MUST poder ver en el panel las derivaciones activas (cliente, canal,
+  tipo, inicio y si están confirmadas, sin textos de mensajes) y MUST poder terminar cualquiera
+  de ellas.
 - **FR-017**: Una conversación derivada MUST volver al bot tras 24 horas sin mensajes del cliente,
   haya confirmado o no el negocio.
-- **FR-018**: Una vez de vuelta, el siguiente mensaje del cliente MUST contestarlo el bot, que
-  MUST tener en cuenta la conversación anterior sin volver a derivar por el mismo motivo salvo que
-  el cliente lo pida.
+- **FR-018**: Al terminar una derivación, por cualquier causa, el bot MUST NOT enviar ningún
+  mensaje al cliente. Una vez de vuelta, el siguiente mensaje del cliente MUST contestarlo el bot,
+  que MUST tener en cuenta la conversación anterior sin volver a derivar por el mismo motivo salvo
+  que el cliente lo pida.
 - **FR-019**: Si el negocio no confirma que atiende la derivación en 2 horas contadas solo dentro
   de su horario de atención (FR-011), el sistema MUST enviarle un recordatorio por las mismas vías
   que el aviso, una sola vez por derivación, y el bot MUST enviar al cliente un único mensaje con
@@ -334,12 +381,13 @@ que es una queja.
 - **Derivación**: periodo en el que una conversación la atiende el negocio y no el bot. Tiene
   tipo (petición de persona, consulta sin resolver, queja), momento de inicio, resumen del motivo,
   estado (activa o terminada), si el negocio la ha confirmado y cuándo, si se envió el
-  recordatorio, y causa del fin (indicada por el negocio, inactividad u operador en pruebas). Una
-  conversación tiene como mucho una derivación activa.
+  recordatorio, y causa del fin (indicada por el negocio, inactividad, operador desde el panel u
+  operador en pruebas). Una conversación tiene como mucho una derivación activa.
 - **Aviso de derivación**: mensaje que recibe el negocio al iniciarse una derivación, por cada vía
-  disponible. Contiene nombre y teléfono del cliente, canal, tipo, resumen del motivo, cómo
-  confirmar y terminar, y el resultado de la entrega por vía. Los recordatorios y los mensajes
-  reenviados del cliente van por las mismas vías.
+  disponible. Contiene nombre y teléfono del cliente, canal, tipo, resumen del motivo, los botones
+  (WhatsApp) o enlaces (email) para confirmar y terminar esa derivación, y el resultado de la
+  entrega por vía. Los recordatorios y los mensajes reenviados del cliente van por las mismas vías
+  y llevan los mismos botones o enlaces.
 - **Datos de contacto del cliente**: nombre y teléfono del cliente final, obtenidos del canal o
   pedidos por el bot; pertenecen a la conversación.
 - **Destinos de avisos**: WhatsApp y email del negocio a los que se envían los avisos de
@@ -370,6 +418,8 @@ que es una queja.
   del último mensaje del cliente.
 - **SC-009**: El 100 % de las derivaciones no confirmadas en 2 horas de horario de atención genera
   un único recordatorio al negocio y un único mensaje al cliente con el contacto del negocio.
+- **SC-010**: El 100 % de las pulsaciones de "Le atiendo" o "Terminado" cambia solo la derivación
+  a la que pertenece el mensaje, también con varias derivaciones activas a la vez.
 
 ## Assumptions
 
@@ -377,10 +427,13 @@ que es una queja.
   agentes, reparto o asignación de conversaciones quedan fuera de alcance, como pide la
   descripción.
 - No hay panel de chat para el negocio: el negocio atiende al cliente por medios propios (su
-  teléfono) y se relaciona con el sistema solo a través del aviso de WhatsApp y del email.
+  teléfono) y se relaciona con el sistema solo a través del aviso de WhatsApp y del email. La
+  lista de derivaciones activas del panel (FR-016a) es para el operador, no para el negocio, y no
+  muestra mensajes.
 - Los avisos por WhatsApp los inicia el sistema fuera de la conversación con el cliente; cumplir
-  las reglas del proveedor para esos mensajes (por ejemplo, plantillas aprobadas) se resuelve en
-  el plan. La instancia necesita además un medio de envío de email, que se fija en el plan.
+  las reglas del proveedor para esos mensajes (por ejemplo, plantillas aprobadas con botones) se
+  resuelve en el plan. La instancia necesita además un medio de envío de email, que se fija en el
+  plan.
 - En el chat web, el visitante sigue siendo anónimo (spec 004, FR-018) salvo que decida dar su
   nombre y teléfono para que le contacten; pedírselos solo en ese momento es compatible con la
   spec 004.
