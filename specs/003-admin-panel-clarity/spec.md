@@ -331,3 +331,26 @@ veces: una en el texto del modelo y otra en el bloque que añade el código. Cau
 **No encaja en esta spec**: es un defecto de la composición de respuestas de la 002, no de la
 claridad del panel. Debería ser una spec de núcleo aparte que arregle las dos capas (instrucción
 del prompt y comprobación determinista antes de añadir el bloque).
+
+### H3 — Los límites por IP del chat web no están alineados con el tope diario (necesita spec propia)
+
+Hallazgo de la revisión de seguridad de la 004 (T076), anotado aquí solo para que no se pierda:
+**no tiene relación con esta spec**.
+
+La 004 fija en R10 un límite de 120 mensajes por IP cada 15 minutos y en R9 un tope de 200
+respuestas al día por instancia. Con esos números, un solo visitante puede consumir el tope
+diario del negocio en unos 25 minutos: a partir de ahí `webChatAvailability` devuelve `quota` y
+**todos** los clientes reales ven "no disponible" el resto del día (FR-026), además del coste de
+modelo ya gastado. El límite por visitante (30 mensajes / 15 min, FR-024) no lo evita, porque
+basta pedir sesiones nuevas (20/h por IP) y lo que manda es el tope de mensajes por IP.
+
+Posibles remedios, a decidir en su spec:
+
+- Bajar el tope de mensajes por IP muy por debajo del tope diario (por ejemplo 30 / 15 min).
+- Añadir un tope por sesión, además del de por IP.
+- Reservar una parte del tope diario para sesiones con conversación previa.
+- Un reto (prueba de trabajo o similar) en `POST /chat/api/session` cuando el consumo del día
+  pase de un umbral.
+
+Cambiarlo es modificar R9 y R10 de la 004, así que no se tocó al implementarla. Mientras siga
+así, conviene no publicar el chat en una web con tráfico sin vigilar el uso desde el panel.

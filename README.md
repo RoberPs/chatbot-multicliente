@@ -7,30 +7,7 @@ Estados: especificada → planificada → en implementación → completada (o a
 | 001 | Base de conocimiento del negocio | Núcleo | En implementación | `001-business-knowledge-base` | [spec](specs/001-business-knowledge-base/spec.md) | 2026-09-24  |
 | 002 | Atención de dudas y precios por WhatsApp | Núcleo | En implementación | `002-whatsapp-faq-bot` | [spec](specs/002-whatsapp-faq-bot/spec.md) · [plan](specs/002-whatsapp-faq-bot/plan.md) · [tareas](specs/002-whatsapp-faq-bot/tasks.md) | 2026-09-25  |
 | 003 | Claridad del panel del operador y enlace a mapa | Núcleo | Especificada | `003-admin-panel-clarity` | [spec](specs/003-admin-panel-clarity/spec.md) | 2026-09-25  |
-| 004 | Canal web del bot de atención | Núcleo | En implementación | `004-web-channel` | [spec](specs/004-web-channel/spec.md) · [plan](specs/004-web-channel/plan.md) · [tareas](specs/004-web-channel/tasks.md) | 2026-09-25  |
-
-**Siguiente paso**: la 001 tiene todas sus tareas hechas y la suite en verde. Para pasarla a
-"completada" falta cronometrar el alta de un negocio típico (SC-001, escenario 8 del
-quickstart) y construir la imagen Docker en un entorno con acceso al registro de npm.
-La 002 tiene implementadas las cinco historias, los tipos de mensaje no atendidos, los audios
-(desactivados por defecto), el límite por número, la ventana de 24 h y el borrado a los 30
-días, con `pnpm test` en verde. La evaluación con el modelo real (`claude-sonnet-5`, esfuerzo
-`medium`) dio 174 de 175 casos correctos; el fallo (plazos en minutos) está corregido. Para
-pasarla a "completada" falta recorrer los escenarios del quickstart con `pnpm bot:chat` (T100)
-y grabar los 21 audios de prueba de `tests/fixtures/audio/` para medir los audios (T083). Usa Claude Sonnet 5 por la API de
-Anthropic. Antes de usarla con clientes reales hacen falta los contratos de encargado del
-tratamiento con Meta y Anthropic (y con el proveedor de transcripción si se activan los
-audios).
-La 004 tiene implementadas sus cuatro historias con `pnpm test` en verde: "Probar el bot" en el
-panel, el chat web incrustable en la web del negocio, la conversación del visitante y los
-límites y topes de coste. WhatsApp se comporta igual que antes (toda la suite de la 002 sigue
-pasando) porque los tres canales comparten una sola cadena de respuesta. Para pasarla a
-"completada" faltan la evaluación con el modelo real por los dos canales
-(`pnpm test:eval` y `EVAL_CHANNEL=web pnpm test:eval`, T078) y recorrer los escenarios del
-[quickstart](specs/004-web-channel/quickstart.md) en el navegador (T079). La revisión de
-seguridad del canal público (T076) no encontró nada crítico ni alto; quedan cinco
-recomendaciones medias anotadas en las tareas, la principal ajustar los límites por IP al tope
-diario para que un solo visitante no pueda agotarlo.
+| 004 | Canal web del bot de atención | Núcleo | Completada | `004-web-channel` | [spec](specs/004-web-channel/spec.md) · [plan](specs/004-web-channel/plan.md) · [tareas](specs/004-web-channel/tasks.md) | 2026-09-28  |
 
 ---
 
@@ -149,7 +126,8 @@ siguiente petición: los visitantes pasan a ver "no disponible" con el contacto 
 | `pnpm test:unit` · `test:contract` · `test:integration` | Cada suite por separado |
 | `pnpm test <patrón>` | Solo los ficheros que coinciden, p. ej. `pnpm test sector-neutrality` |
 | `pnpm test:eval` | Evaluación con el modelo real y los tres sectores de ejemplo (SC-001 a SC-010); tiene coste y no entra en `pnpm test`. Se omite sin `ANTHROPIC_API_KEY` |
-| `EVAL_CHANNEL=web pnpm test:eval` | La misma evaluación por el canal web, para comprobar que da los mismos resultados que por WhatsApp |
+| `EVAL_CHANNEL=web pnpm test:eval` | La misma evaluación por el canal web, para comprobar que da los mismos resultados que por WhatsApp. SC-009 se omite: la web solo admite texto |
+| `npx vitest run --project eval --reporter=verbose` | La evaluación mostrando las tablas de porcentajes de **todos** los criterios. Con `pnpm test:eval` a secas, el reporter por defecto de vitest descarta la salida de los ficheros que pasan y solo se ven los criterios que fallan |
 | `pnpm test:eval audio` | Además, los audios con Whisper real (necesita `STT_API_KEY` y las grabaciones de `tests/fixtures/audio/`) |
 | `pnpm bot:chat` | Conversación con el bot en la terminal, con el modelo real y sin WhatsApp |
 | `pnpm lint` · `pnpm typecheck` · `pnpm format` | Calidad de código |
