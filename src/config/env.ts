@@ -1,3 +1,4 @@
+import { isAbsolute } from 'node:path';
 import { parsePhoneNumberFromString } from 'libphonenumber-js';
 import { z } from 'zod';
 import { isValidTimezone } from '../knowledge/schemas/common.js';
@@ -9,6 +10,11 @@ const optionalText = z
   .transform((v) => (v === undefined || v.trim() === '' ? undefined : v.trim()));
 
 const LOCAL_HOSTS = new Set(['localhost', '127.0.0.1']);
+
+/** Identificador de instancia (006): el mismo patrón que el nombre de las copias. */
+export const INSTANCE_ID_PATTERN = /^[a-z0-9](?:[a-z0-9-]{0,38}[a-z0-9])?$/;
+const HEX_KEY = /^[0-9a-f]{64}$/i;
+const RETENTION_MESSAGE = 'BACKUP_RETENTION_DAYS debe estar entre 1 y 30 días (máximo 30)';
 
 /**
  * Origen de una URL pública (`https://host[:puerto]`), o `null` si tiene ruta, consulta,
@@ -158,7 +164,78 @@ const envSchema = z.object({
       .regex(/^[a-z]{2}(_[A-Z]{2})?$/, 'WHATSAPP_TEMPLATE_LANG debe tener el formato xx o xx_XX')
       .default('es'),
   ),
+
+  // --- Copias de seguridad (feature 006) ---
+  /** Identificador de la instancia: va dentro de cada copia y en su nombre. */
+  INSTANCE_ID: optionalText.pipe(
+    z
+      .string()
+      .regex(
+        INSTANCE_ID_PATTERN,
+        'INSTANCE_ID debe tener de 1 a 40 caracteres: minúsculas, cifras y guiones (sin guion al principio ni al final)',
+      )
+      .optional(),
+  ),
+  /** Directorio de las copias: ruta absoluta de un volumen persistente. */
+  BACKUP_DIR: optionalText.pipe(
+    z.string().refine(isAbsolute, 'BACKUP_DIR debe ser una ruta absoluta').optional(),
+  ),
+  /** Clave de las copias: 32 bytes aleatorios en hexadecimal, distinta de SESSION_SECRET. */
+  BACKUP_KEY: optionalText.pipe(
+    z
+      .string()
+      .regex(
+        HEX_KEY,
+        'BACKUP_KEY debe ser 32 bytes aleatorios en hexadecimal (openssl rand -hex 32)',
+      )
+      .refine(looksRandom, 'BACKUP_KEY no parece aleatoria')
+      .transform((v) => v.toLowerCase())
+      .optional(),
+  ),
+  /** Claves anteriores, solo para leer copias antiguas (research R4). */
+  BACKUP_KEYS_PREVIOUS: optionalText.pipe(
+    z
+      .string()
+      .optional()
+      .transform((v, ctx) => {
+        if (v === undefined) return [];
+        const keys = v
+          .split(',')
+          .map((k) => k.trim().toLowerCase())
+          .filter(Boolean);
+        if (keys.some((k) => !HEX_KEY.test(k))) {
+          ctx.addIssue({
+            code: 'custom',
+            message:
+              'BACKUP_KEYS_PREVIOUS debe ser una lista de claves de 64 hex separadas por comas',
+          });
+          return z.NEVER;
+        }
+        return keys;
+      }),
+  ),
+  BACKUP_RETENTION_DAYS: optionalText.pipe(
+    z.coerce
+      .number<string | undefined>({ error: RETENTION_MESSAGE })
+      .int(RETENTION_MESSAGE)
+      .min(1, RETENTION_MESSAGE)
+      .max(30, RETENTION_MESSAGE)
+      .default(7),
+  ),
+  /** Hora local del negocio de la copia diaria (`HH:MM`, 24 h). */
+  BACKUP_DAILY_TIME: optionalText.pipe(
+    z
+      .string()
+      .regex(/^([01]\d|2[0-3]):[0-5]\d$/, 'BACKUP_DAILY_TIME debe ser una hora HH:MM de 24 h')
+      .default('03:00'),
+  ),
+  /** Servidor donde `db:verify` crea la BD temporal; por defecto, el de DATABASE_URL. */
+  BACKUP_VERIFY_URL: optionalText,
 });
+
+function looksRandom(hex: string): boolean {
+  return new Set(hex.toLowerCase()).size > 8;
+}
 
 function isSmtpUrl(value: string): boolean {
   try {
@@ -188,6 +265,16 @@ export interface WhatsAppEnv {
   appSecret: string;
   verifyToken: string;
   graphVersion: string;
+}
+
+export const BACKUP_VARS = ['INSTANCE_ID', 'BACKUP_DIR', 'BACKUP_KEY'] as const;
+
+/** Configuración de copias de la instancia (006); la clave, en hex minúsculas. */
+export interface BackupEnv {
+  instanceId: string;
+  dir: string;
+  key: string;
+  previousKeys: string[];
 }
 
 /** Normaliza un teléfono a E.164 o devuelve `null` si no es válido. */
@@ -262,7 +349,41 @@ const botSchema = envSchema.transform((raw, ctx) => {
     });
   }
 
-  return { ...raw, whatsapp, emergencyContactPhone, audioTranscription, smtp };
+  // Copias de seguridad (006, R13): las tres juntas o ninguna; en production, obligatorias.
+  let backup: BackupEnv | null = null;
+  const backupPresent = BACKUP_VARS.filter((k) => raw[k] !== undefined);
+  const backupMissing = BACKUP_VARS.filter((k) => raw[k] === undefined);
+  if (backupMissing.length === 0) {
+    backup = {
+      instanceId: raw.INSTANCE_ID ?? '',
+      dir: raw.BACKUP_DIR ?? '',
+      key: raw.BACKUP_KEY ?? '',
+      previousKeys: raw.BACKUP_KEYS_PREVIOUS,
+    };
+    if (backup.key === raw.SESSION_SECRET.toLowerCase()) {
+      ctx.addIssue({ code: 'custom', message: 'BACKUP_KEY debe ser distinta de SESSION_SECRET' });
+    }
+  } else if (raw.NODE_ENV === 'production') {
+    ctx.addIssue({
+      code: 'custom',
+      message: `En production las copias son obligatorias; faltan: ${backupMissing.join(', ')}`,
+    });
+  } else if (backupPresent.length > 0) {
+    ctx.addIssue({
+      code: 'custom',
+      message: `INSTANCE_ID, BACKUP_DIR y BACKUP_KEY van juntas; faltan: ${backupMissing.join(', ')}`,
+    });
+  }
+
+  return {
+    ...raw,
+    BACKUP_VERIFY_URL: raw.BACKUP_VERIFY_URL ?? raw.DATABASE_URL,
+    whatsapp,
+    emergencyContactPhone,
+    audioTranscription,
+    smtp,
+    backup,
+  };
 });
 
 export type Env = z.infer<typeof botSchema>;

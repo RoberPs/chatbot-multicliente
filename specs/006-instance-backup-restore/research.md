@@ -158,6 +158,14 @@ guarda); comparar solo el número de migraciones (no detecta ramas distintas).
    - `COMMIT`. Ante cualquier error, incluido un bloque dañado en la segunda pasada, `ROLLBACK`
      (FR-011, US2-7, SC-008).
 
+**Nota de implementación**: en lugar de ordenar la carga por dependencias (el volcado va en
+orden alfabético y reordenarlo exigiría leer el fichero varias veces o guardarlo en memoria), la
+transacción quita las claves ajenas de `public` y `drizzle` antes de cargar y las vuelve a crear
+con su definición exacta (`pg_get_constraintdef`) al final, lo que las **valida** contra los datos
+cargados. Es lo que hace `pg_restore` (restricciones en la fase posterior a los datos). Tras
+reconstruir el esquema se vacían también las filas que insertan las propias migraciones
+(`web_chat_settings`, `handoff_alerts`, `__drizzle_migrations`) para cargar las de la copia.
+
 La restauración **no** aplica migraciones posteriores ni cambia el estado del negocio o de los
 canales (FR-013): la instancia queda con el esquema de la copia y las migraciones pendientes se
 aplican al arrancar, con su copia previa (US2-3). Tampoco pasa por la escritura protegida

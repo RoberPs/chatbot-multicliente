@@ -108,9 +108,19 @@ Parte **siempre** de `.env.example`, nunca del `.env` de otro cliente.
 | `LLM_MODEL` · `LLM_EFFORT` | Los valores por defecto salvo motivo documentado |
 | `WHATSAPP_*` | Las cinco, o ninguna |
 | `AUDIO_TRANSCRIPTION` · `STT_*` | `off` salvo que esté contratado y cubierto por el contrato |
+| `INSTANCE_ID` | Identificador único de la instancia (minúsculas, cifras y guiones), p. ej. `cliente-x`. Va dentro de cada copia |
+| `BACKUP_DIR` | Ruta absoluta del volumen persistente de copias, p. ej. `/var/lib/chatbot/backups` |
+| `BACKUP_KEY` | `openssl rand -hex 32`, **distinta** de `SESSION_SECRET` y de la de otras instancias; guárdala también **fuera** de `BACKUP_DIR` |
+| `BACKUP_RETENTION_DAYS` · `BACKUP_DAILY_TIME` | `7` y `03:00` (hora local del negocio) salvo acuerdo distinto; retención de 1 a 30 días |
+
+En `production` la instancia **no arranca** sin `INSTANCE_ID`, `BACKUP_DIR` y `BACKUP_KEY`. El
+contenedor necesita un **volumen persistente** montado en `BACKUP_DIR` y escribible por el usuario
+`node` (la imagen declara `/var/lib/chatbot/backups`). Si ese volumen está en la misma máquina que
+la BD, activa las instantáneas o la réplica del proveedor, o sincroniza el directorio fuera:
+perder la máquina haría perder las copias.
 
 Guarda este fichero en un gestor de secretos (o en las variables cifradas de tu plataforma), no en
-el repositorio.
+el repositorio. Sin `BACKUP_KEY` las copias de la instancia no se pueden restaurar.
 
 ### 2.4 Despliegue
 
@@ -133,9 +143,11 @@ el repositorio.
 
 ### 2.6 Cierre del alta
 
-- [ ] Copia de seguridad inicial de la BD.
+- [ ] Copia de seguridad inicial: `node dist/src/cli/backup.js` en el contenedor.
+- [ ] Copia comprobada con la [guía de validación de copias](#8-copias-de-seguridad-guía-de-validación)
+      (`pnpm db:verify` desde tu instancia de pruebas) y resultado anotado.
 - [ ] Anotada la instancia en tu inventario: cliente, subdominio, versión de la imagen, workspace
-      de Anthropic, fecha de alta.
+      de Anthropic, `INSTANCE_ID`, dónde está guardada su `BACKUP_KEY`, fecha de alta.
 - [ ] El cliente sabe cómo pedirte cambios (canal y plazo).
 
 ---
@@ -190,11 +202,24 @@ arrancar. Por eso:
 3. Construye y etiqueta la imagen con versión semántica: `chatbot:1.4.0`. Nunca desplegar `latest`.
 4. Despliega primero en **tu instancia de pruebas** (datos ficticios, mismo tipo de entorno que
    producción) y repasa el panel y "Probar el bot".
-5. **Copia de seguridad** de la BD de cada cliente justo antes de actualizarlo.
+5. **Copia de seguridad**: la hace la propia instancia al arrancar si tiene migraciones pendientes
+   y datos (`…__premigration.cbak`). Si no puede hacerla (falta la configuración, el directorio no
+   existe o no se puede escribir, disco lleno), **no migra ni arranca** y lo registra como
+   `migration_blocked`; el esquema queda sin cambios. Arregla la causa y vuelve a arrancar.
 6. Actualiza los clientes de uno en uno o por tandas pequeñas, comprobando cada instancia.
 7. Si algo falla: vuelve a la etiqueta anterior. Si la migración ya se aplicó y no es compatible
-   hacia atrás, restaura la copia; por eso las migraciones deben ser, siempre que se pueda,
-   aditivas (añadir columnas o tablas antes de dejar de usar las viejas).
+   hacia atrás, para la instancia y restaura con la **imagen anterior** la copia `premigration`
+   que nombra el error (`node dist/src/cli/restore.js <fichero>`). Después de verificar la
+   actualización, repite la [guía de validación de copias](#8-copias-de-seguridad-guía-de-validación)
+   con esa copia.
+
+Reglas de las migraciones a partir de la 006 (la restauración de copias antiguas reaplica las
+migraciones y comprueba su hash):
+
+- Las migraciones son **de solo añadir** (columnas o tablas nuevas antes de dejar de usar las
+  viejas).
+- Los ficheros de migraciones ya publicados **no se editan nunca**: una copia hecha con ellos
+  dejaría de poder restaurarse (`schema_mismatch`).
 
 ---
 
@@ -216,11 +241,87 @@ Antes de programar nada, en este orden (Principio II):
 1. Desactiva el chat web y retira el webhook de WhatsApp en Meta.
 2. Entrega al cliente los datos que le correspondan según el contrato.
 3. Para el contenedor, revoca su clave de Anthropic y elimina sus secretos.
-4. Borra la BD y sus copias de seguridad en el plazo acordado, y anótalo en el inventario.
+4. Borra la BD y sus copias de seguridad en el plazo acordado, y anótalo en el inventario. Las
+   copias viven en el volumen de `BACKUP_DIR` (y en sus réplicas o instantáneas, si las hay):
+   borra ese volumen y las réplicas. Destruir la `BACKUP_KEY` de la instancia deja ilegibles las
+   copias que quedaran en cualquier otro sitio.
 
 ---
 
-## 8. Propuestas de specs
+## 8. Copias de seguridad: guía de validación
+
+Cada instancia copia su BD en `BACKUP_DIR` con los mismos comandos (feature 006):
+
+| Comando (local / en la imagen) | Qué hace |
+|---|---|
+| `pnpm db:backup` / `node dist/src/cli/backup.js` | Copia bajo demanda, cifrada, sin pausar al bot |
+| `pnpm db:restore <fichero>` / `node dist/src/cli/restore.js` | Restaura con la instancia **parada**; pide escribir el `INSTANCE_ID` para confirmar |
+| `pnpm db:verify <fichero>` / `node dist/src/cli/verify.js` | Restaura en una BD temporal, compara y la borra |
+| `pnpm db:backups [--prune]` / `node dist/src/cli/backups.js` | Lista las copias de la instancia y aplica la retención |
+
+Además, la instancia hace una copia diaria (`BACKUP_DAILY_TIME`, hora local del negocio) y una
+previa a cada migración, y borra las de más de `BACKUP_RETENTION_DAYS` días conservando siempre la
+última válida. Todos los comandos aceptan `--json` para anotar el resultado en el inventario.
+
+Una copia que no se ha restaurado nunca no está comprobada. Esta guía se hace en menos de 15
+minutos.
+
+### Cuándo repetirla
+
+- Al dar de alta una instancia ([cierre del alta](#26-cierre-del-alta)).
+- **Una vez al mes** por instancia, con la copia diaria más reciente.
+- Tras cada actualización del núcleo con migraciones, con la copia `premigration`.
+- Tras cambiar `BACKUP_KEY`.
+
+Anota en el inventario la fecha, el fichero y el resultado de `db:verify --json`.
+
+### Antes de empezar (una vez por instancia)
+
+1. `BACKUP_KEY` generada con `openssl rand -hex 32` y guardada en el gestor de secretos, **no** en
+   `BACKUP_DIR`. Si se pierde, sus copias no se pueden recuperar.
+2. `BACKUP_DIR` en un volumen persistente distinto del contenedor, con instantáneas, réplica o
+   sincronización fuera de la máquina.
+3. Una instancia de pruebas (la tuya de staging, o `docker compose up -d db` + `pnpm dev` en tu
+   equipo) con un usuario de PostgreSQL con `CREATEDB` para `db:verify` (`BACKUP_VERIFY_URL`),
+   **sin** variables `WHATSAPP_*` ni `SMTP_*`: tras restaurar tendrá los destinos de avisos del
+   negocio real y no debe poder escribirles.
+
+### Pasos
+
+1. **Copiar** (en la instancia real): `node dist/src/cli/backup.js`. Esperado: nombre
+   `<instancia>__<esquema>__<fecha>__manual.cbak`, tamaño y recuentos por tabla. Apunta los
+   recuentos de `business`, `service` y `faq`.
+2. **Llevar el fichero** a la instancia de pruebas por el medio que uses para sacar copias de la
+   máquina. La clave de la instancia real se pone en la de pruebas solo durante la prueba, en
+   `BACKUP_KEYS_PREVIOUS`, nunca como `BACKUP_KEY`.
+3. **Comprobar** (en la de pruebas): `pnpm db:verify <fichero>`. Esperado: `RESTAURABLE`, misma
+   instancia, esquema y recuentos que en el paso 1, y "Base de datos temporal eliminada".
+4. **Restaurar en la instancia de pruebas**, parada:
+   `pnpm db:restore <fichero> --from-instance <instancia-real>`, escribir el `INSTANCE_ID` de la
+   de pruebas para confirmar y arrancar con `pnpm dev`. Esperado: "Restaurada" con los mismos
+   recuentos; al arrancar se aplican las migraciones pendientes (con su copia previa) y se borran
+   las conversaciones de más de 30 días.
+5. **Confirmar en el panel** de pruebas (`/admin`): nombre del negocio, servicios, precios,
+   horarios y FAQ iguales a los de la instancia real; mismo estado (activo o en preparación). Los
+   avisos que muestre el panel son los del estado restaurado: la restauración no los recalcula ni
+   cambia el estado del negocio o de los canales.
+6. **Limpiar**: quita `BACKUP_KEYS_PREVIOUS` de la instancia de pruebas y vuelve a sus datos
+   ficticios (o `docker compose down -v`), porque ahora contiene datos reales de clientes finales.
+
+### Si algo falla
+
+| Mensaje | Qué hacer |
+|---|---|
+| `wrong_key` | La copia es de otra clave: añade la anterior en `BACKUP_KEYS_PREVIOUS` |
+| `other_instance` | Es de otra instancia: repite con `--from-instance <id>` si es lo que quieres |
+| `schema_newer` | La copia es de un núcleo más reciente: restaura con esa versión de la imagen o posterior |
+| `corrupted` | El fichero está dañado o incompleto: usa otra copia y revisa cómo se transfirió |
+| `instance_running` | Para la instancia antes de restaurar |
+| `verify_db_unavailable` | `BACKUP_VERIFY_URL` necesita un servidor accesible y un usuario con `CREATEDB` |
+
+---
+
+## 9. Propuestas de specs
 
 Lo anterior funciona a mano con pocos clientes, pero con cada cliente nuevo aumenta el riesgo de
 error humano (secretos repetidos, BD equivocada, actualizaciones sin copia). Estas specs lo cubren.
@@ -232,7 +333,7 @@ Los números definitivos los asigna `/speckit-specify`; el orden recomendado es 
 |---|---|---|---|
 | P1 | Aprovisionamiento de instancias | Alta | Antes del 2.º o 3.er cliente |
 | P2 | Exportar e importar la configuración del negocio | Alta | Antes del 2.º o 3.er cliente |
-| P3 | Copias de seguridad y restauración por instancia | Alta | Antes del primer cliente real |
+| P3 | Copias de seguridad y restauración por instancia | Alta | **Implementada** (feature 006) |
 | P4 | Consumo y coste por instancia | Media | Al facturar el consumo |
 | P5 | Puntos de extensión del núcleo | Baja | Cuando la primera petición no quepa en la configuración |
 | P6 | Versión visible y actualización escalonada | Media | Con 3 o más instancias |
@@ -281,6 +382,9 @@ Los números definitivos los asigna `/speckit-specify`; el orden recomendado es 
   > núcleo.
 
 ### P3. Copias de seguridad y restauración por instancia
+
+> **Implementada** por la feature 006 (`specs/006-instance-backup-restore/`): ver
+> [sección 5](#5-actualizar-el-núcleo) y [sección 8](#8-copias-de-seguridad-guía-de-validación).
 
 - **Ámbito**: núcleo (operación).
 - **Problema**: no hay procedimiento de copia ni de restauración, y las actualizaciones aplican
@@ -351,12 +455,15 @@ Los números definitivos los asigna `/speckit-specify`; el orden recomendado es 
 
 ---
 
-## 9. Resumen de reglas
+## 10. Resumen de reglas
 
 1. Una imagen para todos; un entorno y una BD por cliente.
 2. Secretos, credenciales y clave de Anthropic nuevos para cada cliente, nunca copiados.
 3. La información del negocio se registra en el panel de su instancia; el cliente no la edita.
 4. Nada específico de un cliente o sector en `src/`.
-5. Antes de actualizar: tests, evaluación, instancia de pruebas y copia de seguridad.
-6. Lo que no cabe en la configuración se resuelve con una spec, primero de núcleo si es genérico y
+5. Antes de actualizar: tests, evaluación e instancia de pruebas; la copia previa la hace la
+   instancia y, sin ella, no migra. Migraciones de solo añadir; las publicadas no se editan.
+6. Cada instancia con su `INSTANCE_ID`, su `BACKUP_KEY` (guardada fuera de las copias) y un
+   volumen persistente para `BACKUP_DIR`; una copia se comprueba restaurándola, cada mes.
+7. Lo que no cabe en la configuración se resuelve con una spec, primero de núcleo si es genérico y
    de extensión solo si es realmente particular.

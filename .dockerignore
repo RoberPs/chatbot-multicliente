@@ -11,3 +11,6 @@ specs/
 .specify/
 .claude/
 tests/
+*.cbak
+*.cbak.partial
+backups/

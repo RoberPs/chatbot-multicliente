@@ -53,6 +53,14 @@ describe('neutralidad sectorial del código', () => {
     expect(paths).toContain('llm/summary-prompt.ts');
     expect(paths).toContain('cli/handoff-templates.ts');
     expect(paths).toContain('admin/views/handoffs.eta');
+    // 006: copias de seguridad (formato, operaciones, programador, comandos y arranque).
+    expect(paths).toContain('backup/format.ts');
+    expect(paths).toContain('backup/service.ts');
+    expect(paths).toContain('backup/scheduler.ts');
+    expect(paths).toContain('backup/dump.ts');
+    expect(paths).toContain('cli/backup.ts');
+    expect(paths).toContain('cli/backup-common.ts');
+    expect(paths).toContain('startup.ts');
   });
 
   it('ningún fichero de src/ contiene nombres de sector o cliente', () => {

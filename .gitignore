@@ -11,3 +11,8 @@ coverage/
 .DS_Store
 Thumbs.db
 .idea/
+
+# Copias de seguridad locales (feature 006)
+*.cbak
+*.cbak.partial
+backups/

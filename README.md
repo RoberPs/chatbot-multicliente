@@ -9,6 +9,7 @@ Estados: especificada → planificada → en implementación → completada (o a
 | 003 | Claridad del panel del operador y enlace a mapa | Núcleo | En implementación | `004-web-channel` | [spec](specs/003-admin-panel-clarity/spec.md) · [plan](specs/003-admin-panel-clarity/plan.md) · [tareas](specs/003-admin-panel-clarity/tasks.md) | 2026-09-28  |
 | 004 | Canal web del bot de atención | Núcleo | Completada | `004-web-channel` | [spec](specs/004-web-channel/spec.md) · [plan](specs/004-web-channel/plan.md) · [tareas](specs/004-web-channel/tasks.md) | 2026-09-28  |
 | 005 | Derivación de la conversación al negocio | Núcleo | En implementación | `005-handoff-to-business` | [spec](specs/005-handoff-to-business/spec.md) · [plan](specs/005-handoff-to-business/plan.md) · [tareas](specs/005-handoff-to-business/tasks.md) | 2026-09-29  |
+| 006 | Copias de seguridad y restauración por instancia | Núcleo | Completada | `006-instance-backup-restore` | [spec](specs/006-instance-backup-restore/spec.md) · [plan](specs/006-instance-backup-restore/plan.md) · [tareas](specs/006-instance-backup-restore/tasks.md) | 2026-09-29  |
 
 ---
 
@@ -33,6 +34,11 @@ Cuando el bot no puede resolver algo, el cliente pide hablar con una persona o e
 la conversación se **deriva** al negocio (feature 005): el bot calla, el negocio recibe un aviso
 por WhatsApp y/o email y la conversación vuelve sola al bot cuando el negocio confirma, termina o
 pasan 24 h sin actividad.
+
+Cada instancia hace **copias de seguridad cifradas** de su base de datos (feature 006): una al día
+a la hora local configurada, una antes de aplicar migraciones (sin ella no migra ni arranca) y las
+que pida el operador. Se restauran y se comprueban con los mismos comandos en todas las
+instancias.
 
 ## Requisitos
 
@@ -69,8 +75,9 @@ Las guías de validación, con los escenarios manuales, están en
 [specs/001-business-knowledge-base/quickstart.md](specs/001-business-knowledge-base/quickstart.md),
 [specs/002-whatsapp-faq-bot/quickstart.md](specs/002-whatsapp-faq-bot/quickstart.md),
 [specs/003-admin-panel-clarity/quickstart.md](specs/003-admin-panel-clarity/quickstart.md),
-[specs/004-web-channel/quickstart.md](specs/004-web-channel/quickstart.md) y
-[specs/005-handoff-to-business/quickstart.md](specs/005-handoff-to-business/quickstart.md).
+[specs/004-web-channel/quickstart.md](specs/004-web-channel/quickstart.md),
+[specs/005-handoff-to-business/quickstart.md](specs/005-handoff-to-business/quickstart.md) y
+[specs/006-instance-backup-restore/quickstart.md](specs/006-instance-backup-restore/quickstart.md).
 
 ## Chat web en la web del negocio
 
@@ -125,6 +132,33 @@ operador también puede terminarla desde el panel o desde "Probar el bot". Sin c
 validación manual está en
 [specs/005-handoff-to-business/quickstart.md](specs/005-handoff-to-business/quickstart.md).
 
+## Copias de seguridad
+
+Con `INSTANCE_ID`, `BACKUP_DIR` y `BACKUP_KEY` en `.env` (van las tres o ninguna; en `production`
+son obligatorias):
+
+```bash
+pnpm db:backup                              # copia cifrada en BACKUP_DIR; aplica la retención
+pnpm db:backups                             # lista las copias de la instancia (--prune: retención)
+pnpm db:verify <fichero>                    # la restaura en una BD temporal, compara y la borra
+pnpm db:restore <fichero>                   # con la instancia PARADA; pide escribir el INSTANCE_ID
+```
+
+- Cada copia es un único fichero `<instancia>__<esquema>__<fecha UTC>__<motivo>.cbak` (motivo
+  `manual`, `daily` o `premigration`), cifrado con AES-256-GCM y una clave derivada de
+  `BACKUP_KEY`. **Sin la clave no se puede restaurar**: guárdala fuera de `BACKUP_DIR`.
+- La copia sale de un único instante y no pausa al bot. La restauración es todo o nada: rechaza
+  sin tocar nada las copias dañadas, de otra clave (`BACKUP_KEYS_PREVIOUS` para las anteriores),
+  de otra instancia (salvo `--from-instance <id>`) o de un núcleo más reciente.
+- Al arrancar con migraciones pendientes y datos, la instancia hace una copia `premigration`; si
+  no puede, no migra ni escucha (`migration_blocked`). Por eso las migraciones son de solo añadir
+  y las ya publicadas no se editan.
+- Las copias caducan a los `BACKUP_RETENTION_DAYS` días (7 por defecto, máximo 30); la última
+  válida se conserva siempre. Los ficheros ajenos del directorio no se tocan.
+- `db:verify` necesita un usuario con `CREATEDB` en el servidor de `BACKUP_VERIFY_URL`.
+
+Guía del operador para comprobar las copias: [docs/operacion-multicliente.md §8](docs/operacion-multicliente.md#8-copias-de-seguridad-guía-de-validación).
+
 ## Variables de entorno
 
 | Variable | Obligatoria | Descripción |
@@ -151,6 +185,13 @@ validación manual está en
 | `SMTP_URL` | Con `SMTP_FROM` | Servidor SMTP para los avisos de derivación: `smtps://usuario:clave@host:465` o `smtp://usuario:clave@host:587` (STARTTLS). Necesita además `PUBLIC_BASE_URL` |
 | `SMTP_FROM` | Con `SMTP_URL` | Remitente de los avisos de derivación |
 | `WHATSAPP_TEMPLATE_LANG` | No (`es`) | Idioma de las plantillas de WhatsApp de los avisos de derivación (`pnpm handoff:templates` imprime su definición) |
+| `INSTANCE_ID` | En `production` | Identificador de la instancia (minúsculas, cifras y guiones; 1–40), distinto por cliente. Va dentro de cada copia |
+| `BACKUP_DIR` | En `production` | Directorio absoluto de las copias: un volumen persistente escribible por la instancia |
+| `BACKUP_KEY` | En `production` | Clave de las copias: 32 bytes aleatorios en hex (`openssl rand -hex 32`), distinta de `SESSION_SECRET`. Guárdala fuera de `BACKUP_DIR` |
+| `BACKUP_KEYS_PREVIOUS` | No | Claves anteriores separadas por comas, solo para leer copias hechas antes de cambiar `BACKUP_KEY` |
+| `BACKUP_RETENTION_DAYS` | No (`7`) | Días que se conservan las copias, de 1 a 30 |
+| `BACKUP_DAILY_TIME` | No (`03:00`) | Hora local del negocio (`HH:MM`) de la copia diaria |
+| `BACKUP_VERIFY_URL` | No (`DATABASE_URL`) | Servidor PostgreSQL donde `pnpm db:verify` crea la BD temporal (usuario con `CREATEDB`) |
 
 ## Comandos
 
@@ -168,7 +209,11 @@ validación manual está en
 | `pnpm bot:chat` | Conversación con el bot en la terminal, con el modelo real y sin WhatsApp |
 | `pnpm lint` · `pnpm typecheck` · `pnpm format` | Calidad de código |
 | `pnpm db:generate` | Genera una migración tras cambiar `src/db/schema.ts` |
-| `pnpm db:migrate` | Aplica las migraciones a `DATABASE_URL` |
+| `pnpm db:migrate` | Aplica las migraciones a `DATABASE_URL`; con datos y migraciones pendientes hace antes una copia `premigration` (sin ella no migra) |
+| `pnpm db:backup` | Copia cifrada de la instancia en `BACKUP_DIR` (`--json` para el inventario) |
+| `pnpm db:restore <fichero>` | Restaura una copia con la instancia parada (`--from-instance <id>`, `--yes`, `--json`) |
+| `pnpm db:verify <fichero>` | Restaura la copia en una BD temporal, compara los recuentos y la borra |
+| `pnpm db:backups` | Lista las copias de la instancia; `--prune` aplica la retención |
 | `pnpm kb:snapshot` | Imprime el `KnowledgeSnapshot` actual |
 | `pnpm operator:hash-password` | Pide una contraseña sin mostrarla y devuelve su hash Argon2id |
 | `pnpm handoff:templates` | Imprime la definición JSON de las tres plantillas de WhatsApp de los avisos de derivación, para darlas de alta en Meta |
@@ -176,8 +221,14 @@ validación manual está en
 ## Despliegue
 
 `Dockerfile` construye una imagen única del núcleo, igual para todos los clientes. Cada
-instancia es un contenedor con sus variables de entorno y su base de datos; al arrancar aplica
-las migraciones pendientes. Dar de alta un negocio, cambiar sus datos o activar el chat web se
+instancia es un contenedor con sus variables de entorno, su base de datos y un **volumen
+persistente para las copias** (la imagen declara `/var/lib/chatbot/backups`, escribible por el
+usuario `node`); al arrancar aplica las migraciones pendientes, con copia previa si hay datos.
+
+> **Instancias existentes (desde la 006)**: en `production` una instancia **no arranca** sin
+> `INSTANCE_ID`, `BACKUP_DIR` y `BACKUP_KEY` y un volumen montado en `BACKUP_DIR`. Añádelos antes
+> de actualizarla a esta versión.
+ Dar de alta un negocio, cambiar sus datos o activar el chat web se
 hace en el panel, sin desplegar. El webhook de WhatsApp escucha en `/webhooks/whatsapp`
 (verificación con `WHATSAPP_VERIFY_TOKEN` y firma con `WHATSAPP_APP_SECRET`) y el chat web en
 `/chat` (fragmento, iframe y su API JSON). Las conversaciones se borran a los 30 días y los
@@ -194,6 +245,8 @@ src/
 ├── knowledge/     dominio sin HTTP: esquemas, reglas temporales, avisos, snapshot, casos de uso
 ├── conversation/  dominio del bot sin HTTP: recepción, espera, respuesta, verificador, plantillas
 ├── handoff/       dominio de la derivación al negocio sin HTTP: decisión, avisos, horario, tokens
+├── backup/        copias de la instancia sin HTTP: formato cifrado, volcado, restauración,
+│                  comprobación, retención, copia diaria y bloqueos
 ├── channels/      adaptadores de canal: WhatsApp (webhook y Graph API), web (iframe y API JSON)
 │                  y los enlaces públicos de derivación (`/handoff/*`)
 ├── webchat/       dominio del chat web sin HTTP: configuración, disponibilidad, topes, sesión
@@ -201,9 +254,11 @@ src/
 ├── llm/           adaptador de Claude, construcción del prompt y resumen de derivaciones
 ├── speech/        adaptador de transcripción (solo con audios activados)
 ├── admin/         panel del operador: sesión, rutas, plantillas Eta + htmx, probar el bot
-├── cli/           kb:snapshot, operator:hash-password, bot:chat y handoff:templates
+├── cli/           kb:snapshot, operator:hash-password, bot:chat, handoff:templates y
+│                  db:backup, db:restore, db:verify, db:backups
 ├── bot.ts         composición del bot
 ├── app.ts         construcción de la app Fastify
-└── server.ts      arranque
+├── startup.ts     arranque: bloqueo de instancia, migraciones con copia previa, purga y programador
+└── server.ts      lee el entorno, llama a startInstance y atiende las señales
 tests/             unit/, contract/, integration/, eval/, fixtures/ (los únicos con nombres de sector)
 ```

@@ -22,6 +22,10 @@ pnpm kb:snapshot                   # vista del bot en JSON
 pnpm bot:chat                      # hablar con el bot en la terminal (modelo real)
 pnpm test                          # o test:unit / test:integration / test <patrón>
 pnpm test:eval                     # evaluación con el modelo real (coste; fuera de pnpm test)
+pnpm db:backup                     # copia cifrada en BACKUP_DIR (INSTANCE_ID, BACKUP_DIR, BACKUP_KEY)
+pnpm db:restore <fichero>          # restaurar con la instancia parada
+pnpm db:verify <fichero>           # restaurar en una BD temporal y comprobar
+pnpm db:backups [--prune]          # listar copias y aplicar la retención
 pnpm lint && pnpm typecheck
 ```
 
@@ -31,6 +35,7 @@ pnpm lint && pnpm typecheck
 - El dominio (`src/knowledge`, `src/conversation`, `src/webchat`) no depende de HTTP; los adaptadores de canal viven en `src/channels` y el panel en `src/admin`.
 - Horarios en hora local (`time` + día ISO, donde 1 = lunes) y zona horaria IANA; nada se pasa a UTC.
 - Importes en céntimos; duraciones y antelaciones en minutos.
+- Migraciones de solo añadir; las ya publicadas no se editan nunca (la restauración de copias las reaplica y compara su hash).
 - Specs, comentarios y mensajes, en español.
 - Actualiza `README.md` cada vez que una feature cambie de estado, y avisa antes al usuario.
 
