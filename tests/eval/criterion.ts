@@ -11,6 +11,7 @@ import {
   evalChannel,
   hasApiKey,
   type Criterion,
+  type EvalAnswer,
   type EvalQuestion,
   type SectorQuestions,
   type SectorRunner,
@@ -33,6 +34,12 @@ export interface CriterionOptions {
    * sector (todos ≥ 90 % y a ≤ 10 puntos entre sí), sin llamadas adicionales al modelo.
    */
   compareSectors?: boolean;
+  /** Con vías de aviso falsas (005). */
+  handoffRoutes?: boolean;
+  /** Comprobación propia en lugar de la expectativa de cada pregunta. */
+  judge?: (answer: EvalAnswer) => string[];
+  /** Nombre con el que sale en el informe (por defecto, el criterio). */
+  reportAs?: string;
 }
 
 export function describeCriterion(
@@ -55,7 +62,10 @@ export function describeCriterion(
       describe(sector.fixture.sector, () => {
         let runner: SectorRunner;
         beforeAll(async () => {
-          runner = await createSectorRunner(sector, { audio: opts.audio ?? false });
+          runner = await createSectorRunner(sector, {
+            audio: opts.audio ?? false,
+            handoffRoutes: opts.handoffRoutes ?? false,
+          });
         });
         afterAll(async () => {
           await runner.close();
@@ -64,13 +74,14 @@ export function describeCriterion(
         for (const question of questions) {
           it(`${question.category}: ${question.text}`, async () => {
             const answer = await runner.ask(question);
+            if (opts.judge) answer.problems = opts.judge(answer);
             const ok = answer.problems.length === 0;
             const row = bySector.get(sector.fixture.sector) ?? { ok: 0, total: 0 };
             row.total += 1;
             if (ok) row.ok += 1;
             bySector.set(sector.fixture.sector, row);
             record(
-              criterion,
+              opts.reportAs ?? criterion,
               question.category,
               ok,
               `[${question.id}] ${answer.problems.join('; ')} ← ${JSON.stringify(answer.body)}`,

@@ -20,4 +20,7 @@
   <%~ include('/partials/playground-thread', { messages: it.messages, poll: it.poll, wrap: true, h: it.h }) %>
 </section>
 
+<% if (it.handoffNotice) { %>
+  <p class="notice" role="status" id="playground-handoff"><%= it.handoffNotice %></p>
+<% } %>
 <%~ include('/partials/playground-form', { csrf: it.layout.csrf, disabled: !it.botPresent, error: it.h.err(it.errors, 'text'), oob: false }) %>

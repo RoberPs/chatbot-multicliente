@@ -1,0 +1,38 @@
+<% layout('/layout') %>
+<% const v = it.values; const e = it.errors;
+   const own = it.warnings.filter(function (w) { return w.target.kind === 'handoff_alerts'; }); %>
+<%~ include('/partials/general-error', { errors: it.errors, general: it.general, blocking: it.blocking, h: it.h }) %>
+<p class="hint">Cuando un cliente pide hablar con una persona, presenta una queja o acepta que le contacten, el asistente avisa al negocio por estas vías y deja de responder en esa conversación hasta que termina la derivación.</p>
+
+<section class="card">
+  <h2>Avisos al negocio</h2>
+  <% if (own.length > 0) { %><%~ include('/partials/warnings-list', { warnings: own, h: it.h, links: false }) %><% } %>
+  <ul class="route-status">
+    <% it.routes.forEach(function (r) { %>
+      <li data-route="<%= r.label %>" data-state="<%= r.state %>">
+        <strong><%= r.label %>:</strong>
+        <span class="badge <%= r.state === 'ok' ? 'badge-ok' : 'badge-draft' %>"><%= r.state === 'ok' ? 'Disponible' : r.state === 'none' ? 'Sin configurar' : 'No disponible' %></span>
+        <% if (r.state === 'blocked') { %><span class="meta"><%= r.text %></span><% } %>
+      </li>
+    <% }) %>
+  </ul>
+
+  <form class="stack" method="post" action="/admin/handoffs/alerts">
+    <%~ include('/partials/csrf', { token: it.layout.csrf }) %>
+    <div>
+      <label for="whatsapp">WhatsApp para avisos</label>
+      <input id="whatsapp" name="whatsapp" type="tel" value="<%= it.h.str(v.whatsapp) %>" placeholder="611 22 33 44">
+      <span class="hint">El número del negocio que recibirá los avisos con los botones «Le atiendo» y «Terminado». Lo que escriba ese número al asistente no se trata como un cliente.</span>
+      <%~ include('/partials/field-error', { message: it.h.err(e, 'whatsapp') }) %>
+    </div>
+    <div>
+      <label for="email">Email para avisos</label>
+      <input id="email" name="email" type="email" value="<%= it.h.str(v.email) %>" placeholder="avisos@minegocio.example">
+      <%~ include('/partials/field-error', { message: it.h.err(e, 'email') }) %>
+    </div>
+    <div class="actions">
+      <button type="submit">Guardar</button>
+      <span class="meta">Los dos son opcionales: sin ninguna vía, el bot da el contacto de derivación.</span>
+    </div>
+  </form>
+</section>

@@ -5,6 +5,8 @@
  * incluye textos del mensaje ni los valores que el verificador rechazó.
  */
 import type { ContactReason, ReplyTrace } from '../conversation/types.js';
+import { describeKind } from '../handoff/notices.js';
+import type { RouteName } from '../handoff/types.js';
 
 const TEMPLATE_NAMES: Record<NonNullable<ReplyTrace['template']>, string> = {
   'R-SAFE': 'respuesta segura',
@@ -38,6 +40,41 @@ export interface TraceRow {
   value: string;
 }
 
+const ROUTE_NAMES: Record<RouteName, string> = {
+  whatsapp: 'WhatsApp',
+  email: 'email',
+  simulated: 'simulada',
+};
+
+type HandoffTrace = NonNullable<ReplyTrace['handoff']>;
+
+const HANDOFF_ACTIONS: Record<HandoffTrace['action'], string> = {
+  offered: 'Ofrece la derivación',
+  asked: 'Pide los datos de contacto',
+  asked_again: 'Pide de nuevo el teléfono',
+  started: 'Derivación iniciada',
+  not_started: 'Derivación no iniciada',
+  late_notice: 'Aviso de espera al cliente',
+};
+
+/** "Derivación iniciada (simulada) · quiere hablar con una persona · vías: simulada enviada". */
+export function describeHandoff(handoff: HandoffTrace): string {
+  const routes = Object.entries(handoff.routes) as Array<[RouteName, 'sent' | 'failed']>;
+  const simulated = routes.length > 0 && routes.every(([r]) => r === 'simulated');
+  const parts = [
+    `${HANDOFF_ACTIONS[handoff.action]}${handoff.action === 'started' && simulated ? ' (simulada)' : ''}`,
+    ...(handoff.kind ? [describeKind(handoff.kind)] : []),
+    ...(routes.length > 0
+      ? [
+          `vías: ${routes
+            .map(([r, status]) => `${ROUTE_NAMES[r]} ${status === 'sent' ? 'enviada' : 'falló'}`)
+            .join(', ')}`,
+        ]
+      : []),
+  ];
+  return parts.join(' · ');
+}
+
 /** Filas de la tabla técnica, en el orden del contrato. */
 export function describeTrace(trace: ReplyTrace): TraceRow[] {
   const rejections = trace.groundingRejections;
@@ -65,6 +102,7 @@ export function describeTrace(trace: ReplyTrace): TraceRow[] {
           ? 'Sin rechazos'
           : `El verificador rechazó ${rejections} borrador${rejections === 1 ? '' : 'es'}`,
     },
+    ...(trace.handoff ? [{ label: 'Derivación', value: describeHandoff(trace.handoff) }] : []),
     {
       label: 'Tiempo',
       value:

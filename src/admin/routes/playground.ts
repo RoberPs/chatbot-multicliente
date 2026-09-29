@@ -5,6 +5,10 @@
  * recepción y el mismo procesador que los de un cliente (FR-008), así que la respuesta llega
  * después y la página la recoge sondeando con htmx. El identificador de la conversación de
  * prueba vive en la sesión cifrada; "Nueva conversación" genera otro (FR-010).
+ *
+ * 005: la derivación es simulada (FR-021). La información técnica enseña el aviso que habría
+ * recibido el negocio y, mientras la conversación está derivada, un aviso fijo sustituye al
+ * indicador de "escribiendo".
  */
 import { randomUUID } from 'node:crypto';
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
@@ -18,7 +22,13 @@ import {
   listForConversation,
   type ConversationMessage,
 } from '../../conversation/repositories/message.js';
+import { displayPhone } from '../../conversation/templates.js';
 import type { Db } from '../../db/client.js';
+import { findActiveByConversation } from '../../handoff/repositories/handoff.js';
+import {
+  listSimulatedForConversation,
+  type SimulatedNotice,
+} from '../../handoff/repositories/handoff-notice.js';
 import { isHtmx } from '../auth/plugin.js';
 import { parseForm } from '../form-parse.js';
 import { readState, renderPage, savedResponse, viewHelpers } from '../render.js';
@@ -34,13 +44,41 @@ const textSchema = z
   .min(1, 'Escribe un mensaje')
   .max(MAX_CHARS, 'El mensaje no puede pasar de 1 000 caracteres');
 
-interface Thread {
-  messages: ConversationMessage[];
-  /** El operador tiene mensajes sin contestar: hay que seguir sondeando. */
-  waiting: boolean;
+/** Mensaje con los avisos simulados al negocio que le corresponden (005). */
+export interface ThreadMessage extends ConversationMessage {
+  notices: SimulatedNotice[];
 }
 
-const EMPTY: Thread = { messages: [], waiting: false };
+interface Thread {
+  messages: ThreadMessage[];
+  /** El operador tiene mensajes sin contestar: hay que seguir sondeando. */
+  waiting: boolean;
+  /** Aviso fijo mientras la conversación de prueba está derivada (005); `null` si no. */
+  handoffNotice: string | null;
+}
+
+const EMPTY: Thread = { messages: [], waiting: false, handoffNotice: null };
+
+/**
+ * Reparte los avisos simulados: el aviso inicial va con la respuesta que inició la derivación y
+ * cada reenvío, con el último mensaje del operador que cubrió.
+ */
+function attachNotices(rows: ConversationMessage[], notices: SimulatedNotice[]): ThreadMessage[] {
+  const out: ThreadMessage[] = rows.map((m) => ({ ...m, notices: [] }));
+  for (const notice of notices) {
+    const target =
+      notice.type === 'alert'
+        ? out.find(
+            (m) =>
+              m.direction === 'outbound' && m.replyTrace?.handoff?.handoffId === notice.handoffId,
+          )
+        : out.findLast(
+            (m) => m.direction === 'inbound' && m.sentAt.getTime() <= notice.createdAt.getTime(),
+          );
+    target?.notices.push(notice);
+  }
+  return out;
+}
 
 /** Conversación de prueba vigente; `after` limita a los mensajes posteriores al cursor. */
 async function readThread(
@@ -52,9 +90,17 @@ async function readThread(
   if (!customer) return EMPTY;
   const conversation = await conversations.findLatestForCustomer(db, customer.id);
   if (!conversation) return EMPTY;
+  const active = await findActiveByConversation(db, conversation.id);
+  const rows = await listForConversation(db, conversation.id, after);
   return {
-    messages: await listForConversation(db, conversation.id, after),
-    waiting: await hasPending(db, conversation.id),
+    messages: attachNotices(rows, await listSimulatedForConversation(db, conversation.id)),
+    // Con la derivación activa no hay respuesta que esperar (R15).
+    waiting: active === null && (await hasPending(db, conversation.id)),
+    handoffNotice: active
+      ? `Conversación derivada: el negocio contactará en el teléfono dado (${displayPhone(
+          active.customerPhone ?? '',
+        )}); lo que escribas también le llega.`
+      : null,
   };
 }
 
@@ -93,6 +139,7 @@ export async function playgroundRoutes(app: FastifyInstance): Promise<void> {
         botPresent: app.bot !== null,
         messages: thread.messages,
         poll: pollCursor(thread),
+        handoffNotice: thread.handoffNotice,
         ...extra,
       },
       status,

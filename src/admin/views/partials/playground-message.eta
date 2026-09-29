@@ -8,4 +8,10 @@
   <% if (it.m.direction === 'outbound' && it.m.replyTrace) { %>
     <%~ include('/partials/playground-trace', { trace: it.m.replyTrace, h: it.h }) %>
   <% } %>
+  <% (it.m.notices || []).forEach(function (n) { %>
+    <details class="handoff-notice">
+      <summary><%= n.type === 'alert' ? 'Aviso al negocio (simulado)' : 'Reenviado al negocio (simulado)' %></summary>
+      <pre><%= n.body %></pre>
+    </details>
+  <% }) %>
 </li>

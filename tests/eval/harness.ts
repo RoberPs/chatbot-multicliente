@@ -15,6 +15,10 @@ import { MediaTooLargeError, type Clock, type MediaFetcher } from '../../src/con
 import { createProcessor } from '../../src/conversation/processor.js';
 import { conversationSettings } from '../../src/conversation/settings.js';
 import { createTranscriber } from '../../src/conversation/transcription.js';
+import type { ReplyTemplate } from '../../src/conversation/activity-log.js';
+import { createHandoffService } from '../../src/handoff/service.js';
+import { createSimulatedRoute } from '../../src/handoff/simulated-route.js';
+import { createTokenCipher } from '../../src/handoff/tokens.js';
 import type { InboundEvent } from '../../src/conversation/types.js';
 import { webChatSettings } from '../../src/db/schema.js';
 import { activateBusiness } from '../../src/knowledge/services/business-status.js';
@@ -23,8 +27,14 @@ import { createAnthropicChatModel, type Effort } from '../../src/llm/anthropic-c
 import { createWhisperSpeechToText } from '../../src/speech/whisper.js';
 import { loadFixture } from '../fixtures/load.js';
 import type { BusinessFixture } from '../fixtures/types.js';
-import { createTestDatabase, resetDb, type TestDatabase } from '../helpers/db.js';
-import { FakeChannelSender, RecordingActivityLog } from '../helpers/fakes.js';
+import { createTestDatabase, resetDb, setHandoffAlerts, type TestDatabase } from '../helpers/db.js';
+import {
+  FakeAlertRoute,
+  FakeAlertRoutesProvider,
+  FakeChannelSender,
+  FakeSummarizer,
+  RecordingActivityLog,
+} from '../helpers/fakes.js';
 import { recordLatency } from './report.js';
 
 loadDotEnvIfPresent();
@@ -174,6 +184,8 @@ export interface EvalAnswer {
   body: string;
   latencyMs: number | null;
   problems: string[];
+  /** Plantilla de la última respuesta (005: R-HANDOFF-OK, R-HANDOFF-ASK…); `null` si no. */
+  template: ReplyTemplate | null;
 }
 
 export interface SectorRunner {
@@ -222,6 +234,11 @@ function lastEvent(
 export interface RunnerOptions {
   /** Activa los audios con Whisper real (requiere STT_API_KEY). */
   audio?: boolean;
+  /**
+   * Con vías de aviso falsas (005): destinos de WhatsApp y email configurados, las vías
+   * siempre entregan y el resumen es fijo. Sin esta opción el bot no tiene vías (como la 002).
+   */
+  handoffRoutes?: boolean;
 }
 
 export async function createSectorRunner(
@@ -232,6 +249,9 @@ export async function createSectorRunner(
   await resetDb(t.db);
   await loadFixture(t.deps, sector.fixture);
   await activateBusiness(t.db);
+  if (opts.handoffRoutes) {
+    await setHandoffAlerts(t.db, { whatsapp: '+34611000111', email: 'avisos@negocio.example' });
+  }
   if (evalChannel === 'web') {
     await t.db.update(webChatSettings).set({
       enabled: true,
@@ -264,6 +284,19 @@ export async function createSectorRunner(
       const log = new RecordingActivityLog();
       // El mismo doble recoge las respuestas de WhatsApp y las guardadas de la web.
       const policies = buildChannelPolicies({ whatsappSender: sender, stored: sender });
+      // Derivación (005) con vías falsas; sin destinos configurados no hay vías.
+      const handoff = createHandoffService({
+        db: t.db,
+        clock,
+        activityLog: log,
+        routes: new FakeAlertRoutesProvider(
+          { whatsapp: new FakeAlertRoute('whatsapp'), email: new FakeAlertRoute('email') },
+          createSimulatedRoute(clock),
+        ),
+        summarizer: new FakeSummarizer(),
+        cipher: createTokenCipher('00'.repeat(32)),
+        phoneRegion: 'ES',
+      });
       const processor = createProcessor({
         db: t.db,
         reader,
@@ -273,6 +306,7 @@ export async function createSectorRunner(
         activityLog: log,
         emergencyContactPhone: '+34600999888',
         audioTranscription: audio,
+        handoff,
       });
       const transcriber = stt
         ? createTranscriber({
@@ -330,11 +364,13 @@ export async function createSectorRunner(
         await processor.runOnce();
       }
       const body = sender.sent.length === texts.length ? (sender.sent.at(-1)?.body ?? '') : '';
-      const latencyMs = log.named('reply_sent').at(-1)?.latencyMs ?? null;
+      const lastReply = log.named('reply_sent').at(-1);
+      const latencyMs = lastReply?.latencyMs ?? null;
       if (latencyMs !== null) recordLatency(latencyMs);
       return {
         body,
         latencyMs,
+        template: lastReply?.template ?? null,
         problems: body ? check(body, question.expect, contactLine) : ['sin respuesta'],
       };
     },

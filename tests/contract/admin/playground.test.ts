@@ -249,4 +249,48 @@ describe('Probar el bot (/admin/playground)', () => {
     expect(page).toContain('Te lo confirma el equipo.');
     expect(page).not.toContain('7:45');
   });
+
+  /** Deriva la conversación de prueba: pide los datos y luego los recibe (005). */
+  async function derive(b: TestBot) {
+    b.model.queue(
+      reply('De acuerdo.', { handoffRequested: true }),
+      reply('Gracias.', { contactName: 'Operador', contactPhone: '612 345 678' }),
+    );
+    b.summarizer.queue({ summary: 'Quiere hablar con una persona.' });
+    await send('Quiero hablar con una persona', HTMX);
+    await b.settle();
+    await send('Operador, 612 345 678', HTMX);
+    await b.settle();
+  }
+
+  it('la respuesta que inicia la derivación muestra "Derivación iniciada (simulada)" y el aviso plegable (005)', async () => {
+    const b = await start();
+    await derive(b);
+    const page = keep(await get(app, session, '/admin/playground')).body;
+    expect(page).toContain(
+      'Derivación iniciada (simulada) · quiere hablar con una persona · vías: simulada enviada',
+    );
+    expect(page).toMatch(
+      /<details class="handoff-notice">\s*<summary>Aviso al negocio \(simulado\)<\/summary>\s*<pre>Derivación: Operador \(quiere hablar con una persona\)/,
+    );
+    expect(page).toContain('Pide los datos de contacto');
+  });
+
+  it('con la conversación derivada: aviso fijo, sin "escribiendo" y reenvío simulado (005, US3)', async () => {
+    const b = await start();
+    await derive(b);
+    const sent = await send('Una cosa más: llego tarde', HTMX);
+    // Sin indicador de sondeo: no hay respuesta que esperar mientras dura la derivación.
+    expect(sent.body).not.toContain('playground-poll');
+    await b.settle();
+
+    const page = keep(await get(app, session, '/admin/playground')).body;
+    expect(page).toContain('id="playground-handoff"');
+    expect(page).toContain('el negocio contactará en el teléfono dado (+34 612 34 56 78)');
+    expect(page).toMatch(
+      /Una cosa más: llego tarde<\/p>\s*<details class="handoff-notice">\s*<summary>Reenviado al negocio \(simulado\)<\/summary>/,
+    );
+    // El bot no ha contestado al mensaje reenviado.
+    expect(b.model.calls).toHaveLength(2);
+  });
 });
