@@ -17,8 +17,10 @@ import {
   listForConversation,
 } from '../../conversation/repositories/message.js';
 import { conversationSettings } from '../../conversation/settings.js';
-import { unavailableContact } from '../../conversation/templates.js';
+import { formOf, unavailableContact } from '../../conversation/templates.js';
 import type { Db } from '../../db/client.js';
+import { findActiveByConversation } from '../../handoff/repositories/handoff.js';
+import { activeHandoffNotice } from '../../handoff/templates.js';
 import {
   unavailable,
   UNAVAILABLE_MESSAGE,
@@ -217,10 +219,13 @@ export async function webChatApi(api: FastifyInstance, deps: WebApiDeps): Promis
         }
         const conversation = await currentConversation(visitorOf(request));
         if (!conversation) {
-          return reply.code(200).send({ messages: [], cursor: null, waiting: false });
+          return reply
+            .code(200)
+            .send({ messages: [], cursor: null, waiting: false, handoff: null });
         }
         const rows = await listForConversation(db, conversation.id, after);
         const last = rows.at(-1);
+        const handoff = await handoffBanner(conversation.id);
         return reply.code(200).send({
           // Nunca `reply_trace`: la información técnica es solo del panel (FR-009).
           messages: rows.map((m) => ({
@@ -230,7 +235,9 @@ export async function webChatApi(api: FastifyInstance, deps: WebApiDeps): Promis
             at: m.sentAt.toISOString(),
           })),
           cursor: last ? encodeCursor(last) : raw === '' ? null : raw,
-          waiting: await hasPending(db, conversation.id),
+          // Con la conversación derivada no hay respuesta que esperar (005, R15).
+          waiting: handoff ? false : await hasPending(db, conversation.id),
+          handoff,
         });
       },
     );
@@ -290,6 +297,24 @@ export async function webChatApi(api: FastifyInstance, deps: WebApiDeps): Promis
         return reply.code(202).send({ accepted: true });
       },
     );
+
+    /**
+     * Aviso fijo de la derivación activa (005, FR-013a): con el teléfono que dio el visitante y
+     * nunca los destinos de avisos del negocio; `null` sin derivación.
+     */
+    async function handoffBanner(
+      conversationId: string,
+    ): Promise<{ active: true; notice: string } | null> {
+      const active = await findActiveByConversation(db, conversationId);
+      if (!active) return null;
+      const snapshot = await readableSnapshot();
+      const notice = activeHandoffNotice(
+        snapshot?.business.name ?? 'el negocio',
+        active.customerPhone ?? '',
+        formOf(snapshot?.tone.addressForm ?? null),
+      );
+      return { active: true, notice };
+    }
 
     /** Snapshot para el contacto del objeto `unavailable`; `null` si no se puede leer. */
     async function readableSnapshot() {

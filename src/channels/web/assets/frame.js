@@ -15,6 +15,8 @@
   var POLL_MS = 1500;
   /** A partir de aquí se deja de esperar y se da el contacto del negocio (FR-021). */
   var GIVE_UP_MS = 45000;
+  /** Mientras la conversación está derivada, cada cuánto se mira si ha vuelto al bot (005, R15). */
+  var HANDOFF_POLL_MS = 60000;
 
   var toggle = document.getElementById('chat-toggle');
   var panel = document.getElementById('chat-panel');
@@ -23,6 +25,7 @@
   var status = document.getElementById('chat-status');
   var form = document.getElementById('chat-form');
   var box = document.getElementById('chat-text');
+  var handoffBar = document.getElementById('chat-handoff');
   if (!toggle || !panel) return;
 
   var state = {
@@ -33,6 +36,9 @@
     /** Instante en el que se empezó a esperar la respuesta actual. */
     waitingSince: null,
     pollTimer: null,
+    /** Sondeo lento mientras la conversación está derivada al negocio (005). */
+    handoffTimer: null,
+    handoffActive: false,
     /** Momento hasta el que no se puede enviar (cabecera `Retry-After`). */
     blockedUntil: 0,
     limitWarned: false,
@@ -198,11 +204,43 @@
     });
   }
 
+  /**
+   * Franja fija de derivación (005, FR-013a): aviso de la interfaz, no burbuja del bot. Mientras
+   * está visible no hay indicador de "escribiendo" y se consulta cada minuto si la conversación
+   * ha vuelto al bot; al volver se quita sin añadir ningún mensaje (US4-6).
+   */
+  function applyHandoff(handoff) {
+    var active = Boolean(handoff && handoff.active);
+    state.handoffActive = active;
+    if (handoffBar) {
+      handoffBar.textContent = active ? String(handoff.notice || '') : '';
+      handoffBar.hidden = !active;
+    }
+    if (active) {
+      stopPolling();
+      setStatus('');
+      if (state.handoffTimer === null) {
+        state.handoffTimer = window.setInterval(pollHandoff, HANDOFF_POLL_MS);
+      }
+    } else if (state.handoffTimer !== null) {
+      window.clearInterval(state.handoffTimer);
+      state.handoffTimer = null;
+    }
+  }
+
+  function pollHandoff() {
+    var path = state.cursor ? '/messages?after=' + encodeURIComponent(state.cursor) : '/messages';
+    request('GET', path).then(function (res) {
+      if (res.status === 200) applyMessages(res.data);
+    });
+  }
+
   function applyMessages(data) {
     var messages = data && data.messages ? data.messages : [];
     for (var i = 0; i < messages.length; i++) addMessage(messages[i]);
     if (data && typeof data.cursor === 'string') state.cursor = data.cursor;
-    if (data && data.waiting) {
+    applyHandoff(data ? data.handoff : null);
+    if (data && data.waiting && !state.handoffActive) {
       startPolling();
     } else {
       stopPolling();
@@ -213,6 +251,7 @@
   /* --- Sondeo de la respuesta --- */
 
   function startPolling() {
+    if (state.handoffActive) return;
     if (state.waitingSince === null) state.waitingSince = Date.now();
     setStatus('escribiendo…');
     if (state.pollTimer !== null) return;
@@ -346,7 +385,7 @@
       box.value = '';
       // No se pinta una copia local: al aceptarlo, `loadHistory` lo trae ya con su id, y así
       // el mensaje nunca aparece dos veces.
-      setStatus('escribiendo…');
+      if (!state.handoffActive) setStatus('escribiendo…');
       send(text).catch(function () {
         setStatus('No se ha podido enviar. Inténtalo de nuevo.');
       });

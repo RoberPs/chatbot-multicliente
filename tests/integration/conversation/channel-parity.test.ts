@@ -101,7 +101,21 @@ describe('paridad entre canales', () => {
       expect.objectContaining({ groundingRejections: 1, contact: { added: false, reason: null } }),
     ]);
     expect(web).toEqual({ ...whatsapp, sent: 0 });
-    expect(playground).toEqual({ ...whatsapp, sent: 0 });
+    // 005: el playground siempre tiene la vía simulada (`simulateAlerts`, FR-021), así que ante
+    // la petición de persona pide los datos en vez de dar el contacto. Hasta ahí, idéntico.
+    const untilRequest = (events: Array<Record<string, unknown>> = []) => {
+      const received = events
+        .map((e, i) => (e.event === 'message_received' ? i : -1))
+        .filter((i) => i >= 0);
+      return events.slice(0, (received[2] ?? events.length) + 1);
+    };
+    expect(playground?.rows.slice(0, 2)).toEqual(whatsapp?.rows.slice(0, 2));
+    expect(untilRequest(playground?.events)).toEqual(untilRequest(whatsapp?.events));
+    expect(playground?.rows[2]?.trace).toMatchObject({
+      template: 'R-HANDOFF-ASK',
+      handoff: { action: 'asked', kind: 'person' },
+    });
+    expect(playground?.sent).toBe(0);
     // Solo WhatsApp llama a su sender; web y playground guardan la respuesta.
     expect(whatsapp?.sent).toBe(4);
   });

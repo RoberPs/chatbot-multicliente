@@ -26,6 +26,7 @@
           <a href="<%= it.privacyUrl %>" target="_blank" rel="noopener noreferrer">Política de privacidad</a>
         <% } %>
       </p>
+      <p id="chat-handoff" class="handoff" role="status" hidden></p>
       <ul id="chat-messages" class="messages" aria-live="polite"></ul>
       <p id="chat-status" class="status" role="status"></p>
       <form id="chat-form" class="composer">

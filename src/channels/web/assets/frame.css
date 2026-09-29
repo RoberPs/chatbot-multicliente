@@ -89,6 +89,19 @@ body {
   border-bottom: 1px dashed var(--chat-line);
 }
 
+/* Franja fija mientras la conversación está derivada al negocio (005): aviso, no burbuja. */
+.handoff {
+  margin: 0;
+  padding: 0.5rem 0.75rem;
+  font-size: 0.85rem;
+  color: var(--chat-fg);
+  background: #fff6d6;
+  border-bottom: 1px solid #e8d48a;
+}
+.handoff[hidden] {
+  display: none;
+}
+
 .messages {
   flex: 1;
   list-style: none;
