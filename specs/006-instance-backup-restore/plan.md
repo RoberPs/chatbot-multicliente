@@ -45,14 +45,16 @@ tabla a tabla, copia con escrituras concurrentes, restauración que falla a mita
 igual, copia de esquema anterior + arranque con copia previa, esquema posterior, otra instancia,
 instancia en marcha, copia en curso, arranque bloqueado sin clave, BD vacía sin copia,
 retención con ficheros ajenos, comprobación que borra la BD temporal, copia diaria y arranque
-tardío con reloj controlable, registros sin datos personales, neutralidad de sector). Sin
+tardío con reloj controlable, registros sin datos personales, neutralidad de sector (ciclo
+copia/restauración igual con las fixtures de los tres sectores y recorrido de `src/backup`)). Sin
 contratos HTTP ni `eval`: no cambia la conversación.
 
 **Target Platform**: el mismo contenedor Linux por instancia (`node:22-slim`, sin binarios nuevos)
 con un volumen para `BACKUP_DIR`; desarrollo en Windows/macOS/Linux
 
 **Project Type**: servicio web (monolito modular): módulo de operación nuevo `src/backup`, cuatro
-comandos en `src/cli` y cambios en el arranque (`src/server.ts`, `src/db/migrate.ts`)
+comandos en `src/cli` y cambios en el arranque (`src/startup.ts` nuevo, `src/server.ts`,
+`src/db/migrate.ts`)
 
 **Performance Goals**: SC-001 — copia de una instancia con 30 días de actividad típica (del orden
 de 10⁴ mensajes, < 50 MB) en < 1 min sin pausar al bot; restauración y comprobación del mismo
@@ -124,6 +126,11 @@ Revisados [data-model.md](data-model.md) y [contracts/](contracts/):
   ya publicados MUST NOT editarse: la restauración de copias antiguas reaplica las migraciones y
   comprueba su hash (R5).
 - El servidor tarda un poco más en escuchar: espera a una pasada del borrado de conversaciones.
+- La restauración es una excepción deliberada a la regla de escritura protegida del núcleo
+  (aplicar → recalcular avisos → revertir si un negocio activo queda con un aviso crítico, FR-032
+  de la 001): restaura el estado de la copia tal cual, aunque tenga avisos críticos con el núcleo
+  instalado (caso límite de la spec, FR-013). El panel muestra esos avisos y el operador los
+  corrige con las escrituras normales, que sí pasan por la protección.
 
 ## Project Structure
 
@@ -167,13 +174,15 @@ src/
 │   ├── restore.ts                 # NUEVO: pnpm db:restore
 │   ├── verify.ts                  # NUEVO: pnpm db:verify
 │   └── backups.ts                 # NUEVO: pnpm db:backups [--prune]
-└── server.ts                      # bloqueo de instancia, migrar con copia, purge antes de listen, programador
+├── startup.ts                     # startInstance(): bloqueo de instancia, migrar con copia, purga antes de listen, programador
+└── server.ts                      # solo lee el entorno, llama a startInstance y gestiona señales
 
 tests/
 ├── unit/backup/                   # format, naming, retention, scheduler, config
-├── integration/backup/            # backup-restore, concurrency, restore-atomic, older-schema,
-│                                  # rejections, premigration, retention, verify, daily, logs
-├── integration/sector-neutrality.test.ts   # + src/backup
+├── integration/backup/            # backup-restore (recorre las fixtures de los tres sectores),
+│                                  # concurrency, restore-atomic, older-schema, rejections,
+│                                  # premigration, retention, verify, daily, logs
+├── unit/sector-neutrality.test.ts          # el recorrido incluye src/backup y los comandos nuevos
 └── helpers/backup.ts              # BACKUP_DIR temporal, clave de test, copias con fecha forzada,
                                    # BD migrada hasta un índice (applyMigrationsUpTo)
 
@@ -187,8 +196,9 @@ README.md                          # estado de la 006 y variables (se avisa ante
 **Structure Decision**: proyecto único, como las features anteriores. `src/backup` es un módulo de
 operación hermano de `src/db`: no conoce Fastify ni el dominio de la conversación; habla con
 PostgreSQL por `pg` y con el disco por `node:fs`. Los comandos siguen el patrón de `src/cli`
-(`tsx` en local, `node dist/...` en la imagen). El servidor solo compone: bloqueo, migración con
-copia, purga y programador.
+(`tsx` en local, `node dist/...` en la imagen). `src/startup.ts` compone el arranque (bloqueo,
+migración con copia, purga y programador) con dependencias inyectables para probar el orden;
+`src/server.ts` solo lo invoca.
 
 ## Complexity Tracking
 

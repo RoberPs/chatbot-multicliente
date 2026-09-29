@@ -160,7 +160,8 @@ guarda); comparar solo el número de migraciones (no detecta ramas distintas).
 
 La restauración **no** aplica migraciones posteriores ni cambia el estado del negocio o de los
 canales (FR-013): la instancia queda con el esquema de la copia y las migraciones pendientes se
-aplican al arrancar, con su copia previa (US2-3).
+aplican al arrancar, con su copia previa (US2-3). Tampoco pasa por la escritura protegida
+(FR-032): no recalcula avisos ni revierte por un aviso crítico; ver plan, Consecuencias.
 
 **Motivo**: en PostgreSQL el DDL es transaccional, así que vaciar, reconstruir y cargar en una
 transacción es todo o nada. La primera pasada evita empezar con una copia que se sabe mala.
@@ -262,9 +263,13 @@ lastDaily, failedOn)`:
   `daily` de la instancia cuya fecha de cabecera caiga en el día local de hoy. Cubre el arranque
   tardío (FR-027) y garantiza como mucho una al día; el directorio es la única fuente de verdad.
 - Si falla, registra `backup_failed` (sin datos personales) y marca el día local en memoria para no
-  reintentar hasta el día siguiente, que es "la siguiente ocasión prevista" (US6-3, FR-028). Un
-  reinicio ese mismo día vuelve a intentarlo, porque cuenta como arranque tardío.
+  reintentar hasta el día siguiente, que es "la siguiente ocasión prevista" (US6-3, FR-028).
+  **Excepción: si falla con `busy` (otra copia en curso, R7), no marca el día y se reintenta en la
+  siguiente pasada (60 s).** Un reinicio ese mismo día vuelve a intentarlo, porque cuenta como
+  arranque tardío.
 - Tras cada copia diaria correcta y en la pasada de la hora configurada, aplica la retención.
+  Aunque la copia falle, la pasada aplica la retención, para liberar espacio cuando el fallo es
+  `no_space`.
 - Días de cambio de hora: si la hora configurada no existe ese día (salto de primavera), la copia
   se hace en el primer minuto posterior; si se repite (otoño), la regla "una al día" evita dos.
 

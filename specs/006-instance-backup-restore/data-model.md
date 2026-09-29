@@ -134,7 +134,8 @@ Función pura `dueDailyBackup({ now, timezone, time, dailyToday, failedOn }) →
   (`dailyToday = false`) y `failedOn ≠ localDate`.
 
 Estado en memoria del programador: `failedOn: LocalDate | null` (se pierde al reiniciar a
-propósito: un arranque tardío vuelve a intentarlo, FR-027).
+propósito: un arranque tardío vuelve a intentarlo, FR-027). `failedOn` no se fija cuando el fallo
+es `busy`.
 
 ---
 
