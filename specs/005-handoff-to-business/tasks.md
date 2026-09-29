@@ -368,6 +368,9 @@ reclamación" con un motivo que empieza por "Queja:" (quickstart, escenario 4).
 - [X] T130 Revisión de seguridad de `/handoff/*`, el enrutador del negocio y el email (token, cabeceras, escape en HTML, inyección en cabeceras, límite por IP) con el agente `security-auditor`; anotar hallazgos y decisiones al final de este fichero
 - [ ] T131 Ejecutar `pnpm test:eval` (sc008 adaptado, sc-handoff-summary, sc-handoff-offer, sc-handoff-complaint) y anotar los porcentajes obtenidos y el resultado de la revisión manual de SC-003
 - [ ] T132 Recorrer [quickstart.md](quickstart.md) (escenarios 1–6 y 8; el 7 si hay número de pruebas de WhatsApp) con Mailpit y "Probar el bot"
+  - Progreso (2026-09-29): escenarios 1 a 4 completados en local (panel, "Probar el bot" y chat web en `http://localhost:8080` con Mailpit). Interrumpido por errores 503 de la API de Anthropic (`generation_failed`, plantilla `R-ERR`); no es un fallo de la instancia. Pendientes: escenarios 5, 6 y 8 (el 7 sin número de pruebas de WhatsApp).
+  - Corregido en el quickstart: `SMTP_FROM=asistente@localhost` no pasa la validación de email; ahora `asistente@ejemplo.com`.
+  - Pendiente fuera de esta feature: el texto de `R-ERR` («Ahora mismo no puedo responder…») no deja claro que es un fallo pasajero; cambiarlo requiere una spec (la plantilla es de la 002).
 - [ ] T133 Avisar al usuario y actualizar README.md: estado de la feature 005, `pnpm handoff:templates`, variables `SMTP_URL`/`SMTP_FROM`/`WHATSAPP_TEMPLATE_LANG`, página "Derivaciones" y las consecuencias del plan (plantillas de Meta con coste, aviso `HANDOFF_ALERTS_NONE`)
 
 ---
