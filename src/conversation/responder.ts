@@ -97,6 +97,8 @@ export interface ComposeInput {
   template?: ReplyTemplate;
   fileNotice?: string | null;
   groundingRejections?: number;
+  /** Cierre fijo sin CONTACTO (la OFERTA de la 005): como el contacto, nunca se recorta. */
+  closing?: string | null;
 }
 
 /**
@@ -106,7 +108,7 @@ export interface ComposeInput {
 export function composeReply(input: ComposeInput): Response {
   const { snapshot, reason } = input;
   const form = formOf(snapshot.tone.addressForm);
-  const contact = reason ? contactBlock(snapshot) : null;
+  const contact = reason ? contactBlock(snapshot) : (input.closing ?? null);
   const hello = input.greeted ? null : greeting(snapshot.business.name, form);
   const { text, truncated } = joinParts({
     greeting: hello,

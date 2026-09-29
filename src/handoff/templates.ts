@@ -34,6 +34,12 @@ export function askContactReply(missing: ContactField[], business: string, form:
     : `¿Me dices un teléfono en el que ${business} pueda contactarte?`;
 }
 
+/** OFERTA: va tras el cuerpo del modelo, sin CONTACTO (FR-002). */
+export const offerQuestion = (business: string, form: Form): string =>
+  form === 'usted'
+    ? `¿Quiere que le pase su consulta a ${business} para que le contacte?`
+    : `¿Quieres que le pase tu consulta a ${business} para que te contacte?`;
+
 /** R-HANDOFF-PHONE: el teléfono no es válido; se pide una vez más (FR-005). */
 export const phoneRetryReply = (form: Form): string =>
   form === 'usted'

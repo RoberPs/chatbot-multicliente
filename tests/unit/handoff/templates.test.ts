@@ -6,6 +6,7 @@ import {
   confirmedReply,
   lateReply,
   lateReplyWithContact,
+  offerQuestion,
   phoneRetryReply,
 } from '../../../src/handoff/templates.js';
 import { activeSnapshot } from '../../helpers/snapshot.js';
@@ -129,6 +130,17 @@ describe('R-HANDOFF-LATE (US5, FR-019)', () => {
       `${lateReply('Negocio Demo', 'tu')}
 
 ${contactBlock(snapshot)}`,
+    );
+  });
+});
+
+describe('OFERTA (US2, FR-002)', () => {
+  it('tú y usted, sin datos del negocio salvo el nombre', () => {
+    expect(offerQuestion(BUSINESS, 'tu')).toBe(
+      '¿Quieres que le pase tu consulta a Peluquería Tijeras para que te contacte?',
+    );
+    expect(offerQuestion(BUSINESS, 'usted')).toBe(
+      '¿Quiere que le pase su consulta a Peluquería Tijeras para que le contacte?',
     );
   });
 });

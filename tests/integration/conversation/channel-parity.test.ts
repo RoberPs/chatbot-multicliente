@@ -109,15 +109,20 @@ describe('paridad entre canales', () => {
     ]);
     expect(web).toEqual({ ...whatsapp, sent: 0 });
     // 005: el playground siempre tiene la vía simulada (`simulateAlerts`, FR-021), así que ante
-    // la petición de persona pide los datos en vez de dar el contacto. Hasta ahí, idéntico.
-    const untilRequest = (events: Array<Record<string, unknown>> = []) => {
+    // un dato sin registrar ofrece la derivación (US2) y ante la petición de persona pide los
+    // datos, en vez de dar el contacto. Hasta ahí, idéntico.
+    const untilOffer = (events: Array<Record<string, unknown>> = []) => {
       const received = events
         .map((e, i) => (e.event === 'message_received' ? i : -1))
         .filter((i) => i >= 0);
-      return events.slice(0, (received[2] ?? events.length) + 1);
+      return events.slice(0, (received[1] ?? events.length) + 1);
     };
-    expect(playground?.rows.slice(0, 2)).toEqual(whatsapp?.rows.slice(0, 2));
-    expect(untilRequest(playground?.events)).toEqual(untilRequest(whatsapp?.events));
+    expect(playground?.rows.slice(0, 1)).toEqual(whatsapp?.rows.slice(0, 1));
+    expect(untilOffer(playground?.events)).toEqual(untilOffer(whatsapp?.events));
+    expect(playground?.rows[1]?.trace).toMatchObject({
+      contact: { added: false, reason: null },
+      handoff: { action: 'offered', kind: 'unresolved' },
+    });
     expect(playground?.rows[2]?.trace).toMatchObject({
       template: 'R-HANDOFF-ASK',
       handoff: { action: 'asked', kind: 'person' },

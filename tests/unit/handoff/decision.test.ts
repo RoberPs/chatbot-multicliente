@@ -24,6 +24,12 @@ function input(overrides: Partial<TurnInput> = {}): TurnInput {
   };
 }
 
+const OFFERED: HandoffStep = {
+  step: 'offered',
+  kind: 'unresolved',
+  at: '2026-10-01T09:00:00.000Z',
+};
+
 const collecting = (
   missing: Array<'name' | 'phone'>,
   extra: Partial<Extract<HandoffStep, { step: 'collecting' }>> = {},
@@ -204,9 +210,7 @@ describe('fila 8', () => {
   });
 
   it('un paso offered caduca', () => {
-    const d = decide(
-      input({ step: { step: 'offered', kind: 'unresolved', at: '2026-10-01T09:00:00.000Z' } }),
-    );
+    const d = decide(input({ step: OFFERED }));
     expect(d).toEqual({ type: 'normal', step: null });
   });
 });
@@ -253,5 +257,88 @@ describe('SC-001 / Principio V: toda petición acaba en iniciar, pedir datos o C
                 }
       }
     expect(checked).toBeGreaterThan(300);
+  });
+});
+
+describe('fila 6: el cliente acepta la oferta (US2)', () => {
+  it('offered + acceptsHandoff → deriva unresolved pidiendo los datos que falten', () => {
+    const d = decide(input({ step: OFFERED, reply: reply('Vale.', { acceptsHandoff: true }) }));
+    expect(d).toMatchObject({
+      type: 'ask',
+      kind: 'unresolved',
+      missing: ['name', 'phone'],
+      step: { step: 'collecting', kind: 'unresolved' },
+    });
+  });
+
+  it('en WhatsApp con perfil inicia sin pedir nada', () => {
+    const d = decide(
+      input({
+        step: OFFERED,
+        reply: reply('Vale.', { acceptsHandoff: true }),
+        contactFromChannel: true,
+        known: { name: 'Lucía', phone: '+34611222333' },
+      }),
+    );
+    expect(d).toEqual({ type: 'start', kind: 'unresolved', step: null, save: {} });
+  });
+
+  it('acceptsHandoff sin oferta previa no deriva', () => {
+    expect(decide(input({ reply: reply('Vale.', { acceptsHandoff: true }) }))).toEqual({
+      type: 'normal',
+      step: null,
+    });
+  });
+
+  it('offered sin aceptar → caduca y respuesta normal (US2-3)', () => {
+    expect(decide(input({ step: OFFERED, reply: reply('Vale, gracias.') }))).toEqual({
+      type: 'normal',
+      step: null,
+    });
+  });
+});
+
+describe('fila 7: ofrecer la derivación (US2, FR-002)', () => {
+  const offer = {
+    type: 'offer',
+    step: { step: 'offered', kind: 'unresolved', at: NOW.toISOString() },
+  };
+
+  it('offerContact con vías → OFERTA y offered', () => {
+    expect(
+      decide(input({ reply: reply('No dispongo de ese dato.', { offerContact: true }) })),
+    ).toEqual(offer);
+  });
+
+  it('bookingRequested con vías → también ofrece (US2-4)', () => {
+    expect(
+      decide(input({ reply: reply('No puedo reservar.', { bookingRequested: true }) })),
+    ).toEqual(offer);
+  });
+
+  it('sin vías o con needsRephrase → fila 8 (CONTACTO de la 002)', () => {
+    expect(
+      decide(input({ hasRoutes: false, reply: reply('No lo sé.', { offerContact: true }) })),
+    ).toEqual({ type: 'normal', step: null });
+    expect(
+      decide(
+        input({ reply: reply('¿Puedes repetirlo?', { offerContact: true, needsRephrase: true }) }),
+      ),
+    ).toEqual({ type: 'normal', step: null });
+  });
+
+  it('tras una derivación terminada sigue ofreciendo (FR-018: handoffEnded no cambia la tabla)', () => {
+    expect(decide(input({ reply: reply('No lo sé.', { offerContact: true }) })).type).toBe('offer');
+  });
+
+  it('offered y otra consulta sin dato sin aceptar → vuelve a ofrecer', () => {
+    expect(
+      decide(input({ step: OFFERED, reply: reply('Tampoco lo sé.', { offerContact: true }) })),
+    ).toEqual(offer);
+  });
+
+  it('una petición de persona gana sobre la oferta (fila 3)', () => {
+    const d = decide(input({ detector: true, reply: reply('Vale.', { offerContact: true }) }));
+    expect(d).toMatchObject({ type: 'ask', kind: 'person' });
   });
 });

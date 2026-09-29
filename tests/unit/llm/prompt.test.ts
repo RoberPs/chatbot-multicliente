@@ -189,7 +189,18 @@ describe('prompt del modelo: derivación (005)', () => {
     expect(name).toContain('Has pedido al cliente su nombre.');
   });
 
+  it('con offered indica que marque acceptsHandoff si acepta (US2)', () => {
+    const turn = lastTurn({
+      handoffStep: { step: 'offered', kind: 'unresolved', at: '2026-10-01T10:00:00.000Z' },
+    });
+    expect(turn).toContain(
+      'En tu mensaje anterior ofreciste que el negocio contacte al cliente. Si ahora acepta, marca acceptsHandoff.',
+    );
+    expect(turn).not.toContain('Has pedido al cliente');
+  });
+
   it('sin paso no hay indicaciones de derivación', () => {
+    expect(lastTurn({})).not.toContain('ofreciste');
     expect(lastTurn({})).not.toContain('Has pedido al cliente');
     expect(lastTurn({})).not.toContain('ha vuelto a ti');
   });

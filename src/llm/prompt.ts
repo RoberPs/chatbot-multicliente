@@ -164,6 +164,13 @@ function handoffIndications(step: HandoffStep | null, ended: boolean): string[] 
           'no vuelvas a saludar.',
       ]
     : [];
+  if (step?.step === 'offered') {
+    return [
+      ...back,
+      'En tu mensaje anterior ofreciste que el negocio contacte al cliente. Si ahora acepta, ' +
+        'marca acceptsHandoff.',
+    ];
+  }
   if (step?.step !== 'collecting') return back;
   const name = step.missing.includes('name');
   const phone = step.missing.includes('phone');

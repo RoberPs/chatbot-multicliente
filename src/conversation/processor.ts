@@ -7,7 +7,12 @@
  */
 import type { Db } from '../db/client.js';
 import type { HandoffService } from '../handoff/service.js';
-import { askContactReply, confirmedReply, phoneRetryReply } from '../handoff/templates.js';
+import {
+  askContactReply,
+  confirmedReply,
+  offerQuestion,
+  phoneRetryReply,
+} from '../handoff/templates.js';
 import type { KnowledgeReader, KnowledgeSnapshot } from '../knowledge/types.js';
 import { readWebChatSettings } from '../webchat/settings.js';
 import { capReached, incrementWebUsage, readWebUsage, type QuotaWatch } from '../webchat/usage.js';
@@ -426,6 +431,26 @@ export function createProcessor(deps: ProcessorDeps): Processor {
         return {
           response: { ...response, handoff: { action: 'not_started', kind: 'person', routes: {} } },
           inTx: clearStep,
+        };
+      }
+      case 'offer': {
+        // Fila 7: cuerpo del modelo + OFERTA, sin CONTACTO (FR-002).
+        activityLog.log({ event: 'handoff_offered' }, logContext);
+        return {
+          response: {
+            ...composeReply({
+              snapshot,
+              greeted: conversation.greeted,
+              body: model.reply.body,
+              reason: null,
+              fileNotice: model.fileNotice,
+              groundingRejections: response.groundingRejections,
+              closing: offerQuestion(business, form),
+            }),
+            modelMs: response.modelMs,
+            handoff: { action: 'offered', kind: 'unresolved', routes: {} },
+          },
+          inTx: (tx) => conversations.setHandoffStep(tx, conversationId, decision.step),
         };
       }
       case 'ask': {

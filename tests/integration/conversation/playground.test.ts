@@ -98,16 +98,19 @@ describe('conversación de prueba del operador (playground)', () => {
     expect(prices().some((p) => p.includes('15'))).toBe(false);
   });
 
-  it('un dato sin registrar añade el contacto con motivo offer_contact (US1-3)', async () => {
+  it('un dato sin registrar ofrece la derivación simulada en lugar del contacto (US1-3; 005, US2)', async () => {
     const b = await start();
     b.model.queue(reply('No dispongo de ese dato.', { offerContact: true }));
     await b.sendVia('playground', '¿Tenéis aparcamiento?');
     await b.settle();
 
+    // El playground siempre tiene la vía simulada (FR-021): OFERTA, sin CONTACTO.
     const [row] = await outbound();
+    expect(row?.body).toContain('¿Quieres que le pase tu consulta a');
     expect(row?.replyTrace).toMatchObject({
-      contact: { added: true, reason: 'offer_contact' },
+      contact: { added: false, reason: null },
       template: null,
+      handoff: { action: 'offered', kind: 'unresolved' },
     });
   });
 

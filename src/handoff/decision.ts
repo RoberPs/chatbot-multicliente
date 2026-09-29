@@ -4,7 +4,8 @@
  * responder y qué guardar. Gana la primera fila que aplica.
  *
  * Filas en esta versión: 3 (petición con vías), 4 (petición sin vías → 002), 5 (recogida de
- * datos) y 8 (resto). Las filas 1 y 2 (quejas) y 6 y 7 (oferta) aún no existen y caen en la 8.
+ * datos), 6 (acepta la oferta), 7 (ofrecer) y 8 (resto). Las filas 1 y 2 (quejas) aún no
+ * existen y caen en las siguientes.
  */
 import type { CountryCode } from 'libphonenumber-js';
 import type { ModelReply } from '../conversation/types.js';
@@ -37,6 +38,8 @@ export interface ContactUpdate {
 export type TurnDecision =
   /** Filas 4 y 8: respuesta normal de la 002 (con su CONTACTO si toca). */
   | { type: 'normal'; step: null }
+  /** Fila 7: cuerpo del modelo + OFERTA, sin CONTACTO (FR-002). */
+  | { type: 'offer'; step: HandoffStep }
   /** R-HANDOFF-ASK (o R-HANDOFF-PHONE con `retry`): se piden los datos que faltan. */
   | {
       type: 'ask';
@@ -143,6 +146,17 @@ export function decide(input: TurnInput): TurnDecision {
     return { type: 'refused', kind, step: null, save: got.save };
   }
 
-  // Fila 8: respuesta normal; un paso `offered` caduca.
+  // Fila 6: el cliente acepta la oferta del turno anterior.
+  if (step?.step === 'offered' && reply.acceptsHandoff) {
+    return askOrStart(input, 'unresolved', {}, input.known, false);
+  }
+
+  // Fila 7: sin el dato o con una gestión que no se hace por aquí, se ofrece si hay vías. La
+  // oferta anterior, si la había, se sustituye por esta.
+  if ((reply.offerContact || reply.bookingRequested) && input.hasRoutes && !reply.needsRephrase) {
+    return { type: 'offer', step: { step: 'offered', kind: 'unresolved', at: stepAt(input) } };
+  }
+
+  // Fila 8: respuesta normal; un paso `offered` caduca (US2-3).
   return { type: 'normal', step: null };
 }

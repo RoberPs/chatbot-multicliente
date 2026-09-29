@@ -16,6 +16,7 @@ import { createProcessor } from '../../src/conversation/processor.js';
 import { conversationSettings } from '../../src/conversation/settings.js';
 import { createTranscriber } from '../../src/conversation/transcription.js';
 import type { ReplyTemplate } from '../../src/conversation/activity-log.js';
+import type { HandoffAction } from '../../src/conversation/types.js';
 import { createHandoffService } from '../../src/handoff/service.js';
 import { createSimulatedRoute } from '../../src/handoff/simulated-route.js';
 import { createTokenCipher } from '../../src/handoff/tokens.js';
@@ -186,6 +187,8 @@ export interface EvalAnswer {
   problems: string[];
   /** Plantilla de la última respuesta (005: R-HANDOFF-OK, R-HANDOFF-ASK…); `null` si no. */
   template: ReplyTemplate | null;
+  /** Qué hizo la derivación en la última respuesta (005: offered, asked, started…). */
+  handoffAction: HandoffAction | null;
 }
 
 export interface SectorRunner {
@@ -373,6 +376,7 @@ export async function createSectorRunner(
         body,
         latencyMs,
         template: lastReply?.template ?? null,
+        handoffAction: lastReply?.handoffAction ?? null,
         problems: body ? check(body, question.expect, contactLine) : ['sin respuesta'],
       };
     },

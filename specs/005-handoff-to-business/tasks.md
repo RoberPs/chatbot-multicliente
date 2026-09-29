@@ -212,18 +212,18 @@ aviso incluye esa pregunta en el motivo; repetir rechazando y comprobar que no h
 
 ### Tests for User Story 2 ⚠️
 
-- [ ] T072 [P] [US2] Ampliar tests/unit/handoff/decision.test.ts con las filas 6 y 7: `offered` + `acceptsHandoff` → derivar `unresolved`; `offered` sin aceptar → caduca (`null`) y respuesta normal; `offerContact` o `bookingRequested` con vías → OFERTA y `offered`; sin vías o con `needsRephrase` → fila 8 (CONTACTO de la 002); con `handoffEnded` y vías → sigue siendo fila 7 (OFERTA, FR-018)
-- [ ] T073 [P] [US2] Ampliar tests/unit/handoff/templates.test.ts con OFERTA en tú y usted tras el cuerpo del modelo y sin bloque CONTACTO
-- [ ] T074 [P] [US2] Ampliar tests/unit/llm/prompt.test.ts con la indicación del turno final para `offered` ("Si ahora acepta, marca acceptsHandoff")
-- [ ] T075 [P] [US2] Test de integración tests/integration/handoff/offer.test.ts: consulta sin dato → cuerpo + OFERTA y `handoff_offered`; "sí" → deriva (en web, pidiendo datos) y el motivo recoge la pregunta; "no, gracias" o cambio de tema → sin aviso y `handoff_step` nulo; petición de reserva → también ofrece (US2-4); sin vías → CONTACTO como en la 002
+- [X] T072 [P] [US2] Ampliar tests/unit/handoff/decision.test.ts con las filas 6 y 7: `offered` + `acceptsHandoff` → derivar `unresolved`; `offered` sin aceptar → caduca (`null`) y respuesta normal; `offerContact` o `bookingRequested` con vías → OFERTA y `offered`; sin vías o con `needsRephrase` → fila 8 (CONTACTO de la 002); con `handoffEnded` y vías → sigue siendo fila 7 (OFERTA, FR-018)
+- [X] T073 [P] [US2] Ampliar tests/unit/handoff/templates.test.ts con OFERTA en tú y usted tras el cuerpo del modelo y sin bloque CONTACTO
+- [X] T074 [P] [US2] Ampliar tests/unit/llm/prompt.test.ts con la indicación del turno final para `offered` ("Si ahora acepta, marca acceptsHandoff")
+- [X] T075 [P] [US2] Test de integración tests/integration/handoff/offer.test.ts: consulta sin dato → cuerpo + OFERTA y `handoff_offered`; "sí" → deriva (en web, pidiendo datos) y el motivo recoge la pregunta; "no, gracias" o cambio de tema → sin aviso y `handoff_step` nulo; petición de reserva → también ofrece (US2-4); sin vías → CONTACTO como en la 002
 
 ### Implementation for User Story 2
 
-- [ ] T076 [US2] Añadir las filas 6 y 7 (y la caducidad de `offered` en cualquier otra fila) a src/handoff/decision.ts
-- [ ] T077 [P] [US2] Añadir OFERTA a src/handoff/templates.ts
-- [ ] T078 [US2] Ampliar src/conversation/processor.ts para componer cuerpo + OFERTA sin CONTACTO en la fila 7, guardar `handoff_step = offered` y registrar `handoff_offered`; la aceptación reutiliza el camino de US1
-- [ ] T079 [US2] Añadir a src/llm/prompt.ts la indicación del turno final para `offered`
-- [ ] T080 [P] [US2] Crear tests/eval/sc-handoff-offer.test.ts (SC-007, modelo real): consultas sin dato de las tres fixtures con vías disponibles; el 100 % incluye la oferta; aceptaciones y rechazos variados se clasifican bien
+- [X] T076 [US2] Añadir las filas 6 y 7 (y la caducidad de `offered` en cualquier otra fila) a src/handoff/decision.ts
+- [X] T077 [P] [US2] Añadir OFERTA a src/handoff/templates.ts
+- [X] T078 [US2] Ampliar src/conversation/processor.ts para componer cuerpo + OFERTA sin CONTACTO en la fila 7, guardar `handoff_step = offered` y registrar `handoff_offered`; la aceptación reutiliza el camino de US1
+- [X] T079 [US2] Añadir a src/llm/prompt.ts la indicación del turno final para `offered`
+- [X] T080 [P] [US2] Crear tests/eval/sc-handoff-offer.test.ts (SC-007, modelo real): consultas sin dato de las tres fixtures con vías disponibles; el 100 % incluye la oferta; aceptaciones y rechazos variados se clasifican bien
 
 **Checkpoint**: las consultas sin dato se convierten en derivaciones cuando el cliente acepta.
 
