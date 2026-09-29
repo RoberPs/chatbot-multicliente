@@ -1,7 +1,8 @@
 /**
  * Evento `whatsapp_business_account` de la Cloud API → `InboundEvent`
  * (contracts/whatsapp-webhook.md, mapeo de tipos). Desde la 005 se extrae el nombre de perfil
- * de cada remitente (`contacts[].profile.name`), que la derivación usa como nombre del cliente.
+ * de cada remitente (`contacts[].profile.name`), que la derivación usa como nombre del cliente,
+ * y el payload de los botones de respuesta rápida de las plantillas ("Le atiendo", "Terminado").
  */
 import { parsePhoneNumberFromString } from 'libphonenumber-js';
 import { z } from 'zod';
@@ -21,6 +22,12 @@ const messageSchema = z
     image: media.optional(),
     video: media.optional(),
     document: media.optional(),
+    /** Respuesta rápida de una plantilla (005, R10). */
+    button: z.object({ payload: z.string().optional() }).loose().optional(),
+    interactive: z
+      .object({ button_reply: z.object({ id: z.string().optional() }).loose().optional() })
+      .loose()
+      .optional(),
   })
   .loose();
 
@@ -119,6 +126,24 @@ function toEvent(
       caption: null,
       mediaId: m.audio.id,
       otherType: null,
+    };
+  }
+  // Botón de una plantilla (005): `button.payload` o `interactive.button_reply.id`.
+  const payload =
+    m.type === 'button'
+      ? m.button?.payload
+      : m.type === 'interactive'
+        ? m.interactive?.button_reply?.id
+        : undefined;
+  if (payload !== undefined) {
+    return {
+      ...base,
+      kind: 'other',
+      text: null,
+      caption: null,
+      mediaId: null,
+      otherType: 'button',
+      buttonPayload: payload,
     };
   }
   const captioned = WITH_CAPTION.has(m.type)

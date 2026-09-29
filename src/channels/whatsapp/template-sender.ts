@@ -6,11 +6,13 @@
 import {
   alertTemplateVars,
   forwardTemplateVars,
+  reminderTemplateVars,
   sanitizeTemplateVar,
 } from '../../handoff/notices.js';
 import type { AlertRoute, AlertSendResult } from '../../handoff/ports.js';
 import { buttonPayload } from '../../handoff/tokens.js';
 import type { BusinessNotice } from '../../handoff/types.js';
+import type { Clock } from '../../conversation/ports.js';
 import type { GraphClient, GraphPostResult } from './graph-client.js';
 
 /** Plantillas que la instancia tiene que tener aprobadas en su cuenta de Meta. */
@@ -50,17 +52,22 @@ export interface TemplateSenderOptions {
   graph: Pick<GraphClient, 'postMessage'>;
   /** WHATSAPP_TEMPLATE_LANG (`es` por defecto). */
   language: string;
+  /** Para escribir "desde" en hora local en el recordatorio. */
+  clock?: Clock;
 }
 
 /** Nombre y variables de la plantilla de un aviso; `null` si esta vía aún no lo envía. */
-function templateFor(notice: BusinessNotice): { name: string; vars: string[] } | null {
+function templateFor(notice: BusinessNotice, now: Date): { name: string; vars: string[] } | null {
   switch (notice.type) {
     case 'alert':
       return { name: HANDOFF_TEMPLATES.alert.name, vars: alertTemplateVars(notice) };
     case 'forward':
       return { name: HANDOFF_TEMPLATES.forward.name, vars: forwardTemplateVars(notice) };
-    default:
-      return null;
+    case 'reminder':
+      return {
+        name: HANDOFF_TEMPLATES.reminder.name,
+        vars: reminderTemplateVars(notice, now),
+      };
   }
 }
 
@@ -69,8 +76,9 @@ export function templatePayload(
   notice: BusinessNotice,
   to: string,
   language: string,
+  now: Date = new Date(),
 ): Record<string, unknown> | null {
-  const template = templateFor(notice);
+  const template = templateFor(notice, now);
   if (!template) return null;
   const token = notice.handoff.token;
   const button = (index: number, action: 'attend' | 'end') => ({
@@ -116,7 +124,7 @@ export function createTemplateSender(opts: TemplateSenderOptions, to: string): A
   return {
     name: 'whatsapp',
     async send(notice, { signal }): Promise<AlertSendResult> {
-      const payload = templatePayload(notice, to, opts.language);
+      const payload = templatePayload(notice, to, opts.language, opts.clock?.now());
       if (!payload) return { ok: false, failure: 'unsupported' };
       const result = await opts.graph.postMessage(payload, { signal });
       if (result.ok) return { ok: true, ref: result.id };

@@ -141,7 +141,12 @@ describe('plantilla derivacion_aviso', () => {
   });
 
   it('error de red sin plazo agotado → network, sin lanzar', async () => {
-    const { sender } = route([new Error('ECONNRESET'), new Error('x'), new Error('y'), new Error('z')]);
+    const { sender } = route([
+      new Error('ECONNRESET'),
+      new Error('x'),
+      new Error('y'),
+      new Error('z'),
+    ]);
     await expect(sender.send(notice, { signal: signal() })).resolves.toEqual({
       ok: false,
       failure: 'network',

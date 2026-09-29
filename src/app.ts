@@ -12,6 +12,7 @@ import { authRoutes } from './admin/auth/routes.js';
 import './admin/fastify-types.js';
 import { renderNotFound } from './admin/render.js';
 import { adminRoutes } from './admin/routes/index.js';
+import { handoffLinkRoutes } from './channels/handoff-links/routes.js';
 import { CHAT_FRAME_PATH, FRAME_FALLBACK_CSP, webChatRoutes } from './channels/web/routes.js';
 import { whatsappWebhook } from './channels/whatsapp/webhook.js';
 import type { Env, WhatsAppEnv } from './config/env.js';
@@ -19,6 +20,7 @@ import type { ActivityLog } from './conversation/activity-log.js';
 import type { Intake } from './conversation/intake.js';
 import type { Clock } from './conversation/ports.js';
 import type { Db } from './db/client.js';
+import type { HandoffService } from './handoff/service.js';
 import type { KnowledgeReader } from './knowledge/types.js';
 
 const viewsDir = fileURLToPath(new URL('./admin/views', import.meta.url));
@@ -61,6 +63,8 @@ export interface BotHttp {
   /** Contacto de la instancia cuando no se puede leer el snapshot (FR-022). */
   emergencyContactPhone: string | null;
   clock: Clock;
+  /** Derivación al negocio (005): enlaces del email y fin desde el panel. */
+  handoff?: HandoffService;
 }
 
 export interface BuildAppOptions {
@@ -208,6 +212,17 @@ export async function buildApp({
     },
     { prefix: '/admin' },
   );
+
+  // Enlaces «Le atiendo» y «Terminado» del email (005, R8): solo con bot.
+  const handoff = channel?.handoff;
+  if (channel && handoff) {
+    await app.register(handoffLinkRoutes, {
+      prefix: '/handoff',
+      handoff,
+      now: () => channel.clock.now(),
+      production: env.NODE_ENV === 'production',
+    });
+  }
 
   // El chat web se registra siempre: sin bot sirve el fragmento y la vista "no disponible".
   await app.register(webChatRoutes, { prefix: '/chat' });

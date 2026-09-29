@@ -101,6 +101,8 @@ export function createProcessor(deps: ProcessorDeps): Processor {
   const notices = new Set<Promise<void>>();
   const timers = new Map<string, NodeJS.Timeout>();
   let sweep: NodeJS.Timeout | null = null;
+  let handoffSweep: NodeJS.Timeout | null = null;
+  let handoffSweeping: Promise<void> | null = null;
   let running = false;
 
   async function claim(limit: number, alsoExclude: Iterable<string> = []): Promise<string[]> {
@@ -218,7 +220,13 @@ export function createProcessor(deps: ProcessorDeps): Processor {
       );
       const sentAt = clock.now();
       const latencyMs = sentAt.getTime() - lastReceived;
-      await messages.markSent(db, outboundId, channelMessageId, sentAt, traceOf(response, latencyMs));
+      await messages.markSent(
+        db,
+        outboundId,
+        channelMessageId,
+        sentAt,
+        traceOf(response, latencyMs),
+      );
       await conversations.touchMessage(db, conversationId, sentAt);
       activityLog.log(
         {
@@ -320,6 +328,8 @@ export function createProcessor(deps: ProcessorDeps): Processor {
         customerKey: conversation.channelUserId,
         conversationId,
         handoffStep: conversation.handoffStep,
+        // FR-018: tras una derivación terminada el bot tiene en cuenta lo hablado y no saluda.
+        handoffEnded: deps.handoff ? await deps.handoff.hasEnded(conversationId) : false,
       });
     }
 
@@ -377,7 +387,10 @@ export function createProcessor(deps: ProcessorDeps): Processor {
         ? undefined
         : (tx) => conversations.setHandoffStep(tx, conversationId, null);
     /** Plantilla de la derivación: sustituye al cuerpo del modelo (R3). */
-    const fixed = (body: string, template: 'R-HANDOFF-ASK' | 'R-HANDOFF-PHONE' | 'R-HANDOFF-OK') => ({
+    const fixed = (
+      body: string,
+      template: 'R-HANDOFF-ASK' | 'R-HANDOFF-PHONE' | 'R-HANDOFF-OK',
+    ) => ({
       ...composeReply({
         snapshot,
         greeted: conversation.greeted,
@@ -565,6 +578,18 @@ export function createProcessor(deps: ProcessorDeps): Processor {
       if (running) return;
       running = true;
       sweep = setInterval(() => void tick(), settings.processorSweepMs);
+      const handoff = deps.handoff;
+      if (handoff) {
+        handoffSweep = setInterval(() => {
+          // Un barrido cada vez; si la BD falla, se reintenta en el siguiente.
+          handoffSweeping ??= handoff
+            .sweep()
+            .catch(() => undefined)
+            .finally(() => {
+              handoffSweeping = null;
+            });
+        }, settings.handoffSweepMs);
+      }
       // Los pendientes que quedaron sin procesar se retoman en el primer barrido.
       void tick();
     },
@@ -572,6 +597,9 @@ export function createProcessor(deps: ProcessorDeps): Processor {
     async stop() {
       running = false;
       if (sweep) clearInterval(sweep);
+      if (handoffSweep) clearInterval(handoffSweep);
+      handoffSweep = null;
+      await handoffSweeping;
       sweep = null;
       for (const timer of timers.values()) clearTimeout(timer);
       timers.clear();

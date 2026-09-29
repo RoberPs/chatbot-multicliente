@@ -1,4 +1,5 @@
 import type { FastifyInstance } from 'fastify';
+import { countActive } from '../../handoff/repositories/handoff.js';
 import { ActivationBlockedError } from '../../knowledge/errors.js';
 import { activateBusiness, deactivateBusiness } from '../../knowledge/services/business-status.js';
 import { readWebChatSettings } from '../../webchat/settings.js';
@@ -35,6 +36,8 @@ export async function dashboardRoutes(app: FastifyInstance): Promise<void> {
       title: 'Portada',
       summaries: sectionSummaries(state),
       webChat: await webChatStatus(db, now, state.business.timezone),
+      // 005: derivaciones activas fuera del playground.
+      activeHandoffs: await countActive(db),
     };
   };
 

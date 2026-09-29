@@ -239,6 +239,34 @@ export async function playgroundRoutes(app: FastifyInstance): Promise<void> {
     return fragment(reply, html);
   });
 
+  /**
+   * "Terminar derivación" de la conversación de prueba (005, causa `playground`): vuelve al bot
+   * sin mensaje; sin derivación activa no hace nada.
+   */
+  app.post('/playground/handoff/end', async (request, reply) => {
+    const service = app.bot?.handoff;
+    if (!service) return renderPlayground(request, reply, { general: NO_BOT }, 422);
+    const customer = await findByChannel(db, 'playground', playgroundId(request));
+    const conversation = customer
+      ? await conversations.findLatestForCustomer(db, customer.id)
+      : null;
+    const active = conversation ? await findActiveByConversation(db, conversation.id) : null;
+    if (!active)
+      return savedResponse(
+        request,
+        reply,
+        '/admin/playground',
+        'No había ninguna derivación activa',
+      );
+    await service.endByOperator(active.id, 'playground');
+    return savedResponse(
+      request,
+      reply,
+      '/admin/playground',
+      'Derivación terminada; el bot vuelve a atender la conversación',
+    );
+  });
+
   app.post('/playground/reset', async (request, reply) => {
     if (!app.bot) return renderPlayground(request, reply, { general: NO_BOT }, 422);
     request.session.set('playgroundId', randomUUID());

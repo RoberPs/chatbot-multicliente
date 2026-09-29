@@ -7,10 +7,7 @@ import {
 } from '../../../src/handoff/summary.js';
 import { FakeSummarizer, RecordingActivityLog } from '../../helpers/fakes.js';
 
-const TEXTS = [
-  '¿Cuánto cuesta el tinte completo?',
-  'Quiero hablar con una persona',
-];
+const TEXTS = ['¿Cuánto cuesta el tinte completo?', 'Quiero hablar con una persona'];
 
 async function run(summarizer: FakeSummarizer, texts = TEXTS, budgetMs = 8_000) {
   const log = new RecordingActivityLog();
@@ -29,7 +26,10 @@ describe('resumen del modelo', () => {
     const { result, log } = await run(
       new FakeSummarizer({ summary: 'Pregunta cuánto cuesta el tinte completo.' }),
     );
-    expect(result).toEqual({ summary: 'Pregunta cuánto cuesta el tinte completo.', source: 'model' });
+    expect(result).toEqual({
+      summary: 'Pregunta cuánto cuesta el tinte completo.',
+      source: 'model',
+    });
     expect(log.named('handoff_summary_fallback')).toEqual([]);
   });
 

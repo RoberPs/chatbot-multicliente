@@ -36,3 +36,37 @@
     </div>
   </form>
 </section>
+
+<section class="card">
+  <h2>Derivaciones activas</h2>
+  <% if (it.active.length === 0) { %>
+    <p class="meta">No hay ninguna conversación derivada ahora mismo.</p>
+  <% } else { %>
+    <table class="handoffs">
+      <thead>
+        <tr><th scope="col">Cliente</th><th scope="col">Canal</th><th scope="col">Tipo</th><th scope="col">Inicio</th><th scope="col">Confirmada</th><th scope="col">Recordatorio enviado</th><th scope="col"><span class="sr-only">Acciones</span></th></tr>
+      </thead>
+      <tbody>
+        <% it.active.forEach(function (r) { %>
+          <tr id="handoff-<%= r.id %>" data-handoff="<%= r.id %>">
+            <td><%= r.customer %></td>
+            <td><%= r.channel %></td>
+            <td><%= r.kind %></td>
+            <td><%= r.startedAt %></td>
+            <td><%= r.confirmed %></td>
+            <td><%= r.reminder %></td>
+            <td>
+              <form method="post" action="/admin/handoffs/<%= r.id %>/end"
+                    hx-post="/admin/handoffs/<%= r.id %>/end" hx-target="closest tr" hx-swap="outerHTML"
+                    hx-confirm="El asistente volverá a atender a este cliente. ¿Terminar la derivación?">
+                <%~ include('/partials/csrf', { token: it.layout.csrf }) %>
+                <button type="submit" class="secondary">Terminar</button>
+              </form>
+            </td>
+          </tr>
+        <% }) %>
+      </tbody>
+    </table>
+    <p class="meta">El motivo de cada derivación solo lo recibe el negocio en su aviso.</p>
+  <% } %>
+</section>

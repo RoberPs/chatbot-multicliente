@@ -11,6 +11,8 @@ export const conversationSettings = {
   batchMaxWaitMs: 8 * SECOND,
   /** Barrido de seguridad del procesador (R5). */
   processorSweepMs: 1 * SECOND,
+  /** Barrido de la derivación: fin por inactividad y recordatorios (005, R14). */
+  handoffSweepMs: 60 * SECOND,
   /** Conversaciones procesándose a la vez (R5). */
   processorConcurrency: 4,
   /** Mensajes de la conversación que se pasan al modelo (R4). */

@@ -326,7 +326,6 @@ export async function webChatApi(api: FastifyInstance, deps: WebApiDeps): Promis
       }
     }
   });
-
 }
 
 /** Objeto `unavailable` tal como lo manda la API (para los tests y el frame). */

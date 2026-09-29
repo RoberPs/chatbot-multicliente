@@ -5,7 +5,7 @@
  */
 import nodemailer, { type Transporter } from 'nodemailer';
 import type { Clock } from '../conversation/ports.js';
-import { alertEmail, forwardEmail, type EmailContent } from '../handoff/notices.js';
+import { alertEmail, forwardEmail, reminderEmail, type EmailContent } from '../handoff/notices.js';
 import type { AlertRoute, AlertSendResult } from '../handoff/ports.js';
 import type { BusinessNotice } from '../handoff/types.js';
 
@@ -70,8 +70,8 @@ function contentFor(notice: BusinessNotice, now: Date, baseUrl: string): EmailCo
       return alertEmail(notice, now, baseUrl);
     case 'forward':
       return forwardEmail(notice, baseUrl);
-    default:
-      return null;
+    case 'reminder':
+      return reminderEmail(notice, now, baseUrl);
   }
 }
 
@@ -88,7 +88,8 @@ export function smtpFailure(error: unknown): string {
 
 /** Vía email hacia la dirección de avisos `to`. */
 export function createSmtpMailer(opts: SmtpMailerOptions, to: string): AlertRoute {
-  const transport = typeof opts.transport === 'string' ? smtpTransport(opts.transport) : opts.transport;
+  const transport =
+    typeof opts.transport === 'string' ? smtpTransport(opts.transport) : opts.transport;
   return {
     name: 'email',
     async send(notice, { signal }): Promise<AlertSendResult> {

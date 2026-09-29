@@ -79,10 +79,7 @@ describe('US3: el bot calla y reenvía mientras el negocio atiende', () => {
       ['¿Os viene bien?', 'forwarded'],
       [null, 'forwarded'],
     ]);
-    const rows = await t.db
-      .select()
-      .from(handoffNotice)
-      .where(eq(handoffNotice.type, 'forward'));
+    const rows = await t.db.select().from(handoffNotice).where(eq(handoffNotice.type, 'forward'));
     expect(rows.map((r) => [r.route, r.status, r.messagesCovered]).sort()).toEqual([
       ['email', 'sent', 3],
       ['whatsapp', 'sent', 3],
@@ -103,7 +100,9 @@ describe('US3: el bot calla y reenvía mientras el negocio atiende', () => {
   });
 
   it('con las vías caídas los entrantes quedan reenviados y se registra el fallo, sin reintentos', async () => {
-    const whatsapp = new FakeAlertRoute('whatsapp').queue({ ok: true }).always({ fail: 'http_5xx' });
+    const whatsapp = new FakeAlertRoute('whatsapp')
+      .queue({ ok: true })
+      .always({ fail: 'http_5xx' });
     const email = new FakeAlertRoute('email').queue({ ok: true }).always({ fail: 'network' });
     const b = await derived({ alertRoutes: { whatsapp, email } });
     await b.send('¿Me llamáis?');

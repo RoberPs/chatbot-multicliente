@@ -4,7 +4,7 @@
  * enlaces), que se guarda en `handoff_notice.body` para el operador.
  */
 import type { Clock } from '../conversation/ports.js';
-import { alertEmail, forwardEmail, type EmailContent } from './notices.js';
+import { alertEmail, forwardEmail, reminderEmail, type EmailContent } from './notices.js';
 import type { AlertRoute } from './ports.js';
 import type { BusinessNotice } from './types.js';
 
@@ -14,8 +14,8 @@ function contentFor(notice: BusinessNotice, now: Date): EmailContent | null {
       return alertEmail(notice, now, null);
     case 'forward':
       return forwardEmail(notice, null);
-    default:
-      return null;
+    case 'reminder':
+      return reminderEmail(notice, now, null);
   }
 }
 

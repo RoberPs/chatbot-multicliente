@@ -141,7 +141,9 @@ export const forwardItemText = (item: ForwardItem): string =>
  * `{{1}}`–`{{3}}` de `derivacion_mensaje`: nombre, teléfono y los textos del lote separados por
  * " / ", recortados a 700 caracteres con la coletilla que corresponda.
  */
-export function forwardTemplateVars(notice: Extract<BusinessNotice, { type: 'forward' }>): string[] {
+export function forwardTemplateVars(
+  notice: Extract<BusinessNotice, { type: 'forward' }>,
+): string[] {
   const h = notice.handoff;
   const joined = sanitizeTemplateVar(notice.items.map(forwardItemText).join(' / '));
   const cut = notice.emailAvailable ? CUT_WITH_EMAIL : CUT_WITHOUT_EMAIL;
@@ -170,6 +172,57 @@ export function forwardEmail(
       ...lines,
       '',
       'Contéstale desde tu teléfono; el asistente no le responde mientras tanto.',
+      '',
+      ...linkLines(h, baseUrl),
+    ]
+      .join('\n')
+      .trimEnd(),
+  };
+}
+
+export function reminderNotice(
+  handoff: NoticeHandoff,
+  trigger: 'schedule' | 'inactivity',
+): BusinessNotice {
+  return { type: 'reminder', handoff, waitingSince: handoff.startedAt, trigger };
+}
+
+/** `{{1}}`–`{{4}}` de `derivacion_recordatorio`: nombre, teléfono, desde y motivo. */
+export function reminderTemplateVars(
+  notice: Extract<BusinessNotice, { type: 'reminder' }>,
+  now: Date,
+): string[] {
+  const h = notice.handoff;
+  return [
+    h.customerName,
+    displayPhone(h.customerPhone),
+    describeSince(notice.waitingSince, now, h.timezone),
+    h.summary,
+  ].map(sanitizeTemplateVar);
+}
+
+const REMINDER_ENDINGS: Record<'schedule' | 'inactivity', string> = {
+  schedule: 'Le hemos dado tu contacto directo por si prefiere llamarte.',
+  inactivity:
+    'Como el cliente no ha escrito en 24 horas, la conversación ha vuelto al asistente, pero ' +
+    'sigue esperando que le contactes.',
+};
+
+/** Email del recordatorio (FR-019): los datos del aviso, la frase según el momento y los enlaces. */
+export function reminderEmail(
+  notice: Extract<BusinessNotice, { type: 'reminder' }>,
+  now: Date,
+  baseUrl: string | null,
+): EmailContent {
+  const h = notice.handoff;
+  return {
+    subject: `Recordatorio: ${h.customerName} sigue esperando`,
+    text: [
+      'Todavía no consta que hayas contactado con este cliente.',
+      '',
+      ...customerLines(h, now),
+      '',
+      REMINDER_ENDINGS[notice.trigger],
       '',
       ...linkLines(h, baseUrl),
     ]

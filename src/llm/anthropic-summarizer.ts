@@ -25,7 +25,8 @@ const SCHEMA = {
 
 export function createAnthropicSummarizer(opts: AnthropicSummarizerOptions): HandoffSummarizer {
   const client =
-    opts.client ?? new Anthropic({ apiKey: opts.apiKey, timeout: REQUEST_TIMEOUT_MS, maxRetries: 0 });
+    opts.client ??
+    new Anthropic({ apiKey: opts.apiKey, timeout: REQUEST_TIMEOUT_MS, maxRetries: 0 });
 
   return {
     async summarize({ kind, customerTexts }, { signal }) {

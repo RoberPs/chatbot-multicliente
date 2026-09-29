@@ -156,22 +156,47 @@ describe('prompt del modelo: derivación (005)', () => {
   it('con collecting indica qué falta y cómo copiar los datos', () => {
     const at = '2026-10-01T10:00:00.000Z';
     const both = lastTurn({
-      handoffStep: { step: 'collecting', kind: 'person', missing: ['name', 'phone'], phoneRetried: false, at },
+      handoffStep: {
+        step: 'collecting',
+        kind: 'person',
+        missing: ['name', 'phone'],
+        phoneRetried: false,
+        at,
+      },
     });
     expect(both).toContain('Has pedido al cliente su nombre y un teléfono.');
     expect(both).toContain('Copia literalmente en contactName y contactPhone');
     expect(both).toContain('marca refusesContact');
     const phone = lastTurn({
-      handoffStep: { step: 'collecting', kind: 'person', missing: ['phone'], phoneRetried: true, at },
+      handoffStep: {
+        step: 'collecting',
+        kind: 'person',
+        missing: ['phone'],
+        phoneRetried: true,
+        at,
+      },
     });
     expect(phone).toContain('Has pedido al cliente un teléfono.');
     const name = lastTurn({
-      handoffStep: { step: 'collecting', kind: 'person', missing: ['name'], phoneRetried: false, at },
+      handoffStep: {
+        step: 'collecting',
+        kind: 'person',
+        missing: ['name'],
+        phoneRetried: false,
+        at,
+      },
     });
     expect(name).toContain('Has pedido al cliente su nombre.');
   });
 
   it('sin paso no hay indicaciones de derivación', () => {
     expect(lastTurn({})).not.toContain('Has pedido al cliente');
+    expect(lastTurn({})).not.toContain('ha vuelto a ti');
+  });
+
+  it('con handoffEnded indica que la conversación ha vuelto al bot (US4)', () => {
+    expect(lastTurn({ handoffEnded: true })).toContain(
+      'Esta conversación estuvo atendida por el negocio y ha vuelto a ti. Tenla en cuenta y no vuelvas a saludar.',
+    );
   });
 });

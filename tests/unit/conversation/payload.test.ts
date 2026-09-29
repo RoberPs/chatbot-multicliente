@@ -2,6 +2,8 @@ import { describe, expect, it } from 'vitest';
 import { parseWebhookPayload } from '../../../src/channels/whatsapp/payload.js';
 import {
   audioMessage,
+  buttonMessage,
+  interactiveReply,
   CUSTOMER_E164,
   imageMessage,
   statusUpdate,
@@ -36,6 +38,26 @@ describe('parser del webhook de WhatsApp', () => {
       isGroup: false,
       profileName: 'Cliente',
       buttonPayload: null,
+    });
+  });
+
+  it('botón de plantilla → other/button con su payload (005)', () => {
+    const [e] = events([buttonMessage('h1:attend:AbCdEfGhIjKlMnOpQrStUv')]);
+    expect(e).toMatchObject({
+      kind: 'other',
+      otherType: 'button',
+      text: null,
+      caption: null,
+      buttonPayload: 'h1:attend:AbCdEfGhIjKlMnOpQrStUv',
+    });
+  });
+
+  it('interactive.button_reply → buttonPayload = button_reply.id (005)', () => {
+    const [e] = events([interactiveReply('h1:end:AbCdEfGhIjKlMnOpQrStUv')]);
+    expect(e).toMatchObject({
+      kind: 'other',
+      otherType: 'button',
+      buttonPayload: 'h1:end:AbCdEfGhIjKlMnOpQrStUv',
     });
   });
 

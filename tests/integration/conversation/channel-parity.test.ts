@@ -95,8 +95,15 @@ describe('paridad entre canales', () => {
     const [whatsapp, web, playground] = results;
     expect(whatsapp?.rows).toHaveLength(4);
     expect(whatsapp?.rows.map((r) => r.trace)).toEqual([
-      expect.objectContaining({ greeting: true, template: null, contact: { added: false, reason: null } }),
-      expect.objectContaining({ greeting: false, contact: { added: true, reason: 'offer_contact' } }),
+      expect.objectContaining({
+        greeting: true,
+        template: null,
+        contact: { added: false, reason: null },
+      }),
+      expect.objectContaining({
+        greeting: false,
+        contact: { added: true, reason: 'offer_contact' },
+      }),
       expect.objectContaining({ contact: { added: true, reason: 'handoff_requested' } }),
       expect.objectContaining({ groundingRejections: 1, contact: { added: false, reason: null } }),
     ]);

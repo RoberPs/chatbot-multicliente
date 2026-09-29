@@ -288,6 +288,7 @@ export async function createSectorRunner(
       const handoff = createHandoffService({
         db: t.db,
         clock,
+        reader,
         activityLog: log,
         routes: new FakeAlertRoutesProvider(
           { whatsapp: new FakeAlertRoute('whatsapp'), email: new FakeAlertRoute('email') },

@@ -1,8 +1,9 @@
 /**
  * Servicio de la derivación (005, contracts/handoff-flow.md): lo que el procesador usa para
  * decidir cada turno, iniciar una derivación (resumen → avisos → guardado, R12) y reenviar al
- * negocio lo que el cliente escribe mientras dura (R11). Sin HTTP: habla con WhatsApp, el email
- * y el modelo solo por sus puertos.
+ * negocio lo que el cliente escribe mientras dura (R11); las acciones del negocio (botones y
+ * enlaces, R9), el fin desde el panel y el barrido de inactividad (R14). Sin HTTP: habla con
+ * WhatsApp, el email y el modelo solo por sus puertos.
  */
 import { randomUUID } from 'node:crypto';
 import type { CountryCode } from 'libphonenumber-js';
@@ -14,17 +15,36 @@ import type { DbOrTx } from '../conversation/repositories/customer.js';
 import * as messages from '../conversation/repositories/message.js';
 import type { InboundRow } from '../conversation/repositories/message.js';
 import type { Db } from '../db/client.js';
-import type { KnowledgeSnapshot } from '../knowledge/types.js';
+import type { KnowledgeReader, KnowledgeSnapshot } from '../knowledge/types.js';
+import type { ActCustomer, ActResult } from './business-replies.js';
 import { decide, type TurnDecision, type TurnInput } from './decision.js';
-import { alertNotice, forwardNotice } from './notices.js';
-import type { AlertRoute, AlertRoutesProvider, AlertSendResult, HandoffSummarizer } from './ports.js';
+import { alertNotice, forwardNotice, reminderNotice } from './notices.js';
+import type {
+  AlertRoute,
+  AlertRoutesProvider,
+  AlertSendResult,
+  HandoffSummarizer,
+} from './ports.js';
 import * as handoffs from './repositories/handoff.js';
 import type { HandoffWithCustomer } from './repositories/handoff.js';
 import * as notices from './repositories/handoff-notice.js';
 import { addOpenMinutes, nextOpening } from './schedule.js';
 import { summarizeHandoff } from './summary.js';
-import { hashToken, issueToken, type TokenCipher } from './tokens.js';
-import type { BusinessNotice, HandoffKind, RouteName, RouteResults } from './types.js';
+import {
+  hashToken,
+  isTokenFormat,
+  issueToken,
+  type HandoffButtonAction,
+  type TokenCipher,
+} from './tokens.js';
+import type {
+  BusinessNotice,
+  HandoffActionVia,
+  HandoffKind,
+  NoticeHandoff,
+  RouteName,
+  RouteResults,
+} from './types.js';
 
 /** Plazo de cada vía (R5). */
 export const ROUTE_TIMEOUT_MS = 15_000;
@@ -32,10 +52,17 @@ export const ROUTE_TIMEOUT_MS = 15_000;
 const SUMMARY_TEXTS = 30;
 /** Minutos de horario sin confirmar antes del recordatorio (FR-019, R13). */
 const REMINDER_OPEN_MINUTES = 120;
+/** Sin mensajes del cliente durante este tiempo, la conversación vuelve al bot (R14). */
+export const INACTIVITY_MS = 24 * 60 * 60 * 1000;
+const MINUTE = 60_000;
+/** Zona si no se puede leer el snapshot (solo para escribir horas en los avisos). */
+const FALLBACK_TIMEZONE = 'Europe/Madrid';
 
 export interface HandoffServiceDeps {
   db: Db;
   clock: Clock;
+  /** Zona horaria del negocio para las horas de los avisos fuera de la cadena. */
+  reader: KnowledgeReader;
   activityLog: ActivityLog;
   routes: AlertRoutesProvider;
   summarizer: HandoffSummarizer;
@@ -78,8 +105,37 @@ export interface ForwardInput {
   logContext: EventContext;
 }
 
+/** Lo que ve la página de un enlace del email, sin cambiar nada (R8). */
+export interface HandoffLookup {
+  status: 'active' | 'ended';
+  confirmed: boolean;
+  kind: HandoffKind;
+  customer: ActCustomer;
+  startedAt: Date;
+  timezone: string;
+}
+
+export interface ActOutcome {
+  result: ActResult;
+  /** Datos del cliente para el acuse; `null` si el token no es válido. */
+  customer: ActCustomer | null;
+}
+
 export interface HandoffService {
   active(tx: DbOrTx, conversationId: string): Promise<HandoffWithCustomer | null>;
+  /** Hubo una derivación terminada en la conversación (FR-018): el prompt no vuelve a saludar. */
+  hasEnded(conversationId: string): Promise<boolean>;
+  /** Derivación de un token, sin cambiar nada (páginas de los enlaces). */
+  lookup(token: string): Promise<HandoffLookup | null>;
+  /** «Le atiendo» o «Terminado» desde un botón o un enlace (R9). Solo cuenta la primera. */
+  act(token: string, action: HandoffButtonAction, via: HandoffActionVia): Promise<ActOutcome>;
+  /** Terminar desde el panel o desde "Probar el bot" (FR-016a); sin mensaje al cliente. */
+  endByOperator(
+    handoffId: string,
+    cause: 'operator' | 'playground',
+  ): Promise<{ result: 'done' | 'already_ended' | 'not_found'; customer: ActCustomer | null }>;
+  /** Barrido de inactividad (R14); los recordatorios por horario llegan con US5. */
+  sweep(): Promise<void>;
   /** Hay alguna vía de aviso disponible ahora (lee los destinos sin caché). */
   hasRoutes(simulate: boolean): Promise<boolean>;
   decide(input: Omit<TurnInput, 'region' | 'now'>): TurnDecision;
@@ -108,9 +164,9 @@ export function createHandoffService(deps: HandoffServiceDeps): HandoffService {
     });
     try {
       const result = await Promise.race([
-        route.send(notice, { signal: controller.signal }).catch(
-          (): AlertSendResult => ({ ok: false, failure: 'error' }),
-        ),
+        route
+          .send(notice, { signal: controller.signal })
+          .catch((): AlertSendResult => ({ ok: false, failure: 'error' })),
         timeout,
       ]);
       return { route: route.name, result };
@@ -167,8 +223,194 @@ export function createHandoffService(deps: HandoffServiceDeps): HandoffService {
       createdAt: at,
     }));
 
+  const customerOf = (row: HandoffWithCustomer): ActCustomer => ({
+    name: row.customerName ?? '—',
+    phone: row.customerPhone ?? row.channelUserId,
+  });
+
+  const minutesBetween = (from: Date, to: Date) =>
+    Math.max(0, Math.round((to.getTime() - from.getTime()) / MINUTE));
+
+  const contextOf = (row: HandoffWithCustomer): EventContext => ({
+    channel: row.channel,
+    customerKey: row.channelUserId,
+    conversationId: row.conversationId,
+  });
+
+  async function timezone(): Promise<string> {
+    try {
+      return (await deps.reader.getSnapshot()).business.timezone;
+    } catch {
+      return FALLBACK_TIMEZONE;
+    }
+  }
+
+  /** Datos de los mensajes al negocio de una derivación guardada; `null` sin token legible. */
+  async function noticeHandoff(row: HandoffWithCustomer): Promise<NoticeHandoff | null> {
+    const token = deps.cipher.decrypt(row.tokenEnc);
+    if (token === null) return null;
+    const customer = customerOf(row);
+    return {
+      id: row.id,
+      kind: row.kind,
+      customerName: customer.name,
+      customerPhone: customer.phone,
+      channel: row.channel,
+      summary: row.summary,
+      startedAt: row.startedAt,
+      timezone: await timezone(),
+      token,
+      threadRef: await notices.emailThreadRef(db, row.id),
+    };
+  }
+
+  /**
+   * Recordatorio de una derivación cerrada por inactividad sin confirmar (FR-019): al negocio,
+   * por las vías disponibles ahora, y sin ningún mensaje al cliente.
+   */
+  async function inactivityReminder(handoffId: string): Promise<void> {
+    const row = await handoffs.findById(db, handoffId);
+    if (!row) return;
+    const handoff = await noticeHandoff(row);
+    const routes = await deps.routes.available(db, { simulate: row.channel === 'playground' });
+    const logContext = contextOf(row);
+    const sent =
+      handoff && routes.length > 0
+        ? await sendAll(
+            routes,
+            reminderNotice(handoff, 'inactivity'),
+            'reminder',
+            logContext,
+            row.id,
+          )
+        : [];
+    await notices.insertMany(db, noticeRows(row.id, 'reminder', sent, clock.now()));
+    activityLog.log(
+      {
+        event: 'handoff_reminder_sent',
+        handoffId: row.id,
+        routes: resultsOf(sent),
+        trigger: 'inactivity',
+        customerNotified: false,
+      },
+      logContext,
+    );
+  }
+
   return {
     active: (tx, conversationId) => handoffs.findActiveByConversation(tx, conversationId),
+
+    hasEnded: (conversationId) => handoffs.hasEnded(db, conversationId),
+
+    async lookup(token) {
+      if (!isTokenFormat(token)) return null;
+      const row = await handoffs.findByTokenHash(db, hashToken(token));
+      if (!row) return null;
+      return {
+        status: row.status,
+        confirmed: row.confirmedAt !== null,
+        kind: row.kind,
+        customer: customerOf(row),
+        startedAt: row.startedAt,
+        timezone: await timezone(),
+      };
+    },
+
+    async act(token, action, via) {
+      // Eventos del negocio: sin seudónimo ni contexto de cliente (contracts/activity-log.md).
+      const ignored = (reason: 'invalid' | 'already_ended' | 'already_confirmed') => {
+        activityLog.log({ event: 'handoff_action_ignored', reason, via });
+      };
+      const row = isTokenFormat(token)
+        ? await handoffs.findByTokenHash(db, hashToken(token))
+        : null;
+      if (!row) {
+        ignored('invalid');
+        return { result: 'invalid', customer: null };
+      }
+      const customer = customerOf(row);
+      const now = clock.now();
+      const confirmed = () => {
+        activityLog.log({
+          event: 'handoff_confirmed',
+          handoffId: row.id,
+          via,
+          minutesToConfirm: minutesBetween(row.startedAt, now),
+        });
+      };
+      if (action === 'attend') {
+        if (await handoffs.confirm(db, row.id, via, now)) {
+          confirmed();
+          return { result: 'done', customer };
+        }
+        // No cambió: ya estaba confirmada o ya había terminado (quizá a la vez por la otra vía).
+        const current = await handoffs.findById(db, row.id);
+        const result = current?.status === 'ended' ? 'already_ended' : 'already_confirmed';
+        ignored(result);
+        return { result, customer };
+      }
+      if (await handoffs.end(db, row.id, 'business', now, via)) {
+        // Solo si la confirmó este «Terminado» (otra vía pudo confirmarla a la vez).
+        const after = await handoffs.findById(db, row.id);
+        if (after?.confirmedVia === via && after.confirmedAt?.getTime() === now.getTime()) {
+          if (row.confirmedAt === null) confirmed();
+        }
+        activityLog.log({
+          event: 'handoff_ended',
+          handoffId: row.id,
+          cause: 'business',
+          durationMinutes: minutesBetween(row.startedAt, now),
+          confirmed: true,
+        });
+        return { result: 'done', customer };
+      }
+      ignored('already_ended');
+      return { result: 'already_ended', customer };
+    },
+
+    async endByOperator(handoffId, cause) {
+      const row = await handoffs.findById(db, handoffId);
+      if (!row) return { result: 'not_found', customer: null };
+      const customer = customerOf(row);
+      const now = clock.now();
+      if (!(await handoffs.end(db, row.id, cause, now))) {
+        return { result: 'already_ended', customer };
+      }
+      activityLog.log(
+        {
+          event: 'handoff_ended',
+          handoffId: row.id,
+          cause,
+          durationMinutes: minutesBetween(row.startedAt, now),
+          confirmed: row.confirmedAt !== null,
+        },
+        contextOf(row),
+      );
+      return { result: 'done', customer };
+    },
+
+    async sweep() {
+      const now = clock.now();
+      const ended = await db.transaction((tx) =>
+        handoffs.endInactive(tx, new Date(now.getTime() - INACTIVITY_MS), now),
+      );
+      for (const h of ended) {
+        activityLog.log(
+          {
+            event: 'handoff_ended',
+            handoffId: h.id,
+            cause: 'inactivity',
+            durationMinutes: minutesBetween(h.startedAt, now),
+            confirmed: h.confirmed,
+          },
+          { conversationId: h.conversationId },
+        );
+      }
+      // Fuera de la transacción: el recordatorio ya quedó marcado y no se repite.
+      for (const h of ended.filter((e) => e.reminderDue)) {
+        await inactivityReminder(h.id);
+      }
+    },
 
     async hasRoutes(simulate) {
       return (await deps.routes.available(db, { simulate })).length > 0;

@@ -157,12 +157,19 @@ function historyTurns(history: HistoryTurn[]): PromptTurn[] {
 }
 
 /** Indicaciones del paso previo a la derivación (005, contracts/handoff-flow.md). */
-function handoffIndications(step: HandoffStep | null): string[] {
-  if (step?.step !== 'collecting') return [];
+function handoffIndications(step: HandoffStep | null, ended: boolean): string[] {
+  const back = ended
+    ? [
+        'Esta conversación estuvo atendida por el negocio y ha vuelto a ti. Tenla en cuenta y ' +
+          'no vuelvas a saludar.',
+      ]
+    : [];
+  if (step?.step !== 'collecting') return back;
   const name = step.missing.includes('name');
   const phone = step.missing.includes('phone');
   const asked = name && phone ? 'su nombre y un teléfono' : name ? 'su nombre' : 'un teléfono';
   return [
+    ...back,
     `Has pedido al cliente ${asked}. Copia literalmente en contactName y contactPhone lo que ` +
       'haya dado (null si no). Si no quiere darlos, marca refusesContact.',
   ];
@@ -180,7 +187,7 @@ export function finalTurn(context: ReplyContext, feedback?: string): string {
       ? 'El sistema ya antepone un saludo: no saludes ni te presentes.'
       : 'No saludes ni te presentes: ya lo hiciste antes en esta conversación.',
     `Forma de trato: ${context.addressForm === 'formal' ? 'usted' : 'tú'}.`,
-    ...handoffIndications(context.handoffStep),
+    ...handoffIndications(context.handoffStep, context.handoffEnded),
     ...(feedback ? [`Revisión: ${feedback}`] : []),
   ];
   return [

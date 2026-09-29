@@ -115,10 +115,11 @@ describe('reenvío durante la derivación (US3, FR-014)', () => {
     ...extra,
   });
   const forward = (items: ForwardItem[], emailAvailable = true) =>
-    forwardNotice({ ...notice().handoff, threadRef: '<aviso@smtp>' }, items, emailAvailable) as Extract<
-      BusinessNotice,
-      { type: 'forward' }
-    >;
+    forwardNotice(
+      { ...notice().handoff, threadRef: '<aviso@smtp>' },
+      items,
+      emailAvailable,
+    ) as Extract<BusinessNotice, { type: 'forward' }>;
 
   it('ítems en orden; archivo sin texto → [tipo]; audio transcrito → su texto', () => {
     const n = forward([
@@ -138,7 +139,9 @@ describe('reenvío durante la derivación (US3, FR-014)', () => {
     const long = [item('a'.repeat(400)), item('b'.repeat(400))];
     const withEmail = forwardTemplateVars(forward(long, true))[2] ?? '';
     expect(withEmail).toHaveLength(700);
-    expect(withEmail.endsWith('… (mensaje recortado; el texto completo está en el email)')).toBe(true);
+    expect(withEmail.endsWith('… (mensaje recortado; el texto completo está en el email)')).toBe(
+      true,
+    );
     const withoutEmail = forwardTemplateVars(forward(long, false))[2] ?? '';
     expect(withoutEmail).toHaveLength(700);
     expect(withoutEmail.endsWith('… (mensaje recortado)')).toBe(true);

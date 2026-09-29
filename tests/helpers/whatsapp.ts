@@ -53,6 +53,18 @@ export const textMessage = (body: string, opts: MessageOptions = {}) => ({
   text: { body },
 });
 
+/** Pulsación de un botón de respuesta rápida de una plantilla (005). */
+export const buttonMessage = (payload: string, opts: MessageOptions & { text?: string } = {}) => ({
+  ...baseMessage('button', opts),
+  button: { payload, text: opts.text ?? 'Le atiendo' },
+});
+
+/** Respuesta a un botón de un mensaje interactivo (005). */
+export const interactiveReply = (id: string, opts: MessageOptions = {}) => ({
+  ...baseMessage('interactive', opts),
+  interactive: { type: 'button_reply', button_reply: { id, title: 'Le atiendo' } },
+});
+
 export const audioMessage = (opts: MessageOptions & { mediaId?: string } = {}) => ({
   ...baseMessage('audio', opts),
   audio: { id: opts.mediaId ?? 'media-audio-1', mime_type: 'audio/ogg; codecs=opus', voice: true },

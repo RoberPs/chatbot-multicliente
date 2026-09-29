@@ -21,6 +21,12 @@
 </section>
 
 <% if (it.handoffNotice) { %>
-  <p class="notice" role="status" id="playground-handoff"><%= it.handoffNotice %></p>
+  <div class="notice actions" role="status" id="playground-handoff">
+    <span><%= it.handoffNotice %></span>
+    <form method="post" action="/admin/playground/handoff/end">
+      <%~ include('/partials/csrf', { token: it.layout.csrf }) %>
+      <button type="submit" class="secondary">Terminar derivación</button>
+    </form>
+  </div>
 <% } %>
 <%~ include('/partials/playground-form', { csrf: it.layout.csrf, disabled: !it.botPresent, error: it.h.err(it.errors, 'text'), oob: false }) %>

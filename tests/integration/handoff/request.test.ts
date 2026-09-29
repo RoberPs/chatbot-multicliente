@@ -5,14 +5,21 @@
 import { asc, eq } from 'drizzle-orm';
 import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
 import { conversation, handoff, handoffNotice, message } from '../../../src/db/schema.js';
-import { createTestBot, GREETING, WEB_USER, type TestBot, type TestBotOptions } from '../../helpers/bot.js';
+import {
+  createTestBot,
+  GREETING,
+  WEB_USER,
+  type TestBot,
+  type TestBotOptions,
+} from '../../helpers/bot.js';
 import { createTestDatabase, type TestDatabase } from '../../helpers/db.js';
 import { reply } from '../../helpers/fakes.js';
 import { CUSTOMER_E164, postWebhook, textMessage, webhookPayload } from '../../helpers/whatsapp.js';
 
 const ALERTS = { whatsapp: '+34611000111', email: 'avisos@negocio.es' };
 const WEB_ON = { enabled: true, allowedOrigins: ['https://negocio.example'] };
-const OK_WA = 'He avisado a Peluquería Tijeras. Te contactarán en el +34 600 11 12 22 lo antes posible.';
+const OK_WA =
+  'He avisado a Peluquería Tijeras. Te contactarán en el +34 600 11 12 22 lo antes posible.';
 const CONTACT = 'Para hablar con una persona de Peluquería Tijeras:';
 
 describe('US1: petición de persona', () => {
@@ -84,7 +91,11 @@ describe('US1: petición de persona', () => {
       'Quiero hablar con una persona',
     ]);
     const [conv] = await conversations();
-    expect(conv).toMatchObject({ handoffStep: null, contactName: 'Cliente', contactPhone: CUSTOMER_E164 });
+    expect(conv).toMatchObject({
+      handoffStep: null,
+      contactName: 'Cliente',
+      contactPhone: CUSTOMER_E164,
+    });
     expect((await outbound()).at(-1)?.replyTrace).toMatchObject({
       template: 'R-HANDOFF-OK',
       contact: { added: false, reason: null },
@@ -160,11 +171,9 @@ describe('US1: petición de persona', () => {
     expect(last.at(-1)?.body).toBe(
       'He avisado a Peluquería Tijeras. Te contactarán en el +34 612 34 56 78 lo antes posible.',
     );
-    expect(last.map((m) => (m.replyTrace as { handoff?: { action: string } }).handoff?.action)).toEqual([
-      'asked',
-      'asked_again',
-      'started',
-    ]);
+    expect(
+      last.map((m) => (m.replyTrace as { handoff?: { action: string } }).handoff?.action),
+    ).toEqual(['asked', 'asked_again', 'started']);
     expect((await conversations())[0]).toMatchObject({
       contactName: 'Lucía',
       contactPhone: '+34612345678',

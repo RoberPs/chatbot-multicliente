@@ -23,6 +23,7 @@ import { createAnthropicChatModel } from './llm/anthropic-chat-model.js';
 import { createAnthropicSummarizer } from './llm/anthropic-summarizer.js';
 import { createSmtpMailer, smtpTransport } from './mail/smtp-mailer.js';
 import { createTemplateSender } from './channels/whatsapp/template-sender.js';
+import { createBusinessRouter, withBusinessRouter } from './channels/whatsapp/business-router.js';
 import type { CountryCode } from 'libphonenumber-js';
 import { createWhisperSpeechToText } from './speech/whisper.js';
 import { createQuotaWatch } from './webchat/usage.js';
@@ -68,10 +69,11 @@ export function createBot({ env, db, logger, clock = systemClock }: CreateBotOpt
   const handoff = createHandoffService({
     db,
     clock,
+    reader,
     activityLog,
     routes: createAlertRoutesProvider({
       whatsapp: graph
-        ? (to) => createTemplateSender({ graph, language: templateLanguage }, to)
+        ? (to) => createTemplateSender({ graph, language: templateLanguage, clock }, to)
         : null,
       email:
         smtp && transport && baseUrl !== undefined
@@ -122,14 +124,22 @@ export function createBot({ env, db, logger, clock = systemClock }: CreateBotOpt
     quotaWatch,
     ...(transcriber ? { transcriber } : {}),
   });
+  // Lo que escribe el negocio (botones y su número de avisos) no entra como cliente (005, R10).
+  const routedIntake = graph
+    ? withBusinessRouter(
+        intake,
+        createBusinessRouter({ db, handoff, sender: graph, activityLog, clock }),
+      )
+    : intake;
   return {
     whatsapp: env.whatsapp,
     audioTranscription: env.audioTranscription,
     activityLog,
-    intake,
+    intake: routedIntake,
     reader,
     emergencyContactPhone: env.emergencyContactPhone,
     clock,
+    handoff,
     processor,
     retention: createRetention({ db, clock, activityLog }),
     transcriber,

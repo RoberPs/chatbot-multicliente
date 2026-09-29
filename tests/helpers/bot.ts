@@ -24,6 +24,10 @@ import { activateBusiness } from '../../src/knowledge/services/business-status.j
 import { createKnowledgeReader } from '../../src/knowledge/snapshot.js';
 import type { KnowledgeReader } from '../../src/knowledge/types.js';
 import { createHandoffService, type HandoffService } from '../../src/handoff/service.js';
+import {
+  createBusinessRouter,
+  withBusinessRouter,
+} from '../../src/channels/whatsapp/business-router.js';
 import { createSimulatedRoute } from '../../src/handoff/simulated-route.js';
 import { createTokenCipher } from '../../src/handoff/tokens.js';
 import type { WebChatSettings } from '../../src/webchat/settings.js';
@@ -90,7 +94,11 @@ export interface TestBot {
    * Envía un texto directamente a la recepción por cualquier canal, como lo haría su adaptador
    * (hora del reloj manual como `sentAt`).
    */
-  sendVia(channel: Channel, text: string, opts?: { id?: string; user?: string }): Promise<IntakeOutcome>;
+  sendVia(
+    channel: Channel,
+    text: string,
+    opts?: { id?: string; user?: string },
+  ): Promise<IntakeOutcome>;
   /** Cambia la configuración del chat web en la BD. */
   setWebChat(values: Partial<WebChatSettings>): Promise<void>;
   /** Avanza el reloj (por defecto la espera de agrupado) y procesa lo que esté listo. */
@@ -170,6 +178,7 @@ export async function createTestBot(t: TestDatabase, opts: TestBotOptions = {}):
   const handoff = createHandoffService({
     db: t.db,
     clock,
+    reader,
     activityLog,
     routes: new FakeAlertRoutesProvider(alertRoutes, createSimulatedRoute(clock)),
     summarizer,
@@ -223,14 +232,22 @@ export async function createTestBot(t: TestDatabase, opts: TestBotOptions = {}):
     },
     transcriber: transcriber ?? undefined,
   });
+  // Como en bot.ts: el webhook pasa antes por el enrutador del negocio (005, R10).
+  const webhookIntake = withWhatsApp
+    ? withBusinessRouter(
+        intake,
+        createBusinessRouter({ db: t.db, handoff, sender, activityLog, clock }),
+      )
+    : intake;
   const app = await buildTestApp(t.db, undefined, {
     whatsapp: withWhatsApp ? testWhatsApp : null,
     audioTranscription,
     activityLog,
-    intake,
+    intake: webhookIntake,
     reader,
     emergencyContactPhone: EMERGENCY_PHONE,
     clock,
+    handoff,
   });
   let sequence = 0;
 
