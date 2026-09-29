@@ -184,6 +184,7 @@ export async function createTestBot(t: TestDatabase, opts: TestBotOptions = {}):
     summarizer,
     cipher: createTokenCipher(TEST_SESSION_SECRET),
     phoneRegion: 'ES',
+    policies,
     ...(opts.handoffTimeouts?.routeMs === undefined
       ? {}
       : { routeTimeoutMs: opts.handoffTimeouts.routeMs }),

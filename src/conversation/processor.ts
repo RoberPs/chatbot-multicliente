@@ -503,7 +503,7 @@ export function createProcessor(deps: ProcessorDeps): Processor {
         }
         return {
           response: {
-            ...fixed(confirmedReply(business, phone, form), 'R-HANDOFF-OK'),
+            ...fixed(confirmedReply(business, phone, form, result.attention), 'R-HANDOFF-OK'),
             handoff: {
               action: 'started',
               kind: decision.kind,

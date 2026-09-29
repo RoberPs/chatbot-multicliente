@@ -1,7 +1,7 @@
 /** Vía email de los avisos al negocio (005, R7, contracts/business-alerts.md § Email). */
 import nodemailer, { type SendMailOptions, type Transporter } from 'nodemailer';
 import { describe, expect, it } from 'vitest';
-import { alertNotice, forwardNotice } from '../../../src/handoff/notices.js';
+import { alertNotice, forwardNotice, reminderNotice } from '../../../src/handoff/notices.js';
 import { createSmtpMailer, smtpFailure } from '../../../src/mail/smtp-mailer.js';
 import { ManualClock } from '../../helpers/fakes.js';
 
@@ -160,4 +160,30 @@ describe('email del reenvío (US3)', () => {
     expect(mail?.inReplyTo).toBe('<aviso-1@smtp.ejemplo.com>');
     expect(String(mail?.references)).toContain('<aviso-1@smtp.ejemplo.com>');
   });
+});
+
+describe('email del recordatorio (US5)', () => {
+  it.each([
+    ['schedule', 'Le hemos dado tu contacto directo por si prefiere llamarte.'],
+    ['inactivity', 'Como el cliente no ha escrito en 24 horas'],
+  ] as const)(
+    '%s: asunto, desde en hora local, frase final, enlaces e hilo',
+    async (trigger, ending) => {
+      const { route, sent } = mailer();
+      const reminder = reminderNotice(
+        { ...notice().handoff, threadRef: '<aviso-1@smtp.ejemplo.com>' },
+        trigger,
+      );
+      expect(await route.send(reminder, { signal: signal() })).toMatchObject({ ok: true });
+      const [mail] = sent;
+      expect(mail?.subject).toBe('Recordatorio: Lucía sigue esperando');
+      expect(mail?.text).toContain('Desde: hoy a las 21:40');
+      expect(mail?.text).toContain(ending);
+      expect(mail?.text).toContain(`Le atiendo: ${BASE}/handoff/${TOKEN}/attend`);
+      expect(mail?.text).toContain(`Terminado:  ${BASE}/handoff/${TOKEN}/end`);
+      expect(mail?.html).toContain(`${BASE}/handoff/${TOKEN}/end`);
+      expect(mail?.inReplyTo).toBe('<aviso-1@smtp.ejemplo.com>');
+      expect(String(mail?.references)).toContain('<aviso-1@smtp.ejemplo.com>');
+    },
+  );
 });

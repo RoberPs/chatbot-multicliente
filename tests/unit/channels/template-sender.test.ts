@@ -2,7 +2,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import { createGraphClient } from '../../../src/channels/whatsapp/graph-client.js';
 import { createTemplateSender } from '../../../src/channels/whatsapp/template-sender.js';
-import { alertNotice, forwardNotice } from '../../../src/handoff/notices.js';
+import { alertNotice, forwardNotice, reminderNotice } from '../../../src/handoff/notices.js';
 
 const TOKEN = 'AbCdEfGhIjKlMnOpQrStUv';
 const BUSINESS_WA = '+34611000111';
@@ -179,5 +179,37 @@ describe('plantilla derivacion_mensaje (US3)', () => {
       { type: 'text', text: 'Llego tarde / [image]' },
     ]);
     expect(body.template.components.slice(1).map((c) => c.type)).toEqual(['button', 'button']);
+  });
+});
+
+describe('plantilla derivacion_recordatorio (US5)', () => {
+  it('nombre, teléfono, desde en hora local y motivo, con los mismos botones', async () => {
+    const { sender, fetch } = route([ok('wamid.REC')]);
+    const reminder = reminderNotice(notice.handoff, 'schedule');
+    await expect(sender.send(reminder, { signal: signal() })).resolves.toEqual({
+      ok: true,
+      ref: 'wamid.REC',
+    });
+    const body = JSON.parse((fetch.mock.calls[0]?.[1] as RequestInit).body as string) as {
+      template: {
+        name: string;
+        components: Array<{ type: string; parameters: Array<{ payload?: string }> }>;
+      };
+    };
+    expect(body.template.name).toBe('derivacion_recordatorio');
+    const [first, ...buttons] = body.template.components;
+    expect(first?.parameters).toHaveLength(4);
+    expect(first?.parameters.slice(0, 2)).toEqual([
+      { type: 'text', text: 'Lucía Pérez' },
+      { type: 'text', text: '+34 611 22 23 33' },
+    ]);
+    expect(first?.parameters[3]).toEqual({
+      type: 'text',
+      text: 'Pregunta por el precio del tinte. Quiere hablar con alguien.',
+    });
+    expect(buttons.map((b) => b.parameters[0]?.payload)).toEqual([
+      `h1:attend:${TOKEN}`,
+      `h1:end:${TOKEN}`,
+    ]);
   });
 });

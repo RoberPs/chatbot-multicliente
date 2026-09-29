@@ -84,6 +84,7 @@ export function createBot({ env, db, logger, clock = systemClock }: CreateBotOpt
     summarizer: createAnthropicSummarizer({ apiKey: env.ANTHROPIC_API_KEY, model: env.LLM_MODEL }),
     cipher: createTokenCipher(env.SESSION_SECRET),
     phoneRegion: env.DEFAULT_PHONE_REGION as CountryCode,
+    policies,
   });
   const processor = createProcessor({
     db,

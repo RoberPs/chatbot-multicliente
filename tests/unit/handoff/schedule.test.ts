@@ -6,6 +6,7 @@ import { describe, expect, it } from 'vitest';
 import {
   addOpenMinutes,
   applicableHours,
+  attentionAt,
   describeOpening,
   isOpenAt,
   nextOpening,
@@ -198,5 +199,17 @@ describe('describeOpening', () => {
     expect(describeOpening(at('2026-10-02T07:00:00Z'), at('2026-10-01T21:30:00Z'), tz)).toBe(
       'mañana a las 9:00',
     );
+  });
+});
+
+describe('attentionAt (FR-010)', () => {
+  it('abierto, cerrado con franja y cerrado sin franja en 60 días', () => {
+    expect(attentionAt(snapshot(), at('2026-10-01T08:00:00Z'))).toEqual({ open: true });
+    expect(attentionAt(snapshot(), at('2026-10-03T19:00:00Z'))).toEqual({
+      open: false,
+      from: 'el lunes 5 de octubre a las 9:00',
+    });
+    const long = snapshot({ closures: [closure('2026-10-01', '2026-12-31')] });
+    expect(attentionAt(long, at('2026-10-01T08:00:00Z'))).toEqual({ open: false, from: null });
   });
 });

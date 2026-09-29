@@ -1,10 +1,14 @@
 /** Respuestas de la derivación al cliente (005, contracts/handoff-flow.md § Respuestas). */
 import { describe, expect, it } from 'vitest';
+import { contactBlock } from '../../../src/conversation/templates.js';
 import {
   askContactReply,
   confirmedReply,
+  lateReply,
+  lateReplyWithContact,
   phoneRetryReply,
 } from '../../../src/handoff/templates.js';
+import { activeSnapshot } from '../../helpers/snapshot.js';
 
 const BUSINESS = 'Peluquería Tijeras';
 
@@ -69,5 +73,62 @@ describe('R-HANDOFF-OK con el negocio abierto', () => {
   it('no lleva datos del negocio salvo el nombre', () => {
     const text = confirmedReply(BUSINESS, '+34611222333', 'tu');
     expect(text.replace(BUSINESS, '').replace('+34 611 22 23 33', '')).not.toMatch(/\d|@|http/);
+  });
+});
+
+describe('R-HANDOFF-OK con el negocio cerrado (US5, FR-010)', () => {
+  it('con la próxima franja, en tú y usted', () => {
+    const closed = { open: false, from: 'el lunes 5 de octubre a las 9:00' } as const;
+    expect(confirmedReply(BUSINESS, '+34611222333', 'tu', closed)).toBe(
+      'He avisado a Peluquería Tijeras. Ahora mismo no están atendiendo; te contactarán en el ' +
+        '+34 611 22 23 33 a partir del lunes 5 de octubre a las 9:00.',
+    );
+    expect(confirmedReply(BUSINESS, '+34611222333', 'usted', closed)).toBe(
+      'He avisado a Peluquería Tijeras. Ahora mismo no están atendiendo; le contactarán en el ' +
+        '+34 611 22 23 33 a partir del lunes 5 de octubre a las 9:00.',
+    );
+  });
+
+  it('sin franja en 60 días: "en cuanto puedan"', () => {
+    const closed = { open: false, from: null } as const;
+    expect(confirmedReply(BUSINESS, '+34611222333', 'tu', closed)).toBe(
+      'He avisado a Peluquería Tijeras. Ahora mismo no están atendiendo; te contactarán en el ' +
+        '+34 611 22 23 33 en cuanto puedan.',
+    );
+    expect(confirmedReply(BUSINESS, '+34611222333', 'usted', closed)).toContain(
+      'le contactarán en el +34 611 22 23 33 en cuanto puedan.',
+    );
+  });
+
+  it('"hoy" y "mañana" sin contracción', () => {
+    expect(
+      confirmedReply(BUSINESS, '+34611222333', 'tu', { open: false, from: 'mañana a las 9:00' }),
+    ).toContain('a partir de mañana a las 9:00.');
+  });
+
+  it('abierto: igual que sin indicar el horario', () => {
+    expect(confirmedReply(BUSINESS, '+34611222333', 'tu', { open: true })).toBe(
+      confirmedReply(BUSINESS, '+34611222333', 'tu'),
+    );
+  });
+});
+
+describe('R-HANDOFF-LATE (US5, FR-019)', () => {
+  it('tú y usted, sin datos del negocio salvo el nombre (el CONTACTO se añade aparte)', () => {
+    expect(lateReply(BUSINESS, 'tu')).toBe(
+      'Peluquería Tijeras todavía no ha podido responderte. Si lo prefieres, puedes contactar directamente:',
+    );
+    expect(lateReply(BUSINESS, 'usted')).toBe(
+      'Peluquería Tijeras todavía no ha podido responderle. Si lo prefiere, puede contactar directamente:',
+    );
+  });
+
+  it('con el bloque CONTACTO del snapshot', () => {
+    const snapshot = activeSnapshot();
+    expect(lateReplyWithContact(snapshot)).toBe(
+      `${lateReply('Negocio Demo', 'tu')}
+
+${contactBlock(snapshot)}`,
+    );
   });
 });

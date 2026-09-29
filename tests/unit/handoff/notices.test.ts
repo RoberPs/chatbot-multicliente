@@ -10,6 +10,9 @@ import {
   forwardEmail,
   forwardNotice,
   forwardTemplateVars,
+  reminderEmail,
+  reminderNotice,
+  reminderTemplateVars,
   sanitizeTemplateVar,
 } from '../../../src/handoff/notices.js';
 import type { BusinessNotice, ForwardItem } from '../../../src/handoff/types.js';
@@ -161,5 +164,51 @@ describe('reenvío durante la derivación (US3, FR-014)', () => {
     expect(email.text.indexOf('[21:45]')).toBeLessThan(email.text.indexOf('[21:47] Segundo'));
     expect(email.text).toContain(`Le atiendo: https://bot.ejemplo.com/handoff/${TOKEN}/attend`);
     expect(email.text).toContain(`Terminado:  https://bot.ejemplo.com/handoff/${TOKEN}/end`);
+  });
+});
+
+describe('recordatorio (US5, FR-019)', () => {
+  const reminder = (trigger: 'schedule' | 'inactivity') =>
+    reminderNotice({ ...notice().handoff, threadRef: '<aviso@smtp>' }, trigger) as Extract<
+      BusinessNotice,
+      { type: 'reminder' }
+    >;
+  const later = new Date('2026-10-02T09:30:00Z'); // viernes 11:30 en Madrid
+
+  it('espera desde el inicio de la derivación', () => {
+    expect(reminder('schedule')).toMatchObject({ waitingSince: startedAt, trigger: 'schedule' });
+  });
+
+  it('variables de derivacion_recordatorio: nombre, teléfono, desde en hora local y motivo', () => {
+    expect(reminderTemplateVars(reminder('schedule'), later)).toEqual([
+      'Lucía',
+      '+34 611 22 23 33',
+      'ayer a las 21:40',
+      'Pregunta por el precio del tinte y quiere hablar con alguien.',
+    ]);
+  });
+
+  it('email: asunto, datos del aviso y los dos enlaces en los dos momentos', () => {
+    for (const trigger of ['schedule', 'inactivity'] as const) {
+      const email = reminderEmail(reminder(trigger), later, 'https://bot.ejemplo.com');
+      expect(email.subject).toBe('Recordatorio: Lucía sigue esperando');
+      expect(email.text).toContain('Cliente: Lucía');
+      expect(email.text).toContain('Teléfono: +34 611 22 23 33');
+      expect(email.text).toContain('Desde: ayer a las 21:40');
+      expect(email.text).toContain(`Le atiendo: https://bot.ejemplo.com/handoff/${TOKEN}/attend`);
+      expect(email.text).toContain(`Terminado:  https://bot.ejemplo.com/handoff/${TOKEN}/end`);
+    }
+  });
+
+  it('email: la frase final según el momento del recordatorio', () => {
+    const schedule = reminderEmail(reminder('schedule'), later, null).text;
+    const inactivity = reminderEmail(reminder('inactivity'), later, null).text;
+    expect(schedule).toContain('Le hemos dado tu contacto directo por si prefiere llamarte.');
+    expect(schedule).not.toContain('24 horas');
+    expect(inactivity).toContain(
+      'Como el cliente no ha escrito en 24 horas, la conversación ha vuelto al asistente, pero ' +
+        'sigue esperando que le contactes.',
+    );
+    expect(inactivity).not.toContain('contacto directo');
   });
 });

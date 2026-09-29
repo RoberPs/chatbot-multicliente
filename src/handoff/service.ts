@@ -2,14 +2,15 @@
  * Servicio de la derivación (005, contracts/handoff-flow.md): lo que el procesador usa para
  * decidir cada turno, iniciar una derivación (resumen → avisos → guardado, R12) y reenviar al
  * negocio lo que el cliente escribe mientras dura (R11); las acciones del negocio (botones y
- * enlaces, R9), el fin desde el panel y el barrido de inactividad (R14). Sin HTTP: habla con
- * WhatsApp, el email y el modelo solo por sus puertos.
+ * enlaces, R9), el fin desde el panel y el barrido de inactividad y recordatorios (R14). Sin
+ * HTTP: habla con WhatsApp, el email y el modelo solo por sus puertos, y con el cliente por la
+ * entrega de su canal (`ChannelPolicy`).
  */
 import { randomUUID } from 'node:crypto';
 import type { CountryCode } from 'libphonenumber-js';
 import type { ActivityLog, EventContext, HandoffNoticeType } from '../conversation/activity-log.js';
-import type { Channel } from '../conversation/channels.js';
-import type { Clock } from '../conversation/ports.js';
+import type { Channel, ChannelPolicies } from '../conversation/channels.js';
+import { ChannelSendError, type Clock } from '../conversation/ports.js';
 import * as conversations from '../conversation/repositories/conversation.js';
 import type { DbOrTx } from '../conversation/repositories/customer.js';
 import * as messages from '../conversation/repositories/message.js';
@@ -28,8 +29,9 @@ import type {
 import * as handoffs from './repositories/handoff.js';
 import type { HandoffWithCustomer } from './repositories/handoff.js';
 import * as notices from './repositories/handoff-notice.js';
-import { addOpenMinutes, nextOpening } from './schedule.js';
+import { addOpenMinutes, attentionAt, type Attention } from './schedule.js';
 import { summarizeHandoff } from './summary.js';
+import { lateReplyWithContact } from './templates.js';
 import {
   hashToken,
   isTokenFormat,
@@ -68,6 +70,8 @@ export interface HandoffServiceDeps {
   summarizer: HandoffSummarizer;
   cipher: TokenCipher;
   phoneRegion: CountryCode;
+  /** Entrega de cada canal, para el R-HANDOFF-LATE al cliente (FR-019). */
+  policies: ChannelPolicies;
   /** Plazos más cortos en los tests. */
   routeTimeoutMs?: number;
   summaryBudgetMs?: number;
@@ -91,7 +95,8 @@ export type StartResult =
       started: true;
       handoffId: string;
       routes: RouteResults;
-      afterHours: boolean;
+      /** Abierto, o cerrado con la próxima franja: elige la variante de R-HANDOFF-OK. */
+      attention: Attention;
       /** Guarda la derivación y sus avisos en la transacción del saliente de confirmación. */
       persist(tx: DbOrTx): Promise<void>;
     }
@@ -134,7 +139,7 @@ export interface HandoffService {
     handoffId: string,
     cause: 'operator' | 'playground',
   ): Promise<{ result: 'done' | 'already_ended' | 'not_found'; customer: ActCustomer | null }>;
-  /** Barrido de inactividad (R14); los recordatorios por horario llegan con US5. */
+  /** Barrido de inactividad y de recordatorios a las 2 h de horario (R14, FR-019). */
   sweep(): Promise<void>;
   /** Hay alguna vía de aviso disponible ahora (lee los destinos sin caché). */
   hasRoutes(simulate: boolean): Promise<boolean>;
@@ -265,10 +270,87 @@ export function createHandoffService(deps: HandoffServiceDeps): HandoffService {
   }
 
   /**
-   * Recordatorio de una derivación cerrada por inactividad sin confirmar (FR-019): al negocio,
-   * por las vías disponibles ahora, y sin ningún mensaje al cliente.
+   * R-HANDOFF-LATE al cliente por la entrega de su canal (FR-019), una sola vez y sin
+   * reintentos: en WhatsApp solo dentro de la ventana de 24 h. Devuelve si se entregó.
    */
-  async function inactivityReminder(handoffId: string): Promise<void> {
+  async function notifyLate(row: HandoffWithCustomer, routes: RouteResults): Promise<boolean> {
+    const policy = deps.policies[row.channel];
+    const conversation = await conversations.findWithCustomer(db, row.conversationId);
+    if (!policy || !conversation) return false;
+    const now = clock.now();
+    if (
+      policy.replyWindowMs !== null &&
+      now.getTime() - conversation.lastInboundAt.getTime() > policy.replyWindowMs
+    ) {
+      return false;
+    }
+    let snapshot: KnowledgeSnapshot;
+    try {
+      snapshot = await deps.reader.getSnapshot();
+    } catch {
+      // Sin snapshot no hay CONTACTO que dar.
+      return false;
+    }
+    if (policy.requiresActiveBusiness && snapshot.status !== 'active') return false;
+    const text = lateReplyWithContact(snapshot);
+    const trace = {
+      template: 'R-HANDOFF-LATE' as const,
+      greeting: false,
+      contact: { added: true, reason: 'template' as const },
+      groundingRejections: 0,
+      modelMs: null,
+      latencyMs: 0,
+      handoff: { action: 'late_notice' as const, kind: row.kind, handoffId: row.id, routes },
+    };
+    const outboundId = await db.transaction(async (tx) => {
+      const id = await messages.createOutboundCovering(
+        tx,
+        row.conversationId,
+        text,
+        [],
+        now,
+        trace,
+      );
+      await conversations.touchMessage(tx, row.conversationId, now);
+      return id;
+    });
+    const logContext = contextOf(row);
+    try {
+      const { channelMessageId } = await policy.sender.sendText(row.channelUserId, text, {
+        canRetry: () =>
+          policy.replyWindowMs === null ||
+          clock.now().getTime() - conversation.lastInboundAt.getTime() <= policy.replyWindowMs,
+      });
+      const sentAt = clock.now();
+      await messages.markSent(db, outboundId, channelMessageId, sentAt);
+      await conversations.touchMessage(db, row.conversationId, sentAt);
+      return true;
+    } catch (error) {
+      await messages.markFailed(db, outboundId);
+      activityLog.log(
+        {
+          event: 'send_failed',
+          attempts: error instanceof ChannelSendError ? error.attempts : 1,
+          ...(error instanceof ChannelSendError && error.status !== undefined
+            ? { status: error.status }
+            : {}),
+          finalFailure: true,
+        },
+        logContext,
+      );
+      return false;
+    }
+  }
+
+  /**
+   * Recordatorio al negocio por las vías disponibles ahora (FR-019). A las 2 h de horario
+   * (`schedule`) va con R-HANDOFF-LATE al cliente; al cerrarse por inactividad sin confirmar
+   * (`inactivity`), sin ningún mensaje al cliente. Ya está marcado: no se repite.
+   */
+  async function sendReminder(
+    handoffId: string,
+    trigger: 'schedule' | 'inactivity',
+  ): Promise<void> {
     const row = await handoffs.findById(db, handoffId);
     if (!row) return;
     const handoff = await noticeHandoff(row);
@@ -276,22 +358,18 @@ export function createHandoffService(deps: HandoffServiceDeps): HandoffService {
     const logContext = contextOf(row);
     const sent =
       handoff && routes.length > 0
-        ? await sendAll(
-            routes,
-            reminderNotice(handoff, 'inactivity'),
-            'reminder',
-            logContext,
-            row.id,
-          )
+        ? await sendAll(routes, reminderNotice(handoff, trigger), 'reminder', logContext, row.id)
         : [];
     await notices.insertMany(db, noticeRows(row.id, 'reminder', sent, clock.now()));
+    const results = resultsOf(sent);
+    const customerNotified = trigger === 'schedule' ? await notifyLate(row, results) : false;
     activityLog.log(
       {
         event: 'handoff_reminder_sent',
         handoffId: row.id,
-        routes: resultsOf(sent),
-        trigger: 'inactivity',
-        customerNotified: false,
+        routes: results,
+        trigger,
+        customerNotified,
       },
       logContext,
     );
@@ -408,7 +486,12 @@ export function createHandoffService(deps: HandoffServiceDeps): HandoffService {
       }
       // Fuera de la transacción: el recordatorio ya quedó marcado y no se repite.
       for (const h of ended.filter((e) => e.reminderDue)) {
-        await inactivityReminder(h.id);
+        await sendReminder(h.id, 'inactivity');
+      }
+      // Recordatorios a las 2 h de horario de las que siguen activas sin confirmar.
+      const due = await db.transaction((tx) => handoffs.claimDueReminders(tx, now));
+      for (const id of due) {
+        await sendReminder(id, 'schedule');
       }
     },
 
@@ -462,12 +545,13 @@ export function createHandoffService(deps: HandoffServiceDeps): HandoffService {
         return { started: false, routes: results };
       }
 
-      const afterHours = nextOpening(snapshot, startedAt) !== null;
+      const attention = attentionAt(snapshot, startedAt);
+      const afterHours = !attention.open;
       return {
         started: true,
         handoffId,
         routes: results,
-        afterHours,
+        attention,
         async persist(tx) {
           await handoffs.insertActive(tx, {
             id: handoffId,

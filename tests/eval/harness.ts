@@ -297,6 +297,7 @@ export async function createSectorRunner(
         summarizer: new FakeSummarizer(),
         cipher: createTokenCipher('00'.repeat(32)),
         phoneRegion: 'ES',
+        policies,
       });
       const processor = createProcessor({
         db: t.db,

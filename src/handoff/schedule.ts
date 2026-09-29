@@ -181,3 +181,18 @@ export function describeOpening(instant: Date, now: Date, timezone: string): str
   if (target.date === addDays(today, 1)) return `mañana a las ${time}`;
   return `el ${DAY_NAMES[isoWeekday(target.date)]} ${dayAndMonth(target.date)} a las ${time}`;
 }
+
+/**
+ * Cuándo atenderá el negocio a quien deriva ahora (FR-010): abierto, o cerrado con la próxima
+ * franja ya escrita para el cliente (`null` si no hay ninguna en 60 días).
+ */
+export type Attention = { open: true } | { open: false; from: string | null };
+
+export function attentionAt(snapshot: KnowledgeSnapshot, at: Date): Attention {
+  if (isOpenAt(snapshot, at)) return { open: true };
+  const next = nextOpening(snapshot, at);
+  return {
+    open: false,
+    from: next === null ? null : describeOpening(next, at, snapshot.business.timezone),
+  };
+}

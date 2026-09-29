@@ -33,8 +33,11 @@ describe('US4: la conversación vuelve al bot', () => {
     bot = null;
   });
 
-  async function derived(): Promise<{ b: TestBot; token: string; id: string }> {
-    const b = (bot = await createTestBot(t, { handoffAlerts: ALERTS }));
+  async function derived(start?: string): Promise<{ b: TestBot; token: string; id: string }> {
+    const b = (bot = await createTestBot(t, {
+      handoffAlerts: ALERTS,
+      ...(start ? { start } : {}),
+    }));
     b.model.queue(reply('De acuerdo.', { handoffRequested: true }));
     await b.send('Quiero hablar con una persona');
     await b.settle();
@@ -66,7 +69,9 @@ describe('US4: la conversación vuelve al bot', () => {
     await postWebhook(
       b.app,
       webhookPayload({
-        messages: [buttonMessage(`h1:end:${token}`, { from: '34611000111', timestamp: b.clock.now() })],
+        messages: [
+          buttonMessage(`h1:end:${token}`, { from: '34611000111', timestamp: b.clock.now() }),
+        ],
       }),
     );
     expect(await status()).toMatchObject({ status: 'ended', endCause: 'business' });
@@ -108,12 +113,21 @@ describe('US4: la conversación vuelve al bot', () => {
     expect(pgRow).toBeDefined();
     const end = await postForm(b.app, pg, '/admin/playground/handoff/end');
     expect(end.statusCode).toBe(303);
-    const [ended] = await t.db.select().from(handoff).where(eq(handoff.id, pgRow?.id ?? ''));
+    const [ended] = await t.db
+      .select()
+      .from(handoff)
+      .where(eq(handoff.id, pgRow?.id ?? ''));
     expect(ended).toMatchObject({ status: 'ended', endCause: 'playground' });
   });
 
+  /**
+   * Sábado 26 de septiembre a las 13:00: el recordatorio por horario (US5) vence el martes, así
+   * que a las 24 h solo actúa la inactividad.
+   */
+  const SATURDAY = '2026-09-26T11:00:00Z';
+
   it('por inactividad: a 23 h 59 min sigue; a 24 h termina, sin mensaje al cliente y con recordatorio', async () => {
-    const { b } = await derived();
+    const { b } = await derived(SATURDAY);
     const sent = b.sender.sent.length;
     b.clock.advance(24 * HOUR - MINUTE);
     await b.handoff.sweep();
@@ -144,7 +158,7 @@ describe('US4: la conversación vuelve al bot', () => {
   });
 
   it('por inactividad con el recordatorio ya enviado o confirmada: sin recordatorio', async () => {
-    const { b, token } = await derived();
+    const { b, token } = await derived(SATURDAY);
     await b.app.inject({ method: 'POST', url: `/handoff/${token}/attend` });
     b.clock.advance(24 * HOUR);
     await b.handoff.sweep();
