@@ -8,7 +8,7 @@ Estados: especificada → planificada → en implementación → completada (o a
 | 002 | Atención de dudas y precios por WhatsApp | Núcleo | En implementación | `002-whatsapp-faq-bot` | [spec](specs/002-whatsapp-faq-bot/spec.md) · [plan](specs/002-whatsapp-faq-bot/plan.md) · [tareas](specs/002-whatsapp-faq-bot/tasks.md) | 2026-09-25  |
 | 003 | Claridad del panel del operador y enlace a mapa | Núcleo | En implementación | `004-web-channel` | [spec](specs/003-admin-panel-clarity/spec.md) · [plan](specs/003-admin-panel-clarity/plan.md) · [tareas](specs/003-admin-panel-clarity/tasks.md) | 2026-09-28  |
 | 004 | Canal web del bot de atención | Núcleo | Completada | `004-web-channel` | [spec](specs/004-web-channel/spec.md) · [plan](specs/004-web-channel/plan.md) · [tareas](specs/004-web-channel/tasks.md) | 2026-09-28  |
-| 005 | Derivación de la conversación al negocio | Núcleo | Planificada | `005-handoff-to-business` | [spec](specs/005-handoff-to-business/spec.md) · [plan](specs/005-handoff-to-business/plan.md) | 2026-09-28  |
+| 005 | Derivación de la conversación al negocio | Núcleo | En implementación | `005-handoff-to-business` | [spec](specs/005-handoff-to-business/spec.md) · [plan](specs/005-handoff-to-business/plan.md) · [tareas](specs/005-handoff-to-business/tasks.md) | 2026-09-29  |
 
 ---
 
@@ -28,6 +28,11 @@ El bot lee `KnowledgeReader.getSnapshot()` de la base de datos en cada respuesta
 modelo (Claude) solo redacta, y el código calcula horarios, verifica las cifras y añade el
 contacto del negocio cuando hace falta. Lo único que cambia entre canales es una tabla de
 políticas (entrega, ventana de respuesta, negocio activo, chat activado y topes de uso).
+
+Cuando el bot no puede resolver algo, el cliente pide hablar con una persona o escribe una queja,
+la conversación se **deriva** al negocio (feature 005): el bot calla, el negocio recibe un aviso
+por WhatsApp y/o email y la conversación vuelve sola al bot cuando el negocio confirma, termina o
+pasan 24 h sin actividad.
 
 ## Requisitos
 
@@ -63,8 +68,9 @@ WhatsApp. Se puede probar de dos maneras:
 Las guías de validación, con los escenarios manuales, están en
 [specs/001-business-knowledge-base/quickstart.md](specs/001-business-knowledge-base/quickstart.md),
 [specs/002-whatsapp-faq-bot/quickstart.md](specs/002-whatsapp-faq-bot/quickstart.md),
-[specs/003-admin-panel-clarity/quickstart.md](specs/003-admin-panel-clarity/quickstart.md) y
-[specs/004-web-channel/quickstart.md](specs/004-web-channel/quickstart.md).
+[specs/003-admin-panel-clarity/quickstart.md](specs/003-admin-panel-clarity/quickstart.md),
+[specs/004-web-channel/quickstart.md](specs/004-web-channel/quickstart.md) y
+[specs/005-handoff-to-business/quickstart.md](specs/005-handoff-to-business/quickstart.md).
 
 ## Chat web en la web del negocio
 
@@ -94,6 +100,31 @@ El fragmento solo añade un iframe servido por la instancia; el navegador impide
 webs que no estén en la lista (`frame-ancestors`). Desactivar el chat tiene efecto en la
 siguiente petición: los visitantes pasan a ver "no disponible" con el contacto del negocio.
 
+## Derivación al negocio
+
+En `http://localhost:3000/admin/handoffs` se configuran los destinos de los avisos: un WhatsApp,
+un email o ambos. Sin ninguno configurado el bot sigue dando el contacto de derivación de la
+002 (el panel lo avisa, sin bloquear la activación del negocio); con uno solo, el panel avisa de
+que solo llegan por esa vía.
+
+- La vía **WhatsApp** necesita el canal de WhatsApp ya configurado y las tres plantillas de
+  utilidad aprobadas por Meta (aviso, recordatorio y reenvío de mensajes): `pnpm handoff:templates`
+  imprime su definición para darlas de alta. **Meta cobra por plantilla de utilidad enviada**;
+  cada derivación, reenvío y recordatorio consume una.
+- La vía **email** necesita `SMTP_URL`, `SMTP_FROM` y `PUBLIC_BASE_URL` (los enlaces "Le atiendo"
+  y "Terminado" del correo apuntan a esta instancia). Para probarla en local sirve un SMTP de
+  pruebas como [Mailpit](https://github.com/axllent/mailpit)
+  (`docker run -p 1025:1025 -p 8025:8025 axllent/mailpit`, panel en `http://localhost:8025`).
+
+Mientras una conversación está derivada el bot no contesta: los mensajes del cliente se agrupan y
+se reenvían al negocio, y el chat web muestra una franja fija en su lugar. El negocio confirma
+("Le atiendo") o termina ("Terminado") con los botones de WhatsApp o los enlaces del email; el
+operador también puede terminarla desde el panel o desde "Probar el bot". Sin confirmar, a las
+24 h sin mensajes del cliente la conversación vuelve sola al bot; si el negocio no confirma en
+2 horas de horario, recibe un recordatorio único y el cliente, el contacto directo. La guía de
+validación manual está en
+[specs/005-handoff-to-business/quickstart.md](specs/005-handoff-to-business/quickstart.md).
+
 ## Variables de entorno
 
 | Variable | Obligatoria | Descripción |
@@ -117,6 +148,9 @@ siguiente petición: los visitantes pasan a ver "no disponible" con el contacto 
 | `AUDIO_TRANSCRIPTION` | No (`off`) | Interruptor de audios. Con `off` un audio recibe el aviso de "solo texto" y no se descarga |
 | `STT_API_KEY` | Con audios `on` | Clave del servicio de transcripción (API de OpenAI) |
 | `STT_MODEL` | No (`whisper-1`) | Modelo de transcripción |
+| `SMTP_URL` | Con `SMTP_FROM` | Servidor SMTP para los avisos de derivación: `smtps://usuario:clave@host:465` o `smtp://usuario:clave@host:587` (STARTTLS). Necesita además `PUBLIC_BASE_URL` |
+| `SMTP_FROM` | Con `SMTP_URL` | Remitente de los avisos de derivación |
+| `WHATSAPP_TEMPLATE_LANG` | No (`es`) | Idioma de las plantillas de WhatsApp de los avisos de derivación (`pnpm handoff:templates` imprime su definición) |
 
 ## Comandos
 
@@ -137,6 +171,7 @@ siguiente petición: los visitantes pasan a ver "no disponible" con el contacto 
 | `pnpm db:migrate` | Aplica las migraciones a `DATABASE_URL` |
 | `pnpm kb:snapshot` | Imprime el `KnowledgeSnapshot` actual |
 | `pnpm operator:hash-password` | Pide una contraseña sin mostrarla y devuelve su hash Argon2id |
+| `pnpm handoff:templates` | Imprime la definición JSON de las tres plantillas de WhatsApp de los avisos de derivación, para darlas de alta en Meta |
 
 ## Despliegue
 
@@ -158,12 +193,15 @@ src/
 ├── db/            esquema Drizzle, migraciones, cliente y transacciones
 ├── knowledge/     dominio sin HTTP: esquemas, reglas temporales, avisos, snapshot, casos de uso
 ├── conversation/  dominio del bot sin HTTP: recepción, espera, respuesta, verificador, plantillas
-├── channels/      adaptadores de canal: WhatsApp (webhook y Graph API) y web (iframe y API JSON)
+├── handoff/       dominio de la derivación al negocio sin HTTP: decisión, avisos, horario, tokens
+├── channels/      adaptadores de canal: WhatsApp (webhook y Graph API), web (iframe y API JSON)
+│                  y los enlaces públicos de derivación (`/handoff/*`)
 ├── webchat/       dominio del chat web sin HTTP: configuración, disponibilidad, topes, sesión
-├── llm/           adaptador de Claude y construcción del prompt
+├── mail/          adaptador de email (avisos de derivación por SMTP)
+├── llm/           adaptador de Claude, construcción del prompt y resumen de derivaciones
 ├── speech/        adaptador de transcripción (solo con audios activados)
 ├── admin/         panel del operador: sesión, rutas, plantillas Eta + htmx, probar el bot
-├── cli/           kb:snapshot, operator:hash-password y bot:chat
+├── cli/           kb:snapshot, operator:hash-password, bot:chat y handoff:templates
 ├── bot.ts         composición del bot
 ├── app.ts         construcción de la app Fastify
 └── server.ts      arranque

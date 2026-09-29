@@ -283,7 +283,9 @@ export async function createSectorRunner(
   return {
     async ask(question) {
       const clock = new OffsetClock(question.at ?? sector.at);
-      const sender = new FakeChannelSender();
+      // La base de datos se reutiliza para todo el sector; el prefijo evita chocar con el
+      // `channelMessageId` (UNIQUE) de una pregunta anterior.
+      const sender = new FakeChannelSender(`${randomUUID()}.`);
       const log = new RecordingActivityLog();
       // El mismo doble recoge las respuestas de WhatsApp y las guardadas de la web.
       const policies = buildChannelPolicies({ whatsappSender: sender, stored: sender });

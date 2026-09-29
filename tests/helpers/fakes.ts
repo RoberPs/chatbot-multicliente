@@ -124,6 +124,13 @@ export class FakeChannelSender implements ChannelSender {
   private failures: Array<{ status?: number }> = [];
   private counter = 0;
 
+  /**
+   * Prefijo del `channelMessageId` (columna `UNIQUE`): por defecto vacío, como antes. Los
+   * llamantes que reutilizan la misma base de datos entre varias instancias (p. ej. la
+   * evaluación, una por pregunta) deben dar un prefijo distinto para no chocar entre sí.
+   */
+  constructor(private readonly idPrefix = '') {}
+
   /** Los siguientes `n` envíos fallan con ese status. */
   failNext(n = 1, status?: number): this {
     for (let i = 0; i < n; i++) this.failures.push({ status });
@@ -158,7 +165,7 @@ export class FakeChannelSender implements ChannelSender {
     if (failure) throw new ChannelSendError(1, failure.status);
     this.sent.push({ to, body });
     this.counter += 1;
-    return { channelMessageId: `wamid.out.${this.counter}` };
+    return { channelMessageId: `wamid.out.${this.idPrefix}${this.counter}` };
   }
 }
 
