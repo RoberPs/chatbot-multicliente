@@ -87,7 +87,7 @@ export interface PayloadOptions {
   phoneNumberId?: string;
   messages?: object[];
   statuses?: object[];
-  profileName?: string;
+  profileName?: string | null;
 }
 
 /** Evento `whatsapp_business_account` con un único cambio. */
@@ -100,7 +100,11 @@ export function webhookPayload(opts: PayloadOptions = {}) {
     },
   };
   if (opts.messages) {
-    value.contacts = [{ profile: { name: opts.profileName ?? 'Cliente' }, wa_id: CUSTOMER_WA }];
+    // `profileName: null` simula un remitente sin nombre de perfil (005).
+    value.contacts =
+      opts.profileName === null
+        ? [{ wa_id: CUSTOMER_WA }]
+        : [{ profile: { name: opts.profileName ?? 'Cliente' }, wa_id: CUSTOMER_WA }];
     value.messages = opts.messages;
   }
   if (opts.statuses) value.statuses = opts.statuses;

@@ -23,6 +23,9 @@ import { message, webChatSettings } from '../../src/db/schema.js';
 import { activateBusiness } from '../../src/knowledge/services/business-status.js';
 import { createKnowledgeReader } from '../../src/knowledge/snapshot.js';
 import type { KnowledgeReader } from '../../src/knowledge/types.js';
+import { createHandoffService, type HandoffService } from '../../src/handoff/service.js';
+import { createSimulatedRoute } from '../../src/handoff/simulated-route.js';
+import { createTokenCipher } from '../../src/handoff/tokens.js';
 import type { WebChatSettings } from '../../src/webchat/settings.js';
 import { createQuotaWatch } from '../../src/webchat/usage.js';
 import { hairSalon } from '../fixtures/hair-salon.js';
@@ -31,10 +34,11 @@ import type { BusinessFixture } from '../fixtures/types.js';
 import { buildTestApp, TEST_EMERGENCY_PHONE } from './app.js';
 import { resetDb, setHandoffAlerts, type TestDatabase } from './db.js';
 import {
+  FakeAlertRoute,
+  FakeAlertRoutesProvider,
   FakeChannelSender,
   FakeChatModel,
-  type FakeAlertRoute,
-  type FakeSummarizer,
+  FakeSummarizer,
   ManualClock,
   RecordingActivityLog,
   type FakeMediaFetcher,
@@ -72,6 +76,10 @@ export interface TestBot {
   intake: Intake;
   processor: Processor;
   policies: ChannelPolicies;
+  /** Vías de aviso falsas (005): siempre existen; se usan si su destino está configurado. */
+  alertRoutes: { whatsapp: FakeAlertRoute; email: FakeAlertRoute };
+  summarizer: FakeSummarizer;
+  handoff: HandoffService;
   /** Solo con los audios activados. */
   transcriber: Transcriber | null;
   /** Envía un mensaje de cualquier tipo (tests/helpers/whatsapp.ts) con la hora del reloj. */
@@ -116,6 +124,8 @@ export interface TestBotOptions {
   alertRoutes?: { whatsapp?: FakeAlertRoute; email?: FakeAlertRoute };
   /** Resumidor falso del motivo de la derivación (005). */
   summarizer?: FakeSummarizer;
+  /** Plazos de la derivación (por defecto 15 s por vía y 8 s el resumen). */
+  handoffTimeouts?: { routeMs?: number; summaryMs?: number };
 }
 
 export const TEST_SESSION_SECRET = 'secreto-de-sesion-de-prueba-con-32-caracteres';
@@ -152,6 +162,26 @@ export async function createTestBot(t: TestDatabase, opts: TestBotOptions = {}):
     await t.db.update(webChatSettings).set(values);
   };
   if (opts.webChat) await setWebChat(opts.webChat);
+  const alertRoutes = {
+    whatsapp: opts.alertRoutes?.whatsapp ?? new FakeAlertRoute('whatsapp'),
+    email: opts.alertRoutes?.email ?? new FakeAlertRoute('email'),
+  };
+  const summarizer = opts.summarizer ?? new FakeSummarizer();
+  const handoff = createHandoffService({
+    db: t.db,
+    clock,
+    activityLog,
+    routes: new FakeAlertRoutesProvider(alertRoutes, createSimulatedRoute(clock)),
+    summarizer,
+    cipher: createTokenCipher(TEST_SESSION_SECRET),
+    phoneRegion: 'ES',
+    ...(opts.handoffTimeouts?.routeMs === undefined
+      ? {}
+      : { routeTimeoutMs: opts.handoffTimeouts.routeMs }),
+    ...(opts.handoffTimeouts?.summaryMs === undefined
+      ? {}
+      : { summaryBudgetMs: opts.handoffTimeouts.summaryMs }),
+  });
   const makeProcessor = () =>
     createProcessor({
       db: t.db,
@@ -164,6 +194,7 @@ export async function createTestBot(t: TestDatabase, opts: TestBotOptions = {}):
       settings,
       audioTranscription,
       quotaWatch,
+      handoff,
     });
   const processor = makeProcessor();
   const wake = (id: string) => {
@@ -212,6 +243,9 @@ export async function createTestBot(t: TestDatabase, opts: TestBotOptions = {}):
     intake,
     processor,
     policies,
+    alertRoutes,
+    summarizer,
+    handoff,
     transcriber,
     async sendMessage(msg) {
       const at = String(Math.floor(clock.now().getTime() / 1000));

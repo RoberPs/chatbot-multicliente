@@ -7,8 +7,12 @@ import {
   describeChannel,
   describeKind,
   describeSince,
+  forwardEmail,
+  forwardNotice,
+  forwardTemplateVars,
   sanitizeTemplateVar,
 } from '../../../src/handoff/notices.js';
+import type { BusinessNotice, ForwardItem } from '../../../src/handoff/types.js';
 
 const TOKEN = 'AbCdEfGhIjKlMnOpQrStUv';
 const startedAt = new Date('2026-10-01T19:40:00Z'); // jueves 21:40 en Madrid
@@ -99,5 +103,60 @@ describe('aviso de derivación', () => {
     const email = alertEmail(notice({ channel: 'playground' }), startedAt, null);
     expect(email.text).not.toContain('/handoff/');
     expect(email.text).toContain('Canal: prueba del panel');
+  });
+});
+
+describe('reenvío durante la derivación (US3, FR-014)', () => {
+  const item = (text: string | null, extra: Partial<ForwardItem> = {}): ForwardItem => ({
+    text,
+    kind: 'text',
+    otherType: null,
+    sentAt: new Date('2026-10-01T19:45:00Z'),
+    ...extra,
+  });
+  const forward = (items: ForwardItem[], emailAvailable = true) =>
+    forwardNotice({ ...notice().handoff, threadRef: '<aviso@smtp>' }, items, emailAvailable) as Extract<
+      BusinessNotice,
+      { type: 'forward' }
+    >;
+
+  it('ítems en orden; archivo sin texto → [tipo]; audio transcrito → su texto', () => {
+    const n = forward([
+      item('Llego tarde'),
+      item(null, { kind: 'other', otherType: 'image' }),
+      item('Te lo digo por audio', { kind: 'audio' }),
+      item(null, { kind: 'audio' }),
+    ]);
+    expect(forwardTemplateVars(n)).toEqual([
+      'Lucía',
+      '+34 611 22 23 33',
+      'Llego tarde / [image] / Te lo digo por audio / [audio]',
+    ]);
+  });
+
+  it('{{3}} recortado a 700 con la coletilla según haya email o no', () => {
+    const long = [item('a'.repeat(400)), item('b'.repeat(400))];
+    const withEmail = forwardTemplateVars(forward(long, true))[2] ?? '';
+    expect(withEmail).toHaveLength(700);
+    expect(withEmail.endsWith('… (mensaje recortado; el texto completo está en el email)')).toBe(true);
+    const withoutEmail = forwardTemplateVars(forward(long, false))[2] ?? '';
+    expect(withoutEmail).toHaveLength(700);
+    expect(withoutEmail.endsWith('… (mensaje recortado)')).toBe(true);
+    // Sin saltos de línea ni variables vacías.
+    expect(forwardTemplateVars(forward([item('uno\ndos\t tres')]))[2]).toBe('uno dos tres');
+  });
+
+  it('email del reenvío: texto completo, en orden, con hora local y los dos enlaces', () => {
+    const n = forward([
+      item('Primero ' + 'x'.repeat(800)),
+      item('Segundo', { sentAt: new Date('2026-10-01T19:47:00Z') }),
+    ]);
+    const email = forwardEmail(n, 'https://bot.ejemplo.com');
+    expect(email.subject).toBe('Mensaje de Lucía durante la derivación');
+    expect(email.text).toContain('Lucía (+34 611 22 23 33) ha escrito durante la derivación:');
+    expect(email.text).toContain(`[21:45] Primero ${'x'.repeat(800)}`);
+    expect(email.text.indexOf('[21:45]')).toBeLessThan(email.text.indexOf('[21:47] Segundo'));
+    expect(email.text).toContain(`Le atiendo: https://bot.ejemplo.com/handoff/${TOKEN}/attend`);
+    expect(email.text).toContain(`Terminado:  https://bot.ejemplo.com/handoff/${TOKEN}/end`);
   });
 });

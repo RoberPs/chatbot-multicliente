@@ -34,6 +34,7 @@ import type {
   ModelReply,
   PendingItem,
   ReplyContext,
+  ReplyTrace,
 } from './types.js';
 
 export interface ResponderDeps {
@@ -73,6 +74,55 @@ export interface Response {
   /** Borradores rechazados por el verificador (0 – 2), sin sus valores. */
   groundingRejections: number;
   truncated: boolean;
+  /**
+   * Salida del modelo cuando la respuesta sale de él (005): banderas y datos de contacto para
+   * la decisión de la derivación. Sin modelo (plantillas, R-ERR) no hay nada que decidir.
+   */
+  model?: {
+    reply: ModelReply;
+    handoffDetected: boolean;
+    /** Aviso de archivo del lote, para recomponer con el cuerpo del modelo. */
+    fileNotice: string | null;
+  };
+  /** Qué hizo la derivación en esta respuesta (005); se guarda en `reply_trace.handoff`. */
+  handoff?: ReplyTrace['handoff'];
+}
+
+export interface ComposeInput {
+  snapshot: KnowledgeSnapshot;
+  /** La conversación ya recibió el saludo. */
+  greeted: boolean;
+  body: string;
+  reason: ContactReason | null;
+  template?: ReplyTemplate;
+  fileNotice?: string | null;
+  groundingRejections?: number;
+}
+
+/**
+ * Une saludo (si es la primera respuesta), cuerpo, aviso de archivo y CONTACTO según el motivo.
+ * La usan el responder y, en la 005, las respuestas de derivación del procesador.
+ */
+export function composeReply(input: ComposeInput): Response {
+  const { snapshot, reason } = input;
+  const form = formOf(snapshot.tone.addressForm);
+  const contact = reason ? contactBlock(snapshot) : null;
+  const hello = input.greeted ? null : greeting(snapshot.business.name, form);
+  const { text, truncated } = joinParts({
+    greeting: hello,
+    body: input.body,
+    fileNotice: input.fileNotice ?? null,
+    contact,
+  });
+  return {
+    text,
+    truncated,
+    contactBlock: reason !== null,
+    contactReason: reason,
+    greeting: hello !== null,
+    template: input.template,
+    groundingRejections: input.groundingRejections ?? 0,
+  };
 }
 
 const CATEGORY_NAMES: Record<FactCategory, string> = {
@@ -220,25 +270,16 @@ export function createResponder(deps: ResponderDeps) {
         reason: ContactReason | null,
         template?: ReplyTemplate,
         withNotice = true,
-      ): Response => {
-        const contact = reason ? contactBlock(snapshot) : null;
-        const hello = input.greeted ? null : greeting(snapshot.business.name, form);
-        const { text, truncated } = joinParts({
-          greeting: hello,
+      ): Response =>
+        composeReply({
+          snapshot,
+          greeted: input.greeted,
           body,
-          fileNotice: withNotice ? notice : null,
-          contact,
-        });
-        return {
-          text,
-          truncated,
-          contactBlock: reason !== null,
-          contactReason: reason,
-          greeting: hello !== null,
+          reason,
           template,
+          fileNotice: withNotice ? notice : null,
           groundingRejections,
-        };
-      };
+        });
 
       // Árbol de decisión (contracts/bot-replies.md): lotes que no necesitan al modelo.
       if (pending.every((p) => p.kind === 'other' && !p.text)) {
@@ -253,6 +294,8 @@ export function createResponder(deps: ResponderDeps) {
       const timer = setTimeout(() => {
         controller.abort();
       }, settings.modelBudgetMs);
+      const detected = () =>
+        input.pending.some((p) => p.text !== null && detectsHandoffRequest(p.text));
       const start = clock.now().getTime();
       const elapsed = () => clock.now().getTime() - start;
       try {
@@ -269,16 +312,24 @@ export function createResponder(deps: ResponderDeps) {
           );
           const remaining = settings.modelBudgetMs - elapsed();
           if (attempt >= 2 || remaining < settings.minRetryBudgetMs) {
-            return { ...compose(safeReply(form), 'template', 'R-SAFE'), modelMs: elapsed() };
+            // Las banderas siguen valiendo para la derivación; el cuerpo no (005).
+            return {
+              ...compose(safeReply(form), 'template', 'R-SAFE'),
+              modelMs: elapsed(),
+              model: {
+                reply: { ...reply, body: safeReply(form) },
+                handoffDetected: detected(),
+                fileNotice: notice,
+              },
+            };
           }
           feedback = groundingFeedback(offendingCategories(reply.body, allowed));
         }
-        const handoffDetected = input.pending.some(
-          (p) => p.text !== null && detectsHandoffRequest(p.text),
-        );
+        const handoffDetected = detected();
         return {
           ...compose(reply.body, needsContact(snapshot, reply, handoffDetected)),
           modelMs: elapsed(),
+          model: { reply, handoffDetected, fileNotice: notice },
         };
       } catch (error) {
         // FR-029: el modelo falla o se agota el plazo → disculpa con contacto.

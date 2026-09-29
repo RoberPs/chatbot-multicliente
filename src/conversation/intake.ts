@@ -101,6 +101,10 @@ export function createIntake(deps: IntakeDeps): Intake {
         });
         if (!inserted.id) throw new DuplicateMessage();
         await conversations.touchInbound(tx, conversation.id, event.sentAt, receivedAt);
+        // 005, R10: el nombre de perfil de WhatsApp es el nombre del cliente para la derivación.
+        if (event.profileName) {
+          await conversations.setProfileName(tx, conversation.id, event.profileName);
+        }
         return {
           conversationId: conversation.id,
           messageId: inserted.id,

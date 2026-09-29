@@ -128,3 +128,50 @@ describe('prompt del modelo: el texto del cliente son datos (US5, FR-026)', () =
     );
   });
 });
+
+describe('prompt del modelo: derivación (005)', () => {
+  const lastTurn = (overrides: Parameters<typeof replyContext>[0]) =>
+    buildPrompt(replyContext(overrides)).messages.at(-1)?.content ?? '';
+
+  it('regla de petición de persona: acuse breve, sin pedir datos ni el motivo', () => {
+    const core = buildPrompt(replyContext()).system[0];
+    expect(core).toContain('marca handoffRequested y responde solo con una frase breve de acuse');
+    expect(core).toContain('el sistema se encarga del resto. No pidas datos ni el motivo.');
+    expect(core).not.toContain('se le facilita el contacto');
+  });
+
+  it('el "Formato de salida" describe los campos nuevos', () => {
+    const core = buildPrompt(replyContext()).system[0];
+    for (const field of [
+      'complaint:',
+      'acceptsHandoff:',
+      'refusesContact:',
+      'contactName:',
+      'contactPhone:',
+    ]) {
+      expect(core).toContain(`- ${field}`);
+    }
+  });
+
+  it('con collecting indica qué falta y cómo copiar los datos', () => {
+    const at = '2026-10-01T10:00:00.000Z';
+    const both = lastTurn({
+      handoffStep: { step: 'collecting', kind: 'person', missing: ['name', 'phone'], phoneRetried: false, at },
+    });
+    expect(both).toContain('Has pedido al cliente su nombre y un teléfono.');
+    expect(both).toContain('Copia literalmente en contactName y contactPhone');
+    expect(both).toContain('marca refusesContact');
+    const phone = lastTurn({
+      handoffStep: { step: 'collecting', kind: 'person', missing: ['phone'], phoneRetried: true, at },
+    });
+    expect(phone).toContain('Has pedido al cliente un teléfono.');
+    const name = lastTurn({
+      handoffStep: { step: 'collecting', kind: 'person', missing: ['name'], phoneRetried: false, at },
+    });
+    expect(name).toContain('Has pedido al cliente su nombre.');
+  });
+
+  it('sin paso no hay indicaciones de derivación', () => {
+    expect(lastTurn({})).not.toContain('Has pedido al cliente');
+  });
+});

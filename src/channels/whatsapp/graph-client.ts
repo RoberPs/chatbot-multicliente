@@ -29,26 +29,52 @@ const retryable = (status: number | undefined) =>
 
 export { MediaTooLargeError };
 
-export function createGraphClient(opts: GraphClientOptions): ChannelSender & MediaFetcher {
+/** Resultado de un `POST /messages` con sus reintentos. */
+export type GraphPostResult =
+  | { ok: true; id: string }
+  | {
+      ok: false;
+      attempts: number;
+      /** Status HTTP del último intento; `undefined` si falló la red. */
+      status?: number;
+      /** `error.code` de la Graph API, si lo devolvió. */
+      errorCode?: number;
+    };
+
+export interface GraphPostOptions extends SendOptions {
+  /** Plazo del envío: corta la petición en curso y los reintentos. */
+  signal?: AbortSignal;
+}
+
+/** Cliente de la Graph API: texto, cualquier mensaje (plantillas, 005) y audios. */
+export interface GraphClient extends ChannelSender, MediaFetcher {
+  /** `POST /{phone-number-id}/messages` con los reintentos de `sendText`; no lanza. */
+  postMessage(payload: Record<string, unknown>, opts?: GraphPostOptions): Promise<GraphPostResult>;
+}
+
+export function createGraphClient(opts: GraphClientOptions): GraphClient {
   const doFetch = opts.fetch ?? fetch;
   const sleep = opts.sleep ?? defaultSleep;
   const delays = opts.retryDelaysMs ?? conversationSettings.sendRetryDelaysMs;
   const base = `${opts.baseUrl ?? 'https://graph.facebook.com'}/${opts.graphVersion}`;
   const auth = { Authorization: `Bearer ${opts.accessToken}` };
 
-  async function sendOnce(to: string, body: string): Promise<{ id?: string; status?: number }> {
+  async function postOnce(
+    payload: Record<string, unknown>,
+    signal?: AbortSignal,
+  ): Promise<{ id?: string; status?: number; errorCode?: number }> {
     try {
       const res = await doFetch(`${base}/${opts.phoneNumberId}/messages`, {
         method: 'POST',
         headers: { ...auth, 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          messaging_product: 'whatsapp',
-          to: to.replace(/^\+/, ''),
-          type: 'text',
-          text: { body, preview_url: false },
-        }),
+        body: JSON.stringify({ messaging_product: 'whatsapp', ...payload }),
+        ...(signal ? { signal } : {}),
       });
-      if (!res.ok) return { status: res.status };
+      if (!res.ok) {
+        const json = (await res.json().catch(() => null)) as { error?: { code?: unknown } } | null;
+        const code = json?.error?.code;
+        return { status: res.status, ...(typeof code === 'number' ? { errorCode: code } : {}) };
+      }
       const json = (await res.json()) as { messages?: Array<{ id?: string }> };
       const id = json.messages?.[0]?.id;
       return id ? { id } : { status: res.status };
@@ -57,22 +83,38 @@ export function createGraphClient(opts: GraphClientOptions): ChannelSender & Med
     }
   }
 
-  return {
-    async sendText(to: string, body: string, sendOpts: SendOptions = {}) {
-      let attempts = 0;
-      let lastStatus: number | undefined;
-      for (;;) {
-        attempts += 1;
-        const result = await sendOnce(to, body);
-        if (result.id) return { channelMessageId: result.id };
-        lastStatus = result.status;
-        const delay = delays[attempts - 1];
-        if (!retryable(lastStatus) || delay === undefined) break;
-        if (sendOpts.canRetry && !sendOpts.canRetry()) break;
-        await sleep(delay);
-        if (sendOpts.canRetry && !sendOpts.canRetry()) break;
+  async function postMessage(
+    payload: Record<string, unknown>,
+    postOpts: GraphPostOptions = {},
+  ): Promise<GraphPostResult> {
+    const { signal } = postOpts;
+    const canRetry = () => !signal?.aborted && (postOpts.canRetry?.() ?? true);
+    let attempts = 0;
+    for (;;) {
+      attempts += 1;
+      const result = await postOnce(payload, signal);
+      if (result.id) return { ok: true, id: result.id };
+      const delay = delays[attempts - 1];
+      if (!retryable(result.status) || delay === undefined || !canRetry()) {
+        return { ok: false, attempts, status: result.status, errorCode: result.errorCode };
       }
-      throw new ChannelSendError(attempts, lastStatus);
+      await sleep(delay);
+      if (!canRetry()) {
+        return { ok: false, attempts, status: result.status, errorCode: result.errorCode };
+      }
+    }
+  }
+
+  return {
+    postMessage,
+
+    async sendText(to: string, body: string, sendOpts: SendOptions = {}) {
+      const result = await postMessage(
+        { to: to.replace(/^\+/, ''), type: 'text', text: { body, preview_url: false } },
+        sendOpts,
+      );
+      if (result.ok) return { channelMessageId: result.id };
+      throw new ChannelSendError(result.attempts, result.status);
     },
 
     async fetchAudio(mediaId: string, maxBytes: number) {

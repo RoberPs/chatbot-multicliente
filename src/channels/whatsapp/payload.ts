@@ -1,6 +1,7 @@
 /**
  * Evento `whatsapp_business_account` de la Cloud API → `InboundEvent`
- * (contracts/whatsapp-webhook.md, mapeo de tipos). El nombre de perfil no se guarda.
+ * (contracts/whatsapp-webhook.md, mapeo de tipos). Desde la 005 se extrae el nombre de perfil
+ * de cada remitente (`contacts[].profile.name`), que la derivación usa como nombre del cliente.
  */
 import { parsePhoneNumberFromString } from 'libphonenumber-js';
 import { z } from 'zod';
@@ -27,10 +28,18 @@ const statusSchema = z
   .object({ id: z.string(), status: z.string(), recipient_id: z.string().optional() })
   .loose();
 
+const contactSchema = z
+  .object({
+    wa_id: z.string().optional(),
+    profile: z.object({ name: z.string().optional() }).loose().optional(),
+  })
+  .loose();
+
 const valueSchema = z
   .object({
     messaging_product: z.literal('whatsapp').optional(),
     metadata: z.object({ phone_number_id: z.string() }).loose(),
+    contacts: z.array(contactSchema).optional(),
     messages: z.array(messageSchema).optional(),
     statuses: z.array(statusSchema).optional(),
   })
@@ -68,14 +77,28 @@ function toE164(from: string): string {
 
 const WITH_CAPTION = new Set(['image', 'video', 'document']);
 
-function toEvent(m: z.infer<typeof messageSchema>, audioTranscription: boolean): InboundEvent {
+/** Nombre de perfil de cada remitente, por `wa_id` (sin `+`). */
+function profileNames(contacts: Array<z.infer<typeof contactSchema>>): Map<string, string> {
+  const names = new Map<string, string>();
+  for (const c of contacts) {
+    const name = c.profile?.name?.trim();
+    if (c.wa_id && name) names.set(c.wa_id.replace(/^\+/, ''), name);
+  }
+  return names;
+}
+
+function toEvent(
+  m: z.infer<typeof messageSchema>,
+  audioTranscription: boolean,
+  profileName: string | null,
+): InboundEvent {
   const base = {
     channel: 'whatsapp' as const,
     channelUserId: toE164(m.from),
     channelMessageId: m.id,
     sentAt: new Date(Number(m.timestamp) * 1000),
     isGroup: m.group_id !== undefined,
-    profileName: null,
+    profileName,
     buttonPayload: null,
   };
   if (m.type === 'text' && m.text) {
@@ -127,8 +150,10 @@ export function parseWebhookPayload(
         data.foreign += 1;
         continue;
       }
+      const names = profileNames(value.data.contacts ?? []);
       for (const m of value.data.messages ?? []) {
-        data.events.push(toEvent(m, opts.audioTranscription));
+        const name = names.get(m.from.replace(/^\+/, '')) ?? null;
+        data.events.push(toEvent(m, opts.audioTranscription, name));
       }
       data.failedStatuses += (value.data.statuses ?? []).filter(
         (s) => s.status === 'failed',

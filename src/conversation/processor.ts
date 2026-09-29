@@ -6,6 +6,8 @@
  * ventana de 24 h, negocio activo, chat activado, tope) sale de su `ChannelPolicy`.
  */
 import type { Db } from '../db/client.js';
+import type { HandoffService } from '../handoff/service.js';
+import { askContactReply, confirmedReply, phoneRetryReply } from '../handoff/templates.js';
 import type { KnowledgeReader, KnowledgeSnapshot } from '../knowledge/types.js';
 import { readWebChatSettings } from '../webchat/settings.js';
 import { capReached, incrementWebUsage, readWebUsage, type QuotaWatch } from '../webchat/usage.js';
@@ -16,7 +18,9 @@ import * as conversations from './repositories/conversation.js';
 import type { ConversationWithCustomer } from './repositories/conversation.js';
 import * as messages from './repositories/message.js';
 import type { InboundRow } from './repositories/message.js';
+import type { DbOrTx } from './repositories/customer.js';
 import {
+  composeReply,
   createResponder,
   rateLimitResponse,
   unavailableResponse,
@@ -24,6 +28,7 @@ import {
   type Response,
 } from './responder.js';
 import { conversationSettings, type ConversationSettings } from './settings.js';
+import { formOf } from './templates.js';
 import type { HistoryTurn, MessageKind, PendingItem, ReplyTrace } from './types.js';
 
 export interface ProcessorDeps {
@@ -41,6 +46,8 @@ export interface ProcessorDeps {
   /** Registra `web_quota_reached` una vez por periodo (compartido con la recepción). */
   quotaWatch?: QuotaWatch;
   settings?: ConversationSettings;
+  /** Derivación al negocio (005); sin ella el bot responde como en la 004. */
+  handoff?: HandoffService;
 }
 
 export interface Processor {
@@ -73,7 +80,11 @@ const traceOf = (response: Response, latencyMs: number): ReplyTrace => ({
   groundingRejections: response.groundingRejections,
   modelMs: response.modelMs === undefined ? null : Math.max(0, Math.round(response.modelMs)),
   latencyMs: Math.max(0, Math.round(latencyMs)),
+  ...(response.handoff ? { handoff: response.handoff } : {}),
 });
+
+/** Escrituras que van en la transacción del saliente (paso y datos de la derivación, 005). */
+type TxWork = (tx: DbOrTx) => Promise<void>;
 
 export function createProcessor(deps: ProcessorDeps): Processor {
   const { db, reader, clock, activityLog, policies } = deps;
@@ -173,6 +184,7 @@ export function createProcessor(deps: ProcessorDeps): Processor {
     covered: InboundRow[];
     startedAt: Date;
     lastReceived: number;
+    inTx?: TxWork;
   }): Promise<void> {
     const { conversation, policy, snapshot, response, covered, startedAt, lastReceived } = args;
     const conversationId = conversation.id;
@@ -189,6 +201,7 @@ export function createProcessor(deps: ProcessorDeps): Processor {
       );
       await conversations.touchMessage(tx, conversationId, at);
       if (response.greeting) await conversations.markGreeted(tx, conversationId);
+      await args.inTx?.(tx);
       // R9: cada respuesta web cuenta, salvo R-UNAVAILABLE (que es la del tope).
       if (policy.usageCap && snapshot && response.template !== 'R-UNAVAILABLE') {
         await incrementWebUsage(tx, at, snapshot.business.timezone);
@@ -219,6 +232,7 @@ export function createProcessor(deps: ProcessorDeps): Processor {
           contactBlock: response.contactBlock,
           ...(response.template ? { template: response.template } : {}),
           groundingRejections: response.groundingRejections,
+          ...(response.handoff ? { handoffAction: response.handoff.action } : {}),
         },
         logContext,
       );
@@ -267,6 +281,18 @@ export function createProcessor(deps: ProcessorDeps): Processor {
       await discardPending(pending, 'disabled', logContext);
       return;
     }
+    // 005, FR-013: con una derivación activa el bot calla y reenvía el lote al negocio.
+    const active = deps.handoff ? await deps.handoff.active(db, conversationId) : null;
+    if (deps.handoff && active) {
+      await deps.handoff.forward({
+        handoff: active,
+        pending,
+        snapshot,
+        simulate: policy.simulateAlerts,
+        logContext,
+      });
+      return;
+    }
     if (!insideWindow(policy, conversation.lastInboundAt)) {
       // FR-002a: fuera de la ventana de 24 h WhatsApp no deja contestar.
       await discardPending(pending, 'outside_window', logContext);
@@ -293,18 +319,192 @@ export function createProcessor(deps: ProcessorDeps): Processor {
         channel: conversation.channel,
         customerKey: conversation.channelUserId,
         conversationId,
+        handoffStep: conversation.handoffStep,
       });
     }
+
+    const turn =
+      snapshot && response.model
+        ? await handoffTurn({ conversation, policy, snapshot, response, pending })
+        : { response };
 
     await deliver({
       conversation,
       policy,
       snapshot,
-      response,
+      response: turn.response,
       covered: pending,
       startedAt,
       lastReceived,
+      inTx: turn.inTx,
     });
+  }
+
+  /**
+   * Decisión de la derivación sobre la salida del modelo (005, contracts/handoff-flow.md):
+   * pedir los datos, iniciar (avisando al negocio antes de responder) o dejar la respuesta de
+   * la 002. Devuelve la respuesta final y lo que se guarda con el saliente.
+   */
+  async function handoffTurn(args: {
+    conversation: ConversationWithCustomer;
+    policy: ChannelPolicy;
+    snapshot: KnowledgeSnapshot;
+    response: Response;
+    pending: InboundRow[];
+  }): Promise<{ response: Response; inTx?: TxWork }> {
+    const { conversation, policy, snapshot, response, pending } = args;
+    const service = deps.handoff;
+    const model = response.model;
+    if (!service || !model) return { response };
+    const conversationId = conversation.id;
+    const logContext = contextOf(conversation);
+    const form = formOf(snapshot.tone.addressForm);
+    const business = snapshot.business.name;
+    const knownPhone = policy.contactFromChannel
+      ? conversation.channelUserId
+      : conversation.contactPhone;
+    const decision = service.decide({
+      step: conversation.handoffStep,
+      reply: model.reply,
+      detector: model.handoffDetected,
+      hasRoutes: await service.hasRoutes(policy.simulateAlerts),
+      contactFromChannel: policy.contactFromChannel,
+      known: { name: conversation.contactName, phone: knownPhone },
+      texts: pending.map((m) => m.body).filter((t): t is string => t !== null),
+    });
+    const clearStep: TxWork | undefined =
+      conversation.handoffStep === null
+        ? undefined
+        : (tx) => conversations.setHandoffStep(tx, conversationId, null);
+    /** Plantilla de la derivación: sustituye al cuerpo del modelo (R3). */
+    const fixed = (body: string, template: 'R-HANDOFF-ASK' | 'R-HANDOFF-PHONE' | 'R-HANDOFF-OK') => ({
+      ...composeReply({
+        snapshot,
+        greeted: conversation.greeted,
+        body,
+        reason: null,
+        template,
+        groundingRejections: response.groundingRejections,
+      }),
+      modelMs: response.modelMs,
+    });
+    /** Cuerpo del modelo con CONTACTO: la salida a una persona sin derivación (FR-004, FR-012). */
+    const withContact = (reason: 'handoff_unavailable' | 'contact_refused') => ({
+      ...composeReply({
+        snapshot,
+        greeted: conversation.greeted,
+        body: model.reply.body,
+        reason,
+        fileNotice: model.fileNotice,
+        groundingRejections: response.groundingRejections,
+      }),
+      modelMs: response.modelMs,
+    });
+
+    switch (decision.type) {
+      case 'normal': {
+        const request = model.reply.handoffRequested || model.handoffDetected;
+        if (!request) return { response, inTx: clearStep };
+        // Fila 4: petición sin vías → el contacto de la 002.
+        activityLog.log(
+          { event: 'handoff_not_started', kind: 'person', reason: 'no_routes' },
+          logContext,
+        );
+        return {
+          response: { ...response, handoff: { action: 'not_started', kind: 'person', routes: {} } },
+          inTx: clearStep,
+        };
+      }
+      case 'ask': {
+        activityLog.log(
+          { event: 'handoff_contact_requested', missing: decision.missing, retry: decision.retry },
+          logContext,
+        );
+        const body = decision.retry
+          ? phoneRetryReply(form)
+          : askContactReply(decision.missing, business, form);
+        return {
+          response: {
+            ...fixed(body, decision.retry ? 'R-HANDOFF-PHONE' : 'R-HANDOFF-ASK'),
+            handoff: {
+              action: decision.retry ? 'asked_again' : 'asked',
+              kind: decision.kind,
+              routes: {},
+            },
+          },
+          inTx: async (tx) => {
+            await conversations.setContact(tx, conversationId, decision.save);
+            await conversations.setHandoffStep(tx, conversationId, decision.step);
+          },
+        };
+      }
+      case 'refused': {
+        activityLog.log(
+          { event: 'handoff_not_started', kind: decision.kind, reason: 'contact_refused' },
+          logContext,
+        );
+        return {
+          response: {
+            ...withContact('contact_refused'),
+            handoff: { action: 'not_started', kind: decision.kind, routes: {} },
+          },
+          inTx: async (tx) => {
+            await conversations.setContact(tx, conversationId, decision.save);
+            await conversations.setHandoffStep(tx, conversationId, null);
+          },
+        };
+      }
+      case 'start': {
+        const name = decision.save.name ?? conversation.contactName;
+        const phone = decision.save.phone ?? knownPhone;
+        const saveContact: TxWork = (tx) =>
+          conversations.setContact(tx, conversationId, {
+            ...decision.save,
+            // En WhatsApp el teléfono de contacto es el del canal (data-model.md).
+            ...(policy.contactFromChannel && phone !== null ? { phone } : {}),
+          });
+        const result =
+          name !== null && phone !== null
+            ? await service.start({
+                conversationId,
+                channel: conversation.channel,
+                kind: decision.kind,
+                customerName: name,
+                customerPhone: phone,
+                snapshot,
+                simulate: policy.simulateAlerts,
+                logContext,
+              })
+            : ({ started: false, routes: {} } as const);
+        if (!result.started || phone === null) {
+          return {
+            response: {
+              ...withContact('handoff_unavailable'),
+              handoff: { action: 'not_started', kind: decision.kind, routes: result.routes },
+            },
+            inTx: async (tx) => {
+              await saveContact(tx);
+              await conversations.setHandoffStep(tx, conversationId, null);
+            },
+          };
+        }
+        return {
+          response: {
+            ...fixed(confirmedReply(business, phone, form), 'R-HANDOFF-OK'),
+            handoff: {
+              action: 'started',
+              kind: decision.kind,
+              handoffId: result.handoffId,
+              routes: result.routes,
+            },
+          },
+          inTx: async (tx) => {
+            await saveContact(tx);
+            await result.persist(tx);
+          },
+        };
+      }
+    }
   }
 
   /** R-LIMIT con CONTACTO, sin modelo ni espera (FR-004a, R6). Igual en todos los canales. */

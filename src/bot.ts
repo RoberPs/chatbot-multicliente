@@ -14,8 +14,16 @@ import { createProcessor, type Processor } from './conversation/processor.js';
 import { createRetention, type Retention } from './conversation/retention.js';
 import { createTranscriber, type Transcriber } from './conversation/transcription.js';
 import type { Db } from './db/client.js';
+import { createAlertRoutesProvider } from './handoff/routes-provider.js';
+import { createHandoffService } from './handoff/service.js';
+import { createSimulatedRoute } from './handoff/simulated-route.js';
+import { createTokenCipher } from './handoff/tokens.js';
 import { createKnowledgeReader } from './knowledge/snapshot.js';
 import { createAnthropicChatModel } from './llm/anthropic-chat-model.js';
+import { createAnthropicSummarizer } from './llm/anthropic-summarizer.js';
+import { createSmtpMailer, smtpTransport } from './mail/smtp-mailer.js';
+import { createTemplateSender } from './channels/whatsapp/template-sender.js';
+import type { CountryCode } from 'libphonenumber-js';
 import { createWhisperSpeechToText } from './speech/whisper.js';
 import { createQuotaWatch } from './webchat/usage.js';
 
@@ -52,6 +60,29 @@ export function createBot({ env, db, logger, clock = systemClock }: CreateBotOpt
     model: env.LLM_MODEL,
     effort: env.LLM_EFFORT,
   });
+  // Derivación al negocio (005): vías según lo que la instancia puede enviar (R16).
+  const templateLanguage = env.WHATSAPP_TEMPLATE_LANG;
+  const smtp = env.smtp;
+  const baseUrl = env.PUBLIC_BASE_URL;
+  const transport = smtp && baseUrl !== undefined ? smtpTransport(smtp.url) : null;
+  const handoff = createHandoffService({
+    db,
+    clock,
+    activityLog,
+    routes: createAlertRoutesProvider({
+      whatsapp: graph
+        ? (to) => createTemplateSender({ graph, language: templateLanguage }, to)
+        : null,
+      email:
+        smtp && transport && baseUrl !== undefined
+          ? (to) => createSmtpMailer({ transport, from: smtp.from, baseUrl, clock }, to)
+          : null,
+      simulated: createSimulatedRoute(clock),
+    }),
+    summarizer: createAnthropicSummarizer({ apiKey: env.ANTHROPIC_API_KEY, model: env.LLM_MODEL }),
+    cipher: createTokenCipher(env.SESSION_SECRET),
+    phoneRegion: env.DEFAULT_PHONE_REGION as CountryCode,
+  });
   const processor = createProcessor({
     db,
     reader,
@@ -62,6 +93,7 @@ export function createBot({ env, db, logger, clock = systemClock }: CreateBotOpt
     emergencyContactPhone: env.emergencyContactPhone,
     audioTranscription: env.audioTranscription,
     quotaWatch,
+    handoff,
   });
   const wake = (id: string) => {
     processor.wake(id);

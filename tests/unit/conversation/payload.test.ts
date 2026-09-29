@@ -34,9 +34,33 @@ describe('parser del webhook de WhatsApp', () => {
       mediaId: null,
       otherType: null,
       isGroup: false,
-      profileName: null,
+      profileName: 'Cliente',
       buttonPayload: null,
     });
+  });
+
+  it('nombre de perfil por wa_id; sin perfil → null (005)', () => {
+    const named = parseWebhookPayload(
+      webhookPayload({ messages: [textMessage('hola')], profileName: '  Lucía Pérez ' }),
+      off,
+    );
+    if (!named.ok) throw new Error('payload no válido');
+    expect(named.data.events[0]?.profileName).toBe('Lucía Pérez');
+
+    const anonymous = parseWebhookPayload(
+      webhookPayload({ messages: [textMessage('hola')], profileName: null }),
+      off,
+    );
+    if (!anonymous.ok) throw new Error('payload no válido');
+    expect(anonymous.data.events[0]?.profileName).toBeNull();
+
+    // El perfil de otro número no se asigna a este remitente.
+    const other = webhookPayload({ messages: [textMessage('hola')] });
+    const value = other.entry[0]?.changes[0]?.value as { contacts: Array<{ wa_id: string }> };
+    value.contacts[0] = { ...value.contacts[0], wa_id: '34999999999' };
+    const parsed = parseWebhookPayload(other, off);
+    if (!parsed.ok) throw new Error('payload no válido');
+    expect(parsed.data.events[0]?.profileName).toBeNull();
   });
 
   it('audio con los audios apagados → other/audio sin media', () => {
@@ -75,14 +99,6 @@ describe('parser del webhook de WhatsApp', () => {
   it('mensaje de grupo → isGroup', () => {
     const [e] = events([textMessage('hola', { groupId: 'grupo-1' })]);
     expect(e?.isGroup).toBe(true);
-  });
-
-  it('no guarda el nombre de perfil', () => {
-    const result = parseWebhookPayload(
-      webhookPayload({ messages: [textMessage('hola')], profileName: 'Nombre Privado' }),
-      off,
-    );
-    expect(JSON.stringify(result)).not.toContain('Nombre Privado');
   });
 
   it('solo estados → sin eventos; cuenta los failed', () => {

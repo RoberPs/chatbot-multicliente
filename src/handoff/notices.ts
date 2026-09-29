@@ -8,7 +8,7 @@ import { addDays, localNow } from '../conversation/facts.js';
 import type { Channel } from '../conversation/channels.js';
 import { displayPhone, displayTime } from '../conversation/templates.js';
 import { dayAndMonth } from './schedule.js';
-import type { BusinessNotice, HandoffKind, NoticeHandoff } from './types.js';
+import type { BusinessNotice, ForwardItem, HandoffKind, NoticeHandoff } from './types.js';
 
 const CHANNEL_NAMES: Record<Channel, string> = {
   whatsapp: 'WhatsApp',
@@ -117,5 +117,63 @@ export function alertEmail(
       'cliente tu contacto directo. Si el cliente no escribe en 24 horas, la conversación vuelve al',
       'asistente (y, si no habías confirmado, te enviaremos el recordatorio en ese momento).',
     ].join('\n'),
+  };
+}
+
+/** Máximo de `{{3}}` en `derivacion_mensaje` (R6). */
+export const FORWARD_TEMPLATE_MAX = 700;
+const CUT_WITH_EMAIL = '… (mensaje recortado; el texto completo está en el email)';
+const CUT_WITHOUT_EMAIL = '… (mensaje recortado)';
+
+export function forwardNotice(
+  handoff: NoticeHandoff,
+  items: ForwardItem[],
+  emailAvailable: boolean,
+): BusinessNotice {
+  return { type: 'forward', handoff, items, emailAvailable };
+}
+
+/** Texto de un mensaje reenviado: el suyo o, si es un archivo sin texto, `[tipo]`. */
+export const forwardItemText = (item: ForwardItem): string =>
+  item.text !== null && item.text.trim() !== '' ? item.text : `[${item.otherType ?? item.kind}]`;
+
+/**
+ * `{{1}}`–`{{3}}` de `derivacion_mensaje`: nombre, teléfono y los textos del lote separados por
+ * " / ", recortados a 700 caracteres con la coletilla que corresponda.
+ */
+export function forwardTemplateVars(notice: Extract<BusinessNotice, { type: 'forward' }>): string[] {
+  const h = notice.handoff;
+  const joined = sanitizeTemplateVar(notice.items.map(forwardItemText).join(' / '));
+  const cut = notice.emailAvailable ? CUT_WITH_EMAIL : CUT_WITHOUT_EMAIL;
+  const text =
+    joined.length <= FORWARD_TEMPLATE_MAX
+      ? joined
+      : `${joined.slice(0, FORWARD_TEMPLATE_MAX - cut.length).trimEnd()}${cut}`;
+  return [h.customerName, displayPhone(h.customerPhone), text].map(sanitizeTemplateVar);
+}
+
+/** Email del reenvío: cada mensaje completo, en orden y con su hora local (R7). */
+export function forwardEmail(
+  notice: Extract<BusinessNotice, { type: 'forward' }>,
+  baseUrl: string | null,
+): EmailContent {
+  const h = notice.handoff;
+  const lines = notice.items.map((item) => {
+    const time = displayTime(localNow(item.sentAt, h.timezone).time);
+    return `[${time}] ${forwardItemText(item)}`;
+  });
+  return {
+    subject: `Mensaje de ${h.customerName} durante la derivación`,
+    text: [
+      `${h.customerName} (${displayPhone(h.customerPhone)}) ha escrito durante la derivación:`,
+      '',
+      ...lines,
+      '',
+      'Contéstale desde tu teléfono; el asistente no le responde mientras tanto.',
+      '',
+      ...linkLines(h, baseUrl),
+    ]
+      .join('\n')
+      .trimEnd(),
   };
 }

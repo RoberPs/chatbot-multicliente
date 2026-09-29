@@ -110,6 +110,8 @@ export const replyTraceSchema = z
       .object({
         action: z.enum(HANDOFF_ACTIONS),
         kind: z.enum(HANDOFF_KINDS).nullable(),
+        /** Derivación iniciada en esta respuesta (UUID, sin datos personales). */
+        handoffId: z.uuid().optional(),
         routes: z.object({
           whatsapp: routeResult.optional(),
           email: routeResult.optional(),

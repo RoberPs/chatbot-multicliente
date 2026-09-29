@@ -8,6 +8,7 @@
  */
 import type { KnowledgeSnapshot } from '../knowledge/types.js';
 import type { HistoryTurn, ReplyContext } from '../conversation/types.js';
+import type { HandoffStep } from '../handoff/types.js';
 
 /** Reglas de las historias, en el orden de contracts/chat-model.md. */
 const RULES = [
@@ -68,10 +69,10 @@ const RULES = [
   'Citas: no puedes reservar, cambiar ni cancelar citas, ni consultar huecos o disponibilidad. ' +
     'Si lo piden, dilo y marca bookingRequested. Sí puedes decir si un servicio se puede ' +
     'reservar (campo bookable) y dar las políticas registradas de antelación y cancelación.',
-  // Petición de persona (US3, FR-017).
+  // Petición de persona (US3, FR-017; 005: el sistema deriva o da el contacto).
   'Si el cliente pide hablar con una persona, que le llamen o atención humana, marca ' +
-    'handoffRequested y responde brevemente que se le facilita el contacto; no intentes ' +
-    'retenerle ni le pidas antes que te cuente su consulta.',
+    "handoffRequested y responde solo con una frase breve de acuse (por ejemplo, 'De acuerdo.'); " +
+    'el sistema se encarga del resto. No pidas datos ni el motivo. No intentes retenerle.',
 ];
 
 const CORE = `Eres el asistente automático de un negocio y atiendes a sus clientes por WhatsApp.
@@ -94,7 +95,12 @@ Formato de salida: devuelve un objeto JSON con:
 - offerContact: true si falta información para responder o hay que remitir al negocio.
 - bookingRequested: true si pide reservar, cambiar o cancelar una cita.
 - needsRephrase: true si no has entendido el mensaje con seguridad y en body le pides que lo reformule.
-- mentionedServiceIds: ids de los servicios de los que hablas.`;
+- mentionedServiceIds: ids de los servicios de los que hablas.
+- complaint: true si el cliente presenta una queja o reclamación sobre el negocio o un servicio recibido.
+- acceptsHandoff: true si el cliente acepta que el negocio le contacte cuando se lo has ofrecido.
+- refusesContact: true si el cliente no quiere dar los datos de contacto que se le han pedido.
+- contactName: el nombre que ha dado el cliente, copiado literalmente, o null.
+- contactPhone: el teléfono que ha dado el cliente, copiado literalmente, o null.`;
 
 /** Instrucciones fijas del núcleo (bloque `system` 1). */
 export function coreInstructions(): string {
@@ -150,6 +156,18 @@ function historyTurns(history: HistoryTurn[]): PromptTurn[] {
   return turns;
 }
 
+/** Indicaciones del paso previo a la derivación (005, contracts/handoff-flow.md). */
+function handoffIndications(step: HandoffStep | null): string[] {
+  if (step?.step !== 'collecting') return [];
+  const name = step.missing.includes('name');
+  const phone = step.missing.includes('phone');
+  const asked = name && phone ? 'su nombre y un teléfono' : name ? 'su nombre' : 'un teléfono';
+  return [
+    `Has pedido al cliente ${asked}. Copia literalmente en contactName y contactPhone lo que ` +
+      'haya dado (null si no). Si no quiere darlos, marca refusesContact.',
+  ];
+}
+
 /** Turno final: hechos calculados, mensajes pendientes e indicaciones del sistema. */
 export function finalTurn(context: ReplyContext, feedback?: string): string {
   const pending = context.pending.map((p) => ({
@@ -162,6 +180,7 @@ export function finalTurn(context: ReplyContext, feedback?: string): string {
       ? 'El sistema ya antepone un saludo: no saludes ni te presentes.'
       : 'No saludes ni te presentes: ya lo hiciste antes en esta conversación.',
     `Forma de trato: ${context.addressForm === 'formal' ? 'usted' : 'tú'}.`,
+    ...handoffIndications(context.handoffStep),
     ...(feedback ? [`Revisión: ${feedback}`] : []),
   ];
   return [

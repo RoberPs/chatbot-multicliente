@@ -40,3 +40,13 @@ export function confirmedReply(business: string, phone: string, form: Form): str
   const contact = form === 'usted' ? 'Le contactarán' : 'Te contactarán';
   return `He avisado a ${business}. ${contact} en el ${displayPhone(phone)} lo antes posible.`;
 }
+
+/**
+ * Aviso fijo del chat web y del playground mientras la conversación está derivada (FR-013a):
+ * con el teléfono que dio el cliente; nunca los destinos de avisos del negocio.
+ */
+export function activeHandoffNotice(business: string, phone: string, form: Form): string {
+  return form === 'usted'
+    ? `Hemos avisado a ${business}. Le contactarán en el ${displayPhone(phone)}. Lo que escriba aquí también les llega.`
+    : `Hemos avisado a ${business}. Te contactarán en el ${displayPhone(phone)}. Lo que escribas aquí también les llega.`;
+}

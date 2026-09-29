@@ -1,6 +1,6 @@
 /** Mensajes al negocio de cada derivación, por vía (005, data-model.md § handoff_notice). */
 import { and, asc, eq } from 'drizzle-orm';
-import { handoffNotice } from '../../db/schema.js';
+import { handoff, handoffNotice } from '../../db/schema.js';
 import type { DbOrTx } from '../../conversation/repositories/customer.js';
 import type { RouteName } from '../types.js';
 
@@ -68,4 +68,30 @@ export async function listForHandoff(tx: DbOrTx, handoffId: string): Promise<Not
     .from(handoffNotice)
     .where(eq(handoffNotice.handoffId, handoffId))
     .orderBy(asc(handoffNotice.createdAt), asc(handoffNotice.id));
+}
+
+export interface SimulatedNotice {
+  handoffId: string;
+  type: NoticeType;
+  body: string;
+  createdAt: Date;
+}
+
+/** Avisos simulados de una conversación (playground, FR-021), en orden. */
+export async function listSimulatedForConversation(
+  tx: DbOrTx,
+  conversationId: string,
+): Promise<SimulatedNotice[]> {
+  const rows = await tx
+    .select({
+      handoffId: handoffNotice.handoffId,
+      type: handoffNotice.type,
+      body: handoffNotice.body,
+      createdAt: handoffNotice.createdAt,
+    })
+    .from(handoffNotice)
+    .innerJoin(handoff, eq(handoff.id, handoffNotice.handoffId))
+    .where(and(eq(handoff.conversationId, conversationId), eq(handoffNotice.route, 'simulated')))
+    .orderBy(asc(handoffNotice.createdAt), asc(handoffNotice.id));
+  return rows.map((r) => ({ ...r, body: r.body ?? '' }));
 }
