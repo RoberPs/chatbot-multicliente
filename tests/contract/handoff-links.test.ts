@@ -51,7 +51,9 @@ describe('/handoff/:token/:action', () => {
     const before = await state();
     const attend = await get(b, `/handoff/${token}/attend`);
     expect(attend.statusCode).toBe(200);
-    expect(attend.body).toContain('Cliente (+34 600 11 12 22) · quiere hablar con una persona · desde hoy a las');
+    expect(attend.body).toContain(
+      'Cliente (+34 600 11 12 22) · quiere hablar con una persona · desde hoy a las',
+    );
     expect(attend.body).toContain(`action="/handoff/${token}/attend"`);
     expect(attend.body).toContain('>Le atiendo</button>');
     const end = await get(b, `/handoff/${token}/end`);
@@ -114,12 +116,15 @@ describe('/handoff/:token/:action', () => {
 
   it('cabeceras de seguridad y sin cookies', async () => {
     const { b, token } = await derived();
-    for (const res of [await get(b, `/handoff/${token}/attend`), await get(b, '/handoff/x/attend')]) {
+    for (const res of [
+      await get(b, `/handoff/${token}/attend`),
+      await get(b, '/handoff/x/attend'),
+    ]) {
       expect(res.headers['cache-control']).toBe('no-store');
       expect(res.headers['referrer-policy']).toBe('no-referrer');
       expect(res.headers['x-robots-tag']).toBe('noindex, nofollow');
       expect(res.headers['content-security-policy']).toBe(
-        "default-src 'none'; style-src 'self'; form-action 'self'",
+        "default-src 'none'; style-src 'self'; form-action 'self'; frame-ancestors 'none'; base-uri 'none'",
       );
       expect(res.headers['set-cookie']).toBeUndefined();
     }

@@ -359,13 +359,13 @@ reclamación" con un motivo que empieza por "Queja:" (quickstart, escenario 4).
 
 **Purpose**: neutralidad, privacidad, retención, documentación y validación final.
 
-- [ ] T124 [P] Ampliar tests/unit/sector-neutrality.test.ts (y tests/integration/sector-neutrality.test.ts si recorre carpetas) para que recorra `src/handoff`, `src/mail`, `src/channels/handoff-links` (incluidas vistas y CSS), src/llm/summary-prompt.ts y src/cli/handoff-templates.ts (FR-024)
-- [ ] T125 [P] Test de integración tests/integration/handoff/activity-log.test.ts: flujo completo (petición, datos, aviso, reenvío, recordatorio, botón, fin) con nombre, teléfono, email de avisos y una palabra del motivo marcados; ninguno aparece en la salida del logger; los eventos del negocio no llevan seudónimo (FR-022)
-- [ ] T126 [P] Test de integración tests/integration/handoff/retention.test.ts: con reloj a +30 días, la retención borra la conversación derivada y con ella `handoff`, `handoff_notice`, `contact_name`, `contact_phone` y `handoff_step` (FR-023)
-- [ ] T127 [P] Ampliar tests/integration/conversation/channel-parity.test.ts: la misma petición de persona produce la misma decisión y plantilla en WhatsApp, web y playground, salvo lo que dice `ChannelPolicy` (datos del canal y vía simulada)
-- [ ] T128 [P] Añadir a tests/integration/performance.test.ts (o a tests/integration/handoff/latency.test.ts) la comprobación de SC-002 con fakes en su plazo máximo: desde el último mensaje hasta el aviso aceptado < 1 min, y `/handoff/*` p95 < 100 ms
-- [ ] T129 Ejecutar `pnpm lint`, `pnpm typecheck` y `pnpm test` y corregir lo que falle
-- [ ] T130 Revisión de seguridad de `/handoff/*`, el enrutador del negocio y el email (token, cabeceras, escape en HTML, inyección en cabeceras, límite por IP) con el agente `security-auditor`; anotar hallazgos y decisiones al final de este fichero
+- [X] T124 [P] Ampliar tests/unit/sector-neutrality.test.ts (y tests/integration/sector-neutrality.test.ts si recorre carpetas) para que recorra `src/handoff`, `src/mail`, `src/channels/handoff-links` (incluidas vistas y CSS), src/llm/summary-prompt.ts y src/cli/handoff-templates.ts (FR-024)
+- [X] T125 [P] Test de integración tests/integration/handoff/activity-log.test.ts: flujo completo (petición, datos, aviso, reenvío, recordatorio, botón, fin) con nombre, teléfono, email de avisos y una palabra del motivo marcados; ninguno aparece en la salida del logger; los eventos del negocio no llevan seudónimo (FR-022)
+- [X] T126 [P] Test de integración tests/integration/handoff/retention.test.ts: con reloj a +30 días, la retención borra la conversación derivada y con ella `handoff`, `handoff_notice`, `contact_name`, `contact_phone` y `handoff_step` (FR-023)
+- [X] T127 [P] Ampliar tests/integration/conversation/channel-parity.test.ts: la misma petición de persona produce la misma decisión y plantilla en WhatsApp, web y playground, salvo lo que dice `ChannelPolicy` (datos del canal y vía simulada)
+- [X] T128 [P] Añadir a tests/integration/performance.test.ts (o a tests/integration/handoff/latency.test.ts) la comprobación de SC-002 con fakes en su plazo máximo: desde el último mensaje hasta el aviso aceptado < 1 min, y `/handoff/*` p95 < 100 ms
+- [X] T129 Ejecutar `pnpm lint`, `pnpm typecheck` y `pnpm test` y corregir lo que falle
+- [X] T130 Revisión de seguridad de `/handoff/*`, el enrutador del negocio y el email (token, cabeceras, escape en HTML, inyección en cabeceras, límite por IP) con el agente `security-auditor`; anotar hallazgos y decisiones al final de este fichero
 - [ ] T131 Ejecutar `pnpm test:eval` (sc008 adaptado, sc-handoff-summary, sc-handoff-offer, sc-handoff-complaint) y anotar los porcentajes obtenidos y el resultado de la revisión manual de SC-003
 - [ ] T132 Recorrer [quickstart.md](quickstart.md) (escenarios 1–6 y 8; el 7 si hay número de pruebas de WhatsApp) con Mailpit y "Probar el bot"
 - [ ] T133 Avisar al usuario y actualizar README.md: estado de la feature 005, `pnpm handoff:templates`, variables `SMTP_URL`/`SMTP_FROM`/`WHATSAPP_TEMPLATE_LANG`, página "Derivaciones" y las consecuencias del plan (plantillas de Meta con coste, aviso `HANDOFF_ALERTS_NONE`)
@@ -488,3 +488,16 @@ Tras US1, una persona en US3 → US4 → US5 (cadena de estado y plazos) y otra 
 - Parar en cada checkpoint para validar la historia por separado.
 - Evitar: tareas vagas, dos tareas [P] sobre el mismo fichero, dependencias entre historias que
   rompan su independencia más allá de las indicadas arriba.
+
+---
+
+## Revisión de seguridad (T130)
+
+Agente `security-auditor`, sin críticos ni altos.
+
+- **Media, corregido**: el token de `/handoff/<token>` salía en los registros de peticiones de Fastify. `loggedUrl` lo sustituye por `:token` (test `tests/unit/handoff/logged-url.test.ts`).
+- **Media, corregido**: un cliente podía escribir en un reenvío una línea «Le atiendo: URL» que el HTML del email convertía en enlace. Ahora solo se enlazan los enlaces propios de la derivación y las líneas de continuación van sangradas en el texto plano.
+- **Baja, corregido**: `smtp://` exige STARTTLS (`requireTLS`) salvo en localhost.
+- **Baja, corregido**: saneado de variables de plantilla y del resumen con todos los controles y separadores Unicode.
+- **Baja, pendiente**: `@fastify/rate-limit` con almacén en memoria da un cupo por ruta (GET, HEAD y POST), así que el límite real es ~90/15 min por IP. `groupId` solo cambia la clave, no comparte almacén. Con tokens de 128 bits no permite fuerza bruta. Documentar además que `TRUST_PROXY` debe coincidir con los saltos reales.
+- **Informativos**: CSP de `/handoff/*` reforzada con `frame-ancestors 'none'` y `base-uri 'none'`. Quedan sin cambiar: AAD en `TokenCipher`, el token no caduca al terminar (la página muestra el teléfono hasta la retención) y la comparación exacta del número de avisos en países con prefijos móviles distintos (p. ej. +549).

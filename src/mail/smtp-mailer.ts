@@ -5,7 +5,13 @@
  */
 import nodemailer, { type Transporter } from 'nodemailer';
 import type { Clock } from '../conversation/ports.js';
-import { alertEmail, forwardEmail, reminderEmail, type EmailContent } from '../handoff/notices.js';
+import {
+  alertEmail,
+  forwardEmail,
+  handoffLinks,
+  reminderEmail,
+  type EmailContent,
+} from '../handoff/notices.js';
 import type { AlertRoute, AlertSendResult } from '../handoff/ports.js';
 import type { BusinessNotice } from '../handoff/types.js';
 
@@ -18,6 +24,8 @@ export interface SmtpMailerOptions {
   clock: Clock;
 }
 
+const LOCAL_HOSTS = new Set(['localhost', '127.0.0.1', '::1', '[::1]']);
+
 /** Transporte de nodemailer desde `SMTP_URL`, con plazos por debajo de los 15 s de la vía. */
 export function smtpTransport(url: string): Transporter {
   const parsed = new URL(url);
@@ -26,6 +34,9 @@ export function smtpTransport(url: string): Transporter {
     host: parsed.hostname,
     port: parsed.port === '' ? (secure ? 465 : 587) : Number(parsed.port),
     secure,
+    // Con smtp:// se exige STARTTLS: si no, un intermediario podría quitarlo y la contraseña y
+    // los enlaces irían en claro. En local (Mailpit) no hay TLS.
+    requireTLS: !secure && !LOCAL_HOSTS.has(parsed.hostname),
     ...(parsed.username
       ? {
           auth: {
@@ -48,16 +59,19 @@ const escapeHtml = (text: string): string =>
     .replaceAll('"', '&quot;')
     .replaceAll("'", '&#39;');
 
-const LINK_LINE = /^(Le atiendo|Terminado):\s+(https?:\/\/\S+)$/;
-
-/** HTML equivalente al texto: cada línea escapada; las de los enlaces, como enlaces. */
-export function emailHtml(text: string): string {
+/**
+ * HTML equivalente al texto: cada línea escapada. Solo las líneas que son exactamente los
+ * enlaces de esta derivación se convierten en enlaces; un texto del cliente que imite una de
+ * esas líneas se queda como texto.
+ */
+export function emailHtml(text: string, links: { attend: string; end: string }): string {
+  const own = new Map([
+    [`Le atiendo: ${links.attend}`, { label: 'Le atiendo', href: links.attend }],
+    [`Terminado:  ${links.end}`, { label: 'Terminado', href: links.end }],
+  ]);
   const lines = text.split('\n').map((line) => {
-    const link = LINK_LINE.exec(line);
-    if (link) {
-      const [, label = '', href = ''] = link;
-      return `<a href="${escapeHtml(href)}">${escapeHtml(label)}</a>`;
-    }
+    const link = own.get(line);
+    if (link) return `<a href="${escapeHtml(link.href)}">${escapeHtml(link.label)}</a>`;
     return escapeHtml(line);
   });
   return `<!doctype html><html lang="es"><body><p>${lines.join('<br>\n')}</p></body></html>`;
@@ -104,7 +118,7 @@ export function createSmtpMailer(opts: SmtpMailerOptions, to: string): AlertRout
         to,
         subject: content.subject,
         text: content.text,
-        html: emailHtml(content.text),
+        html: emailHtml(content.text, handoffLinks(opts.baseUrl, notice.handoff.token)),
         ...(thread && notice.type !== 'alert' ? { inReplyTo: thread, references: [thread] } : {}),
       });
       const aborted = new Promise<'aborted'>((resolve) => {

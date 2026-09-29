@@ -78,6 +78,13 @@ export interface BuildAppOptions {
   bot?: BotHttp | ((log: FastifyBaseLogger) => BotHttp | null) | null;
 }
 
+/**
+ * URL tal como se registra: el token de los enlaces del email es una credencial y va en la
+ * ruta, así que se sustituye (005, FR-022).
+ */
+export const loggedUrl = (url: string): string =>
+  url.replace(/^\/handoff\/(?!assets\/)[^/?#]+/, '/handoff/:token');
+
 export async function buildApp({
   env,
   db,
@@ -94,7 +101,7 @@ export async function buildApp({
           serializers: {
             req: (request: { method: string; url: string; hostname: string }) => ({
               method: request.method,
-              url: request.url,
+              url: loggedUrl(request.url),
               hostname: request.hostname,
             }),
           },

@@ -41,6 +41,18 @@ describe('neutralidad sectorial del código', () => {
     expect(paths).toContain('admin/handoff-notice.ts');
     expect(paths).toContain('admin/section-summaries.ts');
     expect(paths.some((p) => p.startsWith('webchat/'))).toBe(true);
+    // 005: derivación al negocio (dominio, email, enlaces con sus vistas y CSS, resumen y CLI).
+    expect(paths).toContain('handoff/templates.ts');
+    expect(paths).toContain('handoff/notices.ts');
+    expect(paths).toContain('handoff/business-replies.ts');
+    expect(paths).toContain('handoff/repositories/handoff.ts');
+    expect(paths).toContain('mail/smtp-mailer.ts');
+    expect(paths).toContain('channels/handoff-links/routes.ts');
+    expect(paths).toContain('channels/handoff-links/views/page.eta');
+    expect(paths).toContain('channels/handoff-links/views/handoff.css');
+    expect(paths).toContain('llm/summary-prompt.ts');
+    expect(paths).toContain('cli/handoff-templates.ts');
+    expect(paths).toContain('admin/views/handoffs.eta');
   });
 
   it('ningún fichero de src/ contiene nombres de sector o cliente', () => {

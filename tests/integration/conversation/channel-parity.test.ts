@@ -182,6 +182,61 @@ describe('paridad entre canales', () => {
     }
   });
 
+  it('petición de persona: misma decisión y plantillas; solo cambian los datos del canal y la vía simulada (005)', async () => {
+    const results: Record<string, unknown> = {};
+    for (const channel of CHANNELS) {
+      const b = await start({
+        handoffAlerts: { whatsapp: '+34611000111', email: 'avisos@negocio.es' },
+      });
+      b.model.queue(
+        reply('De acuerdo.', { handoffRequested: true }),
+        reply('Gracias.', { contactName: 'Lucía', contactPhone: '612 345 678' }),
+      );
+      await b.sendVia(channel, 'Quiero hablar con una persona');
+      await b.settle();
+      await b.sendVia(channel, 'Lucía, 612 345 678');
+      await b.settle();
+      const traces = (await outbound()).map(
+        (r) =>
+          r.replyTrace as {
+            template: string | null;
+            handoff?: { action: string; kind: string; routes: Record<string, string> };
+          },
+      );
+      results[channel] = {
+        templates: traces.map((tr) => tr.template),
+        actions: traces.map((tr) => tr.handoff?.action),
+        kinds: traces.map((tr) => tr.handoff?.kind),
+        routes: Object.keys(traces.at(-1)?.handoff?.routes ?? {}).sort(),
+        asked: b.log.named('handoff_contact_requested').map((e) => e.missing),
+      };
+      await b.close();
+      bot = null;
+    }
+    const same = {
+      templates: ['R-HANDOFF-ASK', 'R-HANDOFF-OK'],
+      actions: ['asked', 'started'],
+      kinds: ['person', 'person'],
+    };
+    // WhatsApp da el teléfono (R15): solo pide el nombre (sin perfil en este evento).
+    expect(results.whatsapp).toEqual({
+      ...same,
+      routes: ['email', 'whatsapp'],
+      asked: [['name']],
+    });
+    expect(results.web).toEqual({
+      ...same,
+      routes: ['email', 'whatsapp'],
+      asked: [['name', 'phone']],
+    });
+    // El playground solo usa la vía simulada (FR-021).
+    expect(results.playground).toEqual({
+      ...same,
+      routes: ['simulated'],
+      asked: [['name', 'phone']],
+    });
+  });
+
   it('desactivado entre la recepción y la respuesta: la web no contesta (US2-5)', async () => {
     const b = await start();
     expect((await b.sendVia('web', 'Hola')).status).toBe('stored');

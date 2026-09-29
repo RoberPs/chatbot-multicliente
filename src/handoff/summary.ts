@@ -38,7 +38,8 @@ export function acceptableSummary(summary: string, customerTexts: string[]): boo
   const text = summary.trim();
   return (
     text !== '' &&
-    !/[\r\n\t]/.test(text) &&
+    // Una línea: ni saltos ni otros controles o separadores de línea Unicode (plantillas de Meta).
+    !/[\p{Cc}\p{Zl}\p{Zp}]/u.test(text) &&
     text.length <= SUMMARY_MAX_CHARS &&
     summaryIsGrounded(text, customerTexts)
   );

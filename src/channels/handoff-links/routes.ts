@@ -17,10 +17,11 @@ import type { HandoffButtonAction } from '../../handoff/tokens.js';
 const viewsDir = fileURLToPath(new URL('./views', import.meta.url));
 const css = readFileSync(`${viewsDir}/handoff.css`, 'utf8');
 
-/** 30 peticiones cada 15 min por IP, en memoria; la IP no se registra (R8). */
+/** 30 peticiones cada 15 min por IP y por ruta, en memoria; la IP no se registra (R8). */
 const RATE_LIMIT = { max: 30, timeWindow: '15 minutes' };
 
-const CSP = "default-src 'none'; style-src 'self'; form-action 'self'";
+const CSP =
+  "default-src 'none'; style-src 'self'; form-action 'self'; frame-ancestors 'none'; base-uri 'none'";
 const INVALID = 'Este enlace no es válido.';
 
 const LABELS: Record<HandoffButtonAction, string> = { attend: 'Le atiendo', end: 'Terminado' };

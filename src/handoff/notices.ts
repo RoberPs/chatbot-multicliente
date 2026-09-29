@@ -37,12 +37,13 @@ export function describeSince(at: Date, now: Date, timezone: string): string {
 
 /**
  * Variable de una plantilla de WhatsApp: Meta no admite saltos de línea, tabuladores, más de 4
- * espacios seguidos ni variables vacías (R6).
+ * espacios seguidos ni variables vacías (R6). Se tratan también los demás caracteres de control,
+ * los separadores de línea Unicode y los espacios Unicode repetidos (NBSP…).
  */
 export function sanitizeTemplateVar(value: string): string {
   const clean = value
-    .replace(/[\n\r\t]+/g, ' ')
-    .replace(/ {2,}/g, ' ')
+    .replace(/[\p{Cc}\p{Zl}\p{Zp}]+/gu, ' ')
+    .replace(/\s{2,}/gu, ' ')
     .trim();
   return clean === '' ? '—' : clean;
 }
@@ -160,9 +161,11 @@ export function forwardEmail(
   baseUrl: string | null,
 ): EmailContent {
   const h = notice.handoff;
+  // Las líneas de continuación van sangradas: nada del cliente empieza en la columna 0, donde
+  // están los enlaces «Le atiendo» y «Terminado».
   const lines = notice.items.map((item) => {
     const time = displayTime(localNow(item.sentAt, h.timezone).time);
-    return `[${time}] ${forwardItemText(item)}`;
+    return `[${time}] ${forwardItemText(item).split(/\r?\n/).join('\n    ')}`;
   });
   return {
     subject: `Mensaje de ${h.customerName} durante la derivación`,

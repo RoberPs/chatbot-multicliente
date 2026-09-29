@@ -82,6 +82,9 @@ describe('aviso de derivación', () => {
     expect(vars[0]).toBe('Ana María');
     expect(vars[4]).toBe('uno dos tres');
     expect(sanitizeTemplateVar('   ')).toBe('—');
+    // Otros controles, separadores Unicode y espacios duros repetidos (T130).
+    expect(sanitizeTemplateVar('a\u2028b\u2029c\u000bd\u000ce')).toBe('a b c d e');
+    expect(sanitizeTemplateVar('uno\u00a0\u00a0\u00a0\u00a0\u00a0dos')).toBe('uno dos');
   });
 
   it('email: asunto y cuerpo del contrato con los dos enlaces', () => {

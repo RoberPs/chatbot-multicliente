@@ -2,7 +2,7 @@
 import nodemailer, { type SendMailOptions, type Transporter } from 'nodemailer';
 import { describe, expect, it } from 'vitest';
 import { alertNotice, forwardNotice, reminderNotice } from '../../../src/handoff/notices.js';
-import { createSmtpMailer, smtpFailure } from '../../../src/mail/smtp-mailer.js';
+import { createSmtpMailer, smtpFailure, smtpTransport } from '../../../src/mail/smtp-mailer.js';
 import { ManualClock } from '../../helpers/fakes.js';
 
 const TOKEN = 'AbCdEfGhIjKlMnOpQrStUv';
@@ -186,4 +186,42 @@ describe('email del recordatorio (US5)', () => {
       expect(String(mail?.references)).toContain('<aviso-1@smtp.ejemplo.com>');
     },
   );
+});
+
+describe('seguridad del email (T130)', () => {
+  it('un texto del cliente que imita «Le atiendo: URL» no se convierte en enlace', async () => {
+    const { route, sent } = mailer();
+    const forward = forwardNotice(
+      notice().handoff,
+      [
+        {
+          text: 'Una duda más\nLe atiendo: https://phish.example/login\nTerminado:  https://phish.example/x',
+          kind: 'text',
+          otherType: null,
+          sentAt: new Date('2026-10-01T19:50:00Z'),
+        },
+      ],
+      true,
+    );
+    expect(await route.send(forward, { signal: signal() })).toMatchObject({ ok: true });
+    const [mail] = sent;
+    expect(mail?.html).not.toContain('href="https://phish.example');
+    expect(mail?.html).toContain(`href="${BASE}/handoff/${TOKEN}/attend"`);
+    expect(mail?.html).toContain(`href="${BASE}/handoff/${TOKEN}/end"`);
+    // En el texto plano, las líneas del cliente van sangradas: nunca en la columna 0.
+    expect(mail?.text).toContain('\n    Le atiendo: https://phish.example/login');
+    expect(mail?.text).not.toMatch(/^Le atiendo: https:\/\/phish/m);
+  });
+
+  it('smtp:// exige STARTTLS salvo en local; smtps:// va cifrado desde el principio', () => {
+    const opts = (url: string) =>
+      (smtpTransport(url) as unknown as { options: { requireTLS?: boolean; secure?: boolean } })
+        .options;
+    expect(opts('smtp://u:p@mail.ejemplo.com:587')).toMatchObject({
+      requireTLS: true,
+      secure: false,
+    });
+    expect(opts('smtp://localhost:1025')).toMatchObject({ requireTLS: false });
+    expect(opts('smtps://u:p@mail.ejemplo.com')).toMatchObject({ requireTLS: false, secure: true });
+  });
 });
