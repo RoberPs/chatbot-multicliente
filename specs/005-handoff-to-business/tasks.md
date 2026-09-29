@@ -339,17 +339,17 @@ reclamación" con un motivo que empieza por "Queja:" (quickstart, escenario 4).
 
 ### Tests for User Story 6 ⚠️
 
-- [ ] T116 [P] [US6] Ampliar tests/unit/handoff/decision.test.ts con las filas 1 y 2: `complaint` gana sobre petición, datos y oferta; con vías deriva `complaint` sin aceptación; sin vías → R-HANDOFF-COMPLAINT + CONTACTO; en ningún caso con `complaint` se usa el cuerpo del modelo (FR-003); queja durante `collecting` recalcula el tipo y sigue pidiendo lo que falta
-- [ ] T117 [P] [US6] Ampliar tests/unit/handoff/templates.test.ts y tests/unit/llm/prompt.test.ts: R-HANDOFF-COMPLAINT en sus dos variantes (derivada con y sin franja; sin vías con CONTACTO) y la regla de quejas del prompt con el contraejemplo de comentario negativo
-- [ ] T118 [P] [US6] Test de integración tests/integration/handoff/complaint.test.ts: queja con vías → R-HANDOFF-COMPLAINT, aviso con tipo "queja o reclamación" y el cuerpo del modelo descartado aunque el fake devuelva una explicación; queja sin vías o con las vías caídas → disculpa + CONTACTO sin cuerpo; `complaint = false` con texto negativo → respuesta normal
+- [X] T116 [P] [US6] Ampliar tests/unit/handoff/decision.test.ts con las filas 1 y 2: `complaint` gana sobre petición, datos y oferta; con vías deriva `complaint` sin aceptación; sin vías → R-HANDOFF-COMPLAINT + CONTACTO; en ningún caso con `complaint` se usa el cuerpo del modelo (FR-003); queja durante `collecting` recalcula el tipo y sigue pidiendo lo que falta
+- [X] T117 [P] [US6] Ampliar tests/unit/handoff/templates.test.ts y tests/unit/llm/prompt.test.ts: R-HANDOFF-COMPLAINT en sus dos variantes (derivada con y sin franja; sin vías con CONTACTO) y la regla de quejas del prompt con el contraejemplo de comentario negativo
+- [X] T118 [P] [US6] Test de integración tests/integration/handoff/complaint.test.ts: queja con vías → R-HANDOFF-COMPLAINT, aviso con tipo "queja o reclamación" y el cuerpo del modelo descartado aunque el fake devuelva una explicación; queja sin vías o con las vías caídas → disculpa + CONTACTO sin cuerpo; `complaint = false` con texto negativo → respuesta normal
 
 ### Implementation for User Story 6
 
-- [ ] T119 [US6] Añadir las filas 1 y 2 a src/handoff/decision.ts y el recálculo del tipo durante `collecting`
-- [ ] T120 [P] [US6] Añadir R-HANDOFF-COMPLAINT (derivada y sin vías) a src/handoff/templates.ts
-- [ ] T121 [US6] Usar R-HANDOFF-COMPLAINT en src/conversation/processor.ts para las filas 1 y 2 y cuando `start` no se entrega con `kind = complaint`
-- [ ] T122 [US6] Añadir la regla de quejas a src/llm/prompt.ts según [contracts/handoff-flow.md](contracts/handoff-flow.md)
-- [ ] T123 [P] [US6] Crear tests/eval/sc-handoff-complaint.test.ts (SC-006, modelo real) con quejas y comentarios negativos que no lo son en tests/fixtures/eval/ (las tres fixtures): ≥ 95 % de quejas derivadas sin intento de resolverlas y ≥ 90 % de comentarios atendidos con normalidad
+- [X] T119 [US6] Añadir las filas 1 y 2 a src/handoff/decision.ts y el recálculo del tipo durante `collecting`
+- [X] T120 [P] [US6] Añadir R-HANDOFF-COMPLAINT (derivada y sin vías) a src/handoff/templates.ts
+- [X] T121 [US6] Usar R-HANDOFF-COMPLAINT en src/conversation/processor.ts para las filas 1 y 2 y cuando `start` no se entrega con `kind = complaint`
+- [X] T122 [US6] Añadir la regla de quejas a src/llm/prompt.ts según [contracts/handoff-flow.md](contracts/handoff-flow.md)
+- [X] T123 [P] [US6] Crear tests/eval/sc-handoff-complaint.test.ts (SC-006, modelo real) con quejas y comentarios negativos que no lo son en tests/fixtures/eval/ (las tres fixtures): ≥ 95 % de quejas derivadas sin intento de resolverlas y ≥ 90 % de comentarios atendidos con normalidad
 
 **Checkpoint**: las seis historias funcionan; la tabla de decisión está completa.
 

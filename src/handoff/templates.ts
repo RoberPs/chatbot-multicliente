@@ -71,6 +71,33 @@ export function confirmedReply(
   return `He avisado a ${business}. Ahora mismo no están atendiendo; ${contact} ${where} ${when}.`;
 }
 
+/**
+ * R-HANDOFF-COMPLAINT con la queja derivada (FR-003): disculpa y confirmación, con la franja si
+ * el negocio está cerrado. Solo con el aviso entregado.
+ */
+export function complaintReply(
+  business: string,
+  phone: string,
+  form: Form,
+  attention: Attention,
+): string {
+  const usted = form === 'usted';
+  const passed = `He pasado ${usted ? 'su' : 'tu'} reclamación a ${business}`;
+  const contact = `${usted ? 'le' : 'te'} contactarán en el ${displayPhone(phone)}`;
+  const when = attention.open
+    ? 'lo antes posible'
+    : attention.from === null
+      ? 'en cuanto puedan'
+      : fromOpening(attention.from);
+  return `Siento las molestias. ${passed}; ${contact} ${when}.`;
+}
+
+/** R-HANDOFF-COMPLAINT sin vías o sin entrega: disculpa; va con CONTACTO (FR-003, FR-012). */
+export const complaintContactReply = (business: string, form: Form): string =>
+  form === 'usted'
+    ? `Siento las molestias. Para su reclamación, puede contactar directamente con ${business}.`
+    : `Siento las molestias. Para tu reclamación, puedes contactar directamente con ${business}.`;
+
 /** R-HANDOFF-LATE (FR-019): el negocio no ha confirmado en 2 horas de horario. Va con CONTACTO. */
 export const lateReply = (business: string, form: Form): string =>
   form === 'usted'

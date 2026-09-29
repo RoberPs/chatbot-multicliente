@@ -140,6 +140,18 @@ describe('prompt del modelo: derivación (005)', () => {
     expect(core).not.toContain('se le facilita el contacto');
   });
 
+  it('regla de quejas con el contraejemplo del comentario negativo (US6)', () => {
+    const core = buildPrompt(replyContext()).system[0];
+    expect(core).toContain(
+      'Si el cliente presenta una queja o reclamación sobre el negocio o un servicio recibido, ' +
+        'marca complaint. No la resuelvas, no la justifiques ni des información sobre ella.',
+    );
+    expect(core).toContain(
+      "Un comentario negativo que no reclama nada ('qué caro', 'vaya horario') no es una queja: " +
+        'contesta con normalidad.',
+    );
+  });
+
   it('el "Formato de salida" describe los campos nuevos', () => {
     const core = buildPrompt(replyContext()).system[0];
     for (const field of [

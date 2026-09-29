@@ -3,9 +3,8 @@
  * salida del modelo, el detector de petición de persona, el paso guardado y las vías, dice qué
  * responder y qué guardar. Gana la primera fila que aplica.
  *
- * Filas en esta versión: 3 (petición con vías), 4 (petición sin vías → 002), 5 (recogida de
- * datos), 6 (acepta la oferta), 7 (ofrecer) y 8 (resto). Las filas 1 y 2 (quejas) aún no
- * existen y caen en las siguientes.
+ * Filas: 1 y 2 (queja con y sin vías), 3 (petición con vías), 4 (petición sin vías → 002), 5
+ * (recogida de datos), 6 (acepta la oferta), 7 (ofrecer) y 8 (resto).
  */
 import type { CountryCode } from 'libphonenumber-js';
 import type { ModelReply } from '../conversation/types.js';
@@ -38,6 +37,8 @@ export interface ContactUpdate {
 export type TurnDecision =
   /** Filas 4 y 8: respuesta normal de la 002 (con su CONTACTO si toca). */
   | { type: 'normal'; step: null }
+  /** Fila 2: queja sin vías → R-HANDOFF-COMPLAINT + CONTACTO, nunca el cuerpo del modelo. */
+  | { type: 'complaint_contact'; step: null }
   /** Fila 7: cuerpo del modelo + OFERTA, sin CONTACTO (FR-002). */
   | { type: 'offer'; step: HandoffStep }
   /** R-HANDOFF-ASK (o R-HANDOFF-PHONE con `retry`): se piden los datos que faltan. */
@@ -112,16 +113,24 @@ export function decide(input: TurnInput): TurnDecision {
   const request = reply.handoffRequested || input.detector;
   const collecting = step?.step === 'collecting' ? step : null;
 
-  // Fila 3: petición de persona con vías. Si ya se estaban pidiendo los datos, se recalcula el
-  // tipo y se siguen pidiendo los que falten.
-  if (request && input.hasRoutes) {
-    if (collecting) {
-      if (reply.refusesContact) return { type: 'refused', kind: 'person', step: null, save: {} };
-      const got = collect(input, collecting.missing);
-      return askOrStart(input, 'person', got.save, got, collecting.phoneRetried);
-    }
-    return askOrStart(input, 'person', {}, input.known, false);
+  /**
+   * Filas 1 y 3: derivar sin pedir aceptación. Si ya se estaban pidiendo los datos, se
+   * recalcula el tipo y se siguen pidiendo los que falten.
+   */
+  const derive = (kind: HandoffKind): TurnDecision => {
+    if (!collecting) return askOrStart(input, kind, {}, input.known, false);
+    if (reply.refusesContact) return { type: 'refused', kind, step: null, save: {} };
+    const got = collect(input, collecting.missing);
+    return askOrStart(input, kind, got.save, got, collecting.phoneRetried);
+  };
+
+  // Filas 1 y 2: una queja gana sobre todo lo demás (FR-003).
+  if (reply.complaint) {
+    return input.hasRoutes ? derive('complaint') : { type: 'complaint_contact', step: null };
   }
+
+  // Fila 3: petición de persona con vías.
+  if (request && input.hasRoutes) return derive('person');
 
   // Fila 4: petición sin vías → como en la 002 (cuerpo + CONTACTO).
   if (request) return { type: 'normal', step: null };

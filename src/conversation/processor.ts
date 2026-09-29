@@ -7,8 +7,11 @@
  */
 import type { Db } from '../db/client.js';
 import type { HandoffService } from '../handoff/service.js';
+import type { HandoffKind } from '../handoff/types.js';
 import {
   askContactReply,
+  complaintContactReply,
+  complaintReply,
   confirmedReply,
   offerQuestion,
   phoneRetryReply,
@@ -394,7 +397,7 @@ export function createProcessor(deps: ProcessorDeps): Processor {
     /** Plantilla de la derivación: sustituye al cuerpo del modelo (R3). */
     const fixed = (
       body: string,
-      template: 'R-HANDOFF-ASK' | 'R-HANDOFF-PHONE' | 'R-HANDOFF-OK',
+      template: 'R-HANDOFF-ASK' | 'R-HANDOFF-PHONE' | 'R-HANDOFF-OK' | 'R-HANDOFF-COMPLAINT',
     ) => ({
       ...composeReply({
         snapshot,
@@ -406,15 +409,23 @@ export function createProcessor(deps: ProcessorDeps): Processor {
       }),
       modelMs: response.modelMs,
     });
-    /** Cuerpo del modelo con CONTACTO: la salida a una persona sin derivación (FR-004, FR-012). */
-    const withContact = (reason: 'handoff_unavailable' | 'contact_refused') => ({
+    /**
+     * Salida a una persona sin derivación (FR-004, FR-012): cuerpo del modelo con CONTACTO o, si
+     * es una queja, la disculpa de R-HANDOFF-COMPLAINT con CONTACTO y nunca el cuerpo (FR-003).
+     */
+    const withContact = (reason: 'handoff_unavailable' | 'contact_refused', kind: HandoffKind) => ({
       ...composeReply({
         snapshot,
         greeted: conversation.greeted,
-        body: model.reply.body,
         reason,
         fileNotice: model.fileNotice,
         groundingRejections: response.groundingRejections,
+        ...(kind === 'complaint'
+          ? {
+              body: complaintContactReply(business, form),
+              template: 'R-HANDOFF-COMPLAINT' as const,
+            }
+          : { body: model.reply.body }),
       }),
       modelMs: response.modelMs,
     });
@@ -430,6 +441,20 @@ export function createProcessor(deps: ProcessorDeps): Processor {
         );
         return {
           response: { ...response, handoff: { action: 'not_started', kind: 'person', routes: {} } },
+          inTx: clearStep,
+        };
+      }
+      case 'complaint_contact': {
+        // Fila 2: queja sin vías → disculpa + CONTACTO, sin el cuerpo del modelo.
+        activityLog.log(
+          { event: 'handoff_not_started', kind: 'complaint', reason: 'no_routes' },
+          logContext,
+        );
+        return {
+          response: {
+            ...withContact('handoff_unavailable', 'complaint'),
+            handoff: { action: 'not_started', kind: 'complaint', routes: {} },
+          },
           inTx: clearStep,
         };
       }
@@ -483,7 +508,7 @@ export function createProcessor(deps: ProcessorDeps): Processor {
         );
         return {
           response: {
-            ...withContact('contact_refused'),
+            ...withContact('contact_refused', decision.kind),
             handoff: { action: 'not_started', kind: decision.kind, routes: {} },
           },
           inTx: async (tx) => {
@@ -517,7 +542,7 @@ export function createProcessor(deps: ProcessorDeps): Processor {
         if (!result.started || phone === null) {
           return {
             response: {
-              ...withContact('handoff_unavailable'),
+              ...withContact('handoff_unavailable', decision.kind),
               handoff: { action: 'not_started', kind: decision.kind, routes: result.routes },
             },
             inTx: async (tx) => {
@@ -528,7 +553,12 @@ export function createProcessor(deps: ProcessorDeps): Processor {
         }
         return {
           response: {
-            ...fixed(confirmedReply(business, phone, form, result.attention), 'R-HANDOFF-OK'),
+            ...(decision.kind === 'complaint'
+              ? fixed(
+                  complaintReply(business, phone, form, result.attention),
+                  'R-HANDOFF-COMPLAINT',
+                )
+              : fixed(confirmedReply(business, phone, form, result.attention), 'R-HANDOFF-OK')),
             handoff: {
               action: 'started',
               kind: decision.kind,

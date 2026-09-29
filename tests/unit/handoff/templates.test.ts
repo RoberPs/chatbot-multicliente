@@ -3,6 +3,8 @@ import { describe, expect, it } from 'vitest';
 import { contactBlock } from '../../../src/conversation/templates.js';
 import {
   askContactReply,
+  complaintContactReply,
+  complaintReply,
   confirmedReply,
   lateReply,
   lateReplyWithContact,
@@ -127,9 +129,7 @@ describe('R-HANDOFF-LATE (US5, FR-019)', () => {
   it('con el bloque CONTACTO del snapshot', () => {
     const snapshot = activeSnapshot();
     expect(lateReplyWithContact(snapshot)).toBe(
-      `${lateReply('Negocio Demo', 'tu')}
-
-${contactBlock(snapshot)}`,
+      `${lateReply('Negocio Demo', 'tu')}\n\n${contactBlock(snapshot)}`,
     );
   });
 });
@@ -141,6 +141,44 @@ describe('OFERTA (US2, FR-002)', () => {
     );
     expect(offerQuestion(BUSINESS, 'usted')).toBe(
       '¿Quiere que le pase su consulta a Peluquería Tijeras para que le contacte?',
+    );
+  });
+});
+
+describe('R-HANDOFF-COMPLAINT (US6)', () => {
+  it('derivada con el negocio abierto, en tú y usted', () => {
+    expect(complaintReply(BUSINESS, '+34611222333', 'tu', { open: true })).toBe(
+      'Siento las molestias. He pasado tu reclamación a Peluquería Tijeras; te contactarán en ' +
+        'el +34 611 22 23 33 lo antes posible.',
+    );
+    expect(complaintReply(BUSINESS, '+34611222333', 'usted', { open: true })).toBe(
+      'Siento las molestias. He pasado su reclamación a Peluquería Tijeras; le contactarán en ' +
+        'el +34 611 22 23 33 lo antes posible.',
+    );
+  });
+
+  it('derivada con el negocio cerrado: con franja y sin franja en 60 días', () => {
+    expect(
+      complaintReply(BUSINESS, '+34611222333', 'tu', {
+        open: false,
+        from: 'el lunes 5 de octubre a las 9:00',
+      }),
+    ).toBe(
+      'Siento las molestias. He pasado tu reclamación a Peluquería Tijeras; te contactarán en ' +
+        'el +34 611 22 23 33 a partir del lunes 5 de octubre a las 9:00.',
+    );
+    expect(complaintReply(BUSINESS, '+34611222333', 'tu', { open: false, from: null })).toBe(
+      'Siento las molestias. He pasado tu reclamación a Peluquería Tijeras; te contactarán en ' +
+        'el +34 611 22 23 33 en cuanto puedan.',
+    );
+  });
+
+  it('sin vías o sin entrega: disculpa (el CONTACTO se añade aparte)', () => {
+    expect(complaintContactReply(BUSINESS, 'tu')).toBe(
+      'Siento las molestias. Para tu reclamación, puedes contactar directamente con Peluquería Tijeras.',
+    );
+    expect(complaintContactReply(BUSINESS, 'usted')).toBe(
+      'Siento las molestias. Para su reclamación, puede contactar directamente con Peluquería Tijeras.',
     );
   });
 });

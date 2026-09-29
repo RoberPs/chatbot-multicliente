@@ -342,3 +342,86 @@ describe('fila 7: ofrecer la derivación (US2, FR-002)', () => {
     expect(d).toMatchObject({ type: 'ask', kind: 'person' });
   });
 });
+
+describe('filas 1 y 2: quejas (US6, FR-003)', () => {
+  const complaint = (flags = {}) =>
+    reply('Lo siento, le explico lo que pasó…', { complaint: true, ...flags });
+
+  it('con vías deriva complaint sin pedir aceptación (pide los datos que falten)', () => {
+    expect(decide(input({ reply: complaint() }))).toMatchObject({
+      type: 'ask',
+      kind: 'complaint',
+      missing: ['name', 'phone'],
+      step: { step: 'collecting', kind: 'complaint' },
+    });
+    expect(
+      decide(
+        input({
+          reply: complaint(),
+          contactFromChannel: true,
+          known: { name: 'Lucía', phone: '+34611222333' },
+        }),
+      ),
+    ).toEqual({ type: 'start', kind: 'complaint', step: null, save: {} });
+  });
+
+  it('sin vías → R-HANDOFF-COMPLAINT + CONTACTO, nunca la respuesta normal', () => {
+    expect(decide(input({ hasRoutes: false, reply: complaint() }))).toEqual({
+      type: 'complaint_contact',
+      step: null,
+    });
+  });
+
+  it('la queja gana sobre la petición de persona, la recogida de datos y la oferta', () => {
+    expect(
+      decide(input({ detector: true, reply: complaint({ handoffRequested: true }) })),
+    ).toMatchObject({ kind: 'complaint' });
+    expect(decide(input({ reply: complaint({ offerContact: true }) }))).toMatchObject({
+      type: 'ask',
+      kind: 'complaint',
+    });
+    expect(
+      decide(input({ step: OFFERED, reply: complaint({ acceptsHandoff: true }) })),
+    ).toMatchObject({ kind: 'complaint' });
+    expect(decide(input({ hasRoutes: false, detector: true, reply: complaint() })).type).toBe(
+      'complaint_contact',
+    );
+  });
+
+  it('queja durante collecting: recalcula el tipo y sigue pidiendo lo que falta', () => {
+    const d = decide(
+      input({
+        step: collecting(['name', 'phone']),
+        reply: complaint({ contactName: 'Lucía' }),
+      }),
+    );
+    expect(d).toMatchObject({
+      type: 'ask',
+      kind: 'complaint',
+      missing: ['phone'],
+      save: { name: 'Lucía' },
+      step: { step: 'collecting', kind: 'complaint', missing: ['phone'] },
+    });
+  });
+
+  it('una recogida iniciada por una queja conserva el tipo', () => {
+    const d = decide(
+      input({
+        step: collecting(['phone'], { kind: 'complaint' }),
+        known: { name: 'Lucía', phone: null },
+        reply: reply('Gracias.', { contactPhone: '611 22 23 33' }),
+      }),
+    );
+    expect(d).toMatchObject({ type: 'start', kind: 'complaint' });
+  });
+
+  it('en ninguna combinación con complaint la decisión es la respuesta normal (FR-003)', () => {
+    for (const hasRoutes of [false, true])
+      for (const step of [null, OFFERED, collecting(['name', 'phone'])])
+        for (const refusesContact of [false, true]) {
+          const d = decide(input({ hasRoutes, step, reply: complaint({ refusesContact }) }));
+          expect(d.type).not.toBe('normal');
+          expect(d.type).not.toBe('offer');
+        }
+  });
+});
