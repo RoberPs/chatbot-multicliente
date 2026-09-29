@@ -126,7 +126,7 @@ la cadena).
 - [X] T030 Ampliar `KnowledgeState` en src/knowledge/types.ts y `loadKnowledgeState` en src/knowledge/state.ts con `handoffAlerts: { whatsapp, email, routes }`; `routes` llega como opción (por defecto `{ whatsapp: false, email: false }`); comprobar que src/knowledge/snapshot.ts no lo incluye
 - [X] T031 Añadir a src/knowledge/warnings.ts `HANDOFF_ALERTS_NONE` y `HANDOFF_ALERTS_SINGLE` (gravedad `normal`, textos de [contracts/admin-and-web.md](contracts/admin-and-web.md)) y `WarningTargetKind` `handoff_alerts` con enlace a `/admin/handoffs`; `computeWarnings` sigue siendo pura
 - [X] T032 [P] Test unitario tests/unit/warnings/handoff-alerts.test.ts: sin vías → `NONE`; destino configurado pero instancia sin canal → cuenta como no disponible; una vía → `SINGLE` nombrando la otra; dos → ninguno; ninguno es crítico (no bloquea activar el negocio)
-- [ ] T033 Adaptar los tests de la 001 que comprueban la lista exacta de avisos (tests/unit/warnings/catalog.test.ts, tests/contract/admin/warnings.test.ts, tests/contract/admin/dashboard.test.ts y los que fallen al ejecutar `pnpm test`) para que esperen `HANDOFF_ALERTS_NONE` cuando no hay destinos
+- [X] T033 Adaptar los tests de la 001 que comprueban la lista exacta de avisos (tests/unit/warnings/catalog.test.ts, tests/contract/admin/warnings.test.ts, tests/contract/admin/dashboard.test.ts y los que fallen al ejecutar `pnpm test`) para que esperen `HANDOFF_ALERTS_NONE` cuando no hay destinos
 - [X] T034 [P] Ampliar tests/contract/snapshot-shape.test.ts: con destinos configurados, el JSON del snapshot no contiene el WhatsApp ni el email de avisos
 
 ### Fakes y banco de pruebas

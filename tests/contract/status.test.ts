@@ -29,7 +29,9 @@ describe('estado del negocio (FR-029 – FR-031)', () => {
     expect(res.body).toContain('En preparación');
     expect(res.body).toContain('data-code="HANDOFF_UNREACHABLE"');
     expect(res.body).toContain('data-code="BUSINESS_HOURS_MISSING"');
-    expect(res.body).toContain('Avisos: 2 (1 crítico)');
+    // 005: sin destinos de avisos de derivación hay un aviso normal más.
+    expect(res.body).toContain('data-code="HANDOFF_ALERTS_NONE"');
+    expect(res.body).toContain('Avisos: 3 (1 crítico)');
   });
 
   it('activar con HANDOFF_UNREACHABLE → 409, lista de bloqueo y sigue en draft', async () => {

@@ -61,6 +61,11 @@ describe('neutralidad sectorial', () => {
     const codes = computeWarnings(await withReadSnapshot(t.db, loadKnowledgeState)).map(
       (w) => w.code,
     );
-    expect(codes.sort()).toEqual(['HANDOFF_CONTACT_MISSING', 'SERVICE_PRICE_MISSING']);
+    // 005: sin destinos de avisos de derivación hay además HANDOFF_ALERTS_NONE.
+    expect(codes.sort()).toEqual([
+      'HANDOFF_ALERTS_NONE',
+      'HANDOFF_CONTACT_MISSING',
+      'SERVICE_PRICE_MISSING',
+    ]);
   });
 });

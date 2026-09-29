@@ -69,7 +69,9 @@ describe('US5: avisos en el panel', () => {
     const listed =
       /<ul class="warnings" id="warnings-list">([\s\S]*?)<\/ul>/.exec(home.body)?.[1] ?? '';
     const count = codesIn(listed).length;
-    expect(count).toBe(4);
+    // 005: HANDOFF_ALERTS_NONE se suma a los avisos de la 001 cuando no hay destinos.
+    expect(codesIn(listed)).toContain('HANDOFF_ALERTS_NONE');
+    expect(count).toBe(5);
     expect(home.body).toContain(`Avisos: ${count} (1 crítico)`);
   });
 
