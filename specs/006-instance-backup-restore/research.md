@@ -128,6 +128,14 @@ Al restaurar se exige que la migración de índice N de la copia exista en el n�
 versión del núcleo de la copia (US2-4); si el hash no coincide, se rechaza como "copia de un núcleo
 con migraciones distintas".
 
+**Nota de implementación (enums)**: PostgreSQL no deja usar un valor añadido con `ALTER TYPE …
+ADD VALUE` hasta que la transacción confirma, y la restauración reconstruye el esquema y carga los
+datos en la misma transacción (con datos reales falló con `message_status = 'forwarded'`, que añade
+la 0004). Por eso `applyMigrationsUpTo` integra cada `ADD VALUE` en el `CREATE TYPE … AS ENUM` del
+mismo tipo, en el orden en que quedaría el enum tras aplicar las migraciones una a una
+(`foldEnumAdditions`), y no ejecuta esos `ALTER TYPE`. El enum resultante tiene los mismos valores y
+el mismo orden; los hashes de las migraciones no cambian.
+
 **Motivo**: las migraciones son de solo añadir (docs/operacion-multicliente.md §5), así que
 cualquier versión igual o posterior del núcleo puede reconstruir el esquema de una copia anterior,
 y la versión anterior del núcleo puede reconstruir el de su copia previa a la migración (FR-017).

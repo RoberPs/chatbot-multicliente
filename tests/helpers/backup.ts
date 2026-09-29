@@ -160,7 +160,9 @@ export async function seedInstance(
       body: texts[i] ?? '',
       sentAt: at,
       receivedAt: at,
-      status: 'answered',
+      // Uno reenviado durante una derivación: `forwarded` es un valor que la 0004 añade al enum
+      // (la restauración debe poder cargarlo en la misma transacción que reconstruye el esquema).
+      status: i === 1 ? 'forwarded' : 'answered',
     });
   }
   return {
