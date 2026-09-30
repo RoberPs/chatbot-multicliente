@@ -432,10 +432,10 @@ Estado tomado del [README](../README.md) a 2026-09-30.
 | 004 | Canal web del bot de atención | Completada | Chat web incrustable, webs permitidas y topes diarios y mensuales de respuestas |
 | 005 | Derivación de la conversación al negocio | Completada | Salida a una persona (Principio V): avisos al negocio por WhatsApp y/o email (`SMTP_*`) |
 | 006 | Copias de seguridad y restauración por instancia | Completada | **Era la propuesta P3**: copias cifradas diarias, bajo demanda y previas a cada migración; restauración y verificación ([sección 5](#5-actualizar-el-núcleo) y [sección 8](#8-copias-de-seguridad-guía-de-validación)) |
-| 007 | Aprovisionamiento de instancias | Implementada (pendiente de recorrer el quickstart en el equipo del operador, T053) | **Era la propuesta P1**: `pnpm instance:new`, `instance:db`, `instance:check` e inventario sin secretos ([sección 2](#2-alta-de-un-cliente-nuevo) y [sección 7](#7-baja-de-un-cliente)) |
+| 007 | Aprovisionamiento de instancias | Completada | **Era la propuesta P1**: `pnpm instance:new`, `instance:db`, `instance:check` e inventario sin secretos ([sección 2](#2-alta-de-un-cliente-nuevo) y [sección 7](#7-baja-de-un-cliente)) |
 
-Todas están completadas salvo la validación manual de la 007 (T053). Queda aplazada la evaluación
-de audios de la 002 (T083), que se hace antes de activar los audios en una instancia.
+Todas están completadas. Solo queda aplazada la evaluación de audios de la 002 (T083), que se hace
+antes de activar los audios en una instancia.
 
 ### 9.2 Orden de ejecución
 

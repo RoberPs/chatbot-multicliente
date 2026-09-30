@@ -10,7 +10,7 @@ Estados: especificada → planificada → en implementación → completada (o a
 | 004 | Canal web del bot de atención | Núcleo | Completada | `004-web-channel` | [spec](specs/004-web-channel/spec.md) · [plan](specs/004-web-channel/plan.md) · [tareas](specs/004-web-channel/tasks.md) | 2026-09-28  |
 | 005 | Derivación de la conversación al negocio | Núcleo | Completada | `005-handoff-to-business` | [spec](specs/005-handoff-to-business/spec.md) · [plan](specs/005-handoff-to-business/plan.md) · [tareas](specs/005-handoff-to-business/tasks.md) | 2026-09-30  |
 | 006 | Copias de seguridad y restauración por instancia | Núcleo | Completada | `006-instance-backup-restore` | [spec](specs/006-instance-backup-restore/spec.md) · [plan](specs/006-instance-backup-restore/plan.md) · [tareas](specs/006-instance-backup-restore/tasks.md) | 2026-09-29  |
-| 007 | Aprovisionamiento de instancias | Núcleo (operación) | En implementación (código y pruebas terminados; falta recorrer el quickstart en el equipo del operador, T053) | `007-instance-provisioning` | [spec](specs/007-instance-provisioning/spec.md) · [plan](specs/007-instance-provisioning/plan.md) · [tareas](specs/007-instance-provisioning/tasks.md) | 2026-09-30  |
+| 007 | Aprovisionamiento de instancias | Núcleo (operación) | Completada | `007-instance-provisioning` | [spec](specs/007-instance-provisioning/spec.md) · [plan](specs/007-instance-provisioning/plan.md) · [tareas](specs/007-instance-provisioning/tasks.md) | 2026-09-30  |
 
 ---
 

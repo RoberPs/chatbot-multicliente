@@ -260,11 +260,30 @@ describe('pnpm instance:db (US3)', () => {
     expect(out).toContain('CREATE ROLE "chatbot_');
     expect(out).toContain("LOGIN PASSWORD 'SCRAM-SHA-256$4096:");
     expect(out).toContain(
-      `DATABASE_URL (con la contraseña) escrita en ${envPath}; no se muestra aquí.`,
+      `-- DATABASE_URL (con la contraseña) escrita en ${envPath}; no se muestra aquí.`,
     );
     const written = (await readEnv()).DATABASE_URL ?? '';
     expect(databaseIdentity(written)).toMatchObject({ host: 'db.interna', port: 5433 });
     expect(out.includes(new URL(written).password)).toBe(false);
     expect((await instance())?.database).toMatchObject({ host: 'db.interna', port: 5433 });
+
+    // Encontrado al recorrer el quickstart (T053): la salida entera es un script SQL válido,
+    // así que se puede pasar tal cual a psql.
+    const lines = out.split('\n').filter((l) => l.trim() !== '');
+    expect(lines.every((l) => l.startsWith('--') || l.endsWith(';'))).toBe(true);
+    const admin = new pg.Client({ connectionString: adminUrl() });
+    await admin.connect();
+    try {
+      // Una a una, como psql (CREATE DATABASE no admite transacción).
+      for (const statement of lines.filter((l) => !l.startsWith('--')))
+        await admin.query(statement);
+    } finally {
+      await admin.end();
+    }
+    const direct = new URL(written);
+    const server = new URL(adminUrl());
+    direct.hostname = server.hostname;
+    direct.port = server.port;
+    expect(await canConnect(direct.toString())).toBe(true);
   });
 });

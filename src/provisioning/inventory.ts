@@ -739,10 +739,13 @@ export function formatInstanceList(view: InstanceView[], inventoryPath: string, 
     '',
   ];
   const overdue = view.filter((v) => v.verificationOverdue).length;
+  const active = view.filter((v) => v.status === 'active').length;
   lines.push(
-    overdue === 0
-      ? `Todas las instancias activas tienen una verificación correcta en los últimos ${String(VERIFICATION_MAX_DAYS)} días.`
-      : `! ${String(overdue)} ${overdue === 1 ? 'instancia activa' : 'instancias activas'} sin verificación correcta en los últimos ${String(VERIFICATION_MAX_DAYS)} días.`,
+    active === 0
+      ? 'No hay instancias activas.'
+      : overdue === 0
+        ? `Todas las instancias activas tienen una verificación correcta en los últimos ${String(VERIFICATION_MAX_DAYS)} días.`
+        : `! ${String(overdue)} ${overdue === 1 ? 'instancia activa' : 'instancias activas'} sin verificación correcta en los últimos ${String(VERIFICATION_MAX_DAYS)} días.`,
   );
   return lines.join('\n');
 }

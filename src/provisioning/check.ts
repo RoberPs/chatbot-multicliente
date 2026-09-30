@@ -317,14 +317,17 @@ export function compare(
 
 /**
  * ¿Es este entorno la instancia del inventario con su mismo `INSTANCE_ID`? Sí si comparte con
- * ella al menos una huella (vigente o anterior) o si ella no tiene ninguna. Si no comparte nada,
- * es otra instancia que reutiliza el identificador (`duplicate_instance_id`).
+ * ella al menos una huella que la identifique (vigente o anterior) o si ella no tiene ninguna. Si
+ * no comparte nada, es otra instancia que reutiliza el identificador (`duplicate_instance_id`).
+ * `BACKUP_DIR` y `SMTP_URL` no identifican: varias instancias pueden compartirlos (FR-006).
  */
 export function isSameInstance(fingerprints: Fingerprint[], instance: Instance): boolean {
-  if (instance.fingerprints.length === 0) return true;
-  return fingerprints.some((mine) =>
-    instance.fingerprints.some((t) => t.class === mine.class && t.value === mine.value),
-  );
+  const identifying = (f: Fingerprint) => f.class !== 'backup_dir' && f.variable !== 'SMTP_URL';
+  const theirs = instance.fingerprints.filter(identifying);
+  if (theirs.length === 0) return true;
+  return fingerprints
+    .filter(identifying)
+    .some((mine) => theirs.some((t) => t.class === mine.class && t.value === mine.value));
 }
 
 // ---------------------------------------------------------------------------

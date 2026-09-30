@@ -212,6 +212,18 @@ describe('validate: tabla SC-002 (cada incoherencia y cada repetición → no ap
       'duplicate_instance_id:INSTANCE_ID',
     ],
     [
+      // Encontrado al recorrer el quickstart (T053): el BACKUP_DIR y el SMTP compartidos no
+      // hacen que un entorno ajeno pase por la propia instancia.
+      'INSTANCE_ID de otra instancia con su mismo BACKUP_DIR y SMTP',
+      fresh({
+        INSTANCE_ID: 'demo-01',
+        BACKUP_DIR: demo01.BACKUP_DIR ?? '',
+        SMTP_URL: demo01.SMTP_URL ?? '',
+        SMTP_FROM: 'avisos@ejemplo.com',
+      }),
+      'duplicate_instance_id:INSTANCE_ID',
+    ],
+    [
       'misma BD',
       fresh({ DATABASE_URL: `postgres://otro_usuario:${pw}@DB.interna:5432/chatbot_demo_01` }),
       'duplicate_database:DATABASE_URL',

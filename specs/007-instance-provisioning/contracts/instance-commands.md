@@ -135,8 +135,12 @@ CREATE ROLE "chatbot_demo_02" LOGIN PASSWORD 'SCRAM-SHA-256$4096:…';
 CREATE DATABASE "chatbot_demo_02" OWNER "chatbot_demo_02";
 REVOKE CONNECT, TEMPORARY ON DATABASE "chatbot_demo_02" FROM PUBLIC;
 
-DATABASE_URL (con la contraseña) escrita en <fichero>; no se muestra aquí.
+-- DATABASE_URL (con la contraseña) escrita en <fichero>; no se muestra aquí.
+-- Inventario actualizado.
 ```
+
+Toda la salida es un script SQL válido (lo informativo va en comentarios `--`), de modo que se
+puede pasar tal cual a `psql`.
 
 **Rechazos** (1, sin cambiar nada): `db_exists`, `role_exists`, `database_already_registered`,
 `database_url_set`, `env_other_instance`, `instance_retired`.

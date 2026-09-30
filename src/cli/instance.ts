@@ -568,9 +568,10 @@ async function dbCommand(argv: string[], { io, deps }: Context): Promise<number>
 
       if (adminUrl === null) {
         for (const line of printableSql(plan)) io.out(line);
+        // Todo en comentarios SQL: la salida se puede pasar tal cual a psql.
         io.out('');
-        io.out(`DATABASE_URL (con la contraseña) escrita en ${envPath}; no se muestra aquí.`);
-        io.out('Inventario actualizado.');
+        io.out(`-- DATABASE_URL (con la contraseña) escrita en ${envPath}; no se muestra aquí.`);
+        io.out('-- Inventario actualizado.');
         return 0;
       }
       io.out(`Base de datos creada en ${describeAdminUrl(adminUrl)}`);
@@ -665,7 +666,7 @@ async function registerCommand(argv: string[], { io, deps }: Context): Promise<n
     io.out(`Coincide con otras instancias (${String(result.warnings.length)}):`);
     printMatches(io, result.warnings);
     io.out(
-      `Corrígelo en el entorno y actualiza el inventario con: pnpm instance:sync ${id} ${envPath}`,
+      `Revisa las coincidencias; si cambias el entorno, actualiza el inventario con: pnpm instance:sync ${id} ${envPath}`,
     );
   }
   printNewKey(io, target);

@@ -227,7 +227,7 @@ inventario los valores secretos de los entornos usados devuelve 0 coincidencias.
 - [X] T050 Avisar al usuario y después actualizar `README.md` con el estado de la 007 y las órdenes `pnpm instance:*` (FR-035, regla de `CLAUDE.md`)
 - [X] T051 [P] Añadir a la sección "Arranque y pruebas en local" de `CLAUDE.md` las líneas de `pnpm instance:new`, `instance:db`, `instance:check` e `instance:list` con `INSTANCE_INVENTORY` e `INSTANCE_INVENTORY_KEY`
 - [X] T052 Ejecutar `pnpm lint && pnpm typecheck && pnpm test` (unit + integration) y corregir lo que falle; confirmar que los tests existentes de arranque (`tests/unit/env.test.ts`) siguen pasando sin cambios en sus expectativas
-- [ ] T053 Recorrer los escenarios 1–4 de [quickstart.md](quickstart.md) en el equipo del operador (incluido Windows) y anotar cualquier desviación en la guía o en los contratos
+- [X] T053 Recorrer los escenarios 1–4 de [quickstart.md](quickstart.md) en el equipo del operador (incluido Windows) y anotar cualquier desviación en la guía o en los contratos
 
 ---
 

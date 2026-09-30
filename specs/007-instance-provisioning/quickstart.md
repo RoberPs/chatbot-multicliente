@@ -92,6 +92,41 @@ pnpm instance:db demo-04 --env ~/alta-prueba/envs/demo-04.env --print-sql --host
 Esperado: SQL impreso sin la contraseña en claro, sin conexión; ejecutarlo con
 `docker exec -i pg-alta psql -U postgres` y comprobar que la `DATABASE_URL` escrita conecta.
 
+## Resultado de la validación (T053, 2026-09-30, Windows 11)
+
+Recorridos los escenarios 1–4 con PostgreSQL 16 en Docker. `instance:new` exige terminal y la
+sesión de validación no la tenía: se ejecutó llamando a la misma función `main` de la CLI con
+una E/S que se declara terminal (respuesta `crear` incluida); el resto de órdenes, `db:verify` y
+el arranque de la instancia, con el proceso real.
+
+- **Escenario 1**: correcto. `check` antes de terceros → APTO con `trust_proxy_empty`,
+  `database_localhost` y `pending_optional`, sin `database_superuser`; con la clave del modelo,
+  APTO sin su aviso. La instancia arrancó con ese entorno (migraciones, panel, cookie `Secure`,
+  HSTS y copia en `BACKUP_DIR`). En Windows el mensaje dice "hereda los permisos del directorio".
+- **Escenario 2**: las 11 variantes dan NO APTO (código 1) con su código y sin mostrar el valor;
+  la propia instancia, `ok: true` en una línea; sin clave, `inventory_key_missing`.
+- **Escenario 3**: `register`, `verified` con una copia real de `db:verify --json` (y
+  `other_instance` con otra instancia), `update`, `list` (la marca `!` sale en la instancia activa
+  sin verificar), `retire` y `new` del `id` dado de baja rechazado; 0 de 18 valores secretos en el
+  inventario. Como `demo-01` se verificó en el paso 2, la marca `!` la lleva la instancia
+  registrada, no `demo-01`.
+- **Escenario 4**: SQL sin la contraseña; ejecutado con `psql`, la `DATABASE_URL` conecta y el
+  usuario no entra en la BD de otra instancia.
+
+Desviaciones encontradas y corregidas:
+
+1. `duplicate_instance_id` no aparecía si el entorno ajeno compartía `BACKUP_DIR` (el valor por
+   defecto) con la instancia de ese `id`: `BACKUP_DIR` y `SMTP_URL` ya no cuentan para decidir si
+   un entorno es "la propia instancia" (test en `check.test.ts`).
+2. La salida de `--print-sql` no se podía pasar tal cual a `psql` (la línea final con la ruta
+   rompía el script): ahora lo informativo va en comentarios `--` y
+   `pnpm instance:db <id> --print-sql … | psql …` funciona (test en `cli-db.test.ts`).
+3. Textos: `list` sin instancias activas dice "No hay instancias activas."; `register` con solo
+   coincidencias legítimas sugiere revisarlas en vez de "corregirlas".
+
+Nota: con `pnpm -s`, pnpm devuelve 1 en lugar de 2 (igual que en `db:verify`); sin `-s` los
+códigos son los del contrato.
+
 ## Limpieza
 
 ```bash
