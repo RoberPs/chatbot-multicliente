@@ -31,6 +31,27 @@ previa de lo que va a cambiar y una aplicación todo o nada que respeta la regla
 Es una función del operador (Principio VI): el negocio no tiene acceso a ella, y no cambia cómo
 responde el bot más allá de que la configuración importada pasa a ser la registrada.
 
+## Clarifications
+
+### Session 2026-09-30
+
+- Q: Al importar, ¿cómo se combina el fichero con la configuración que ya tiene la instancia de
+  destino? → A: Reemplazo completo: todas las secciones del destino pasan a ser las del fichero y lo
+  que no está en el fichero se elimina; no hay importación por secciones elegidas ni fusión.
+- Q: Antes de aplicar una importación, ¿debe el sistema guardar solo la configuración que había en
+  el destino para poder deshacerla? → A: Sí, automáticamente: dentro de la misma operación se guarda
+  la exportación de la configuración anterior (con destinos de avisos), el resultado ofrece
+  descargarla y se conserva solo la de la última importación aplicada.
+- Q: ¿Se puede importar en una instancia cuyo negocio ya está activo, o solo en uno en preparación?
+  → A: También en activos, sin confirmación adicional: los protegen la vista previa, la regla de
+  avisos críticos y la configuración anterior guardada.
+- Q: ¿Debe el fichero incluir la configuración del chat web (webs permitidas, enlace de privacidad
+  y topes)? → A: Sí, toda; la vista previa advierte de los cambios de webs permitidas y topes cuando
+  el chat web del destino está activo.
+- Q: ¿La exportación e importación se hacen solo desde el panel, o también con órdenes de terminal?
+  → A: Solo desde el panel; una orden de terminal, si hace falta, será otra spec con el mismo formato
+  de fichero.
+
 ## User Scenarios & Testing *(mandatory)*
 
 ### User Story 1 - El operador exporta la configuración del negocio (Priority: P1)
@@ -102,6 +123,9 @@ destinos de avisos no incluidos, que conservan sus valores.
 6. **Given** un negocio de destino activo, **When** la configuración importada le dejaría un aviso
    crítico, **Then** la vista previa lo advierte y dice que la importación será rechazada, y si el
    operador confirma, no cambia nada y se le indica el aviso que lo impide.
+9. **Given** una importación aplicada, **When** el operador ve el resultado o vuelve más tarde al
+   panel, **Then** puede descargar la configuración que tenía el destino justo antes de importar e
+   importarla para deshacer el cambio.
 7. **Given** un fichero sin destinos de avisos, **When** se importa, **Then** los destinos de avisos
    del destino se conservan tal como estaban.
 8. **Given** un fichero con destinos de avisos, **When** el operador ve la vista previa, **Then** se
@@ -151,6 +175,9 @@ rechaza con un error comprensible y que la configuración del destino no cambia.
 - **Fichero de una versión anterior del formato**: se acepta si la instancia sigue entendiendo esa
   versión; los datos que esa versión no tenía se tratan como vacíos o con su valor por defecto, y la
   vista previa lo muestra como cambio.
+- **Webs permitidas distintas entre origen y destino con el chat web del destino activo** (por
+  ejemplo, una web de pruebas en el origen): se importan las del fichero, y la vista previa advierte
+  de las webs que dejarán de poder usar el chat antes de confirmar.
 - **Fichero vacío de una sección** (por ejemplo, sin preguntas frecuentes): se interpreta como que el
   negocio no tiene elementos en esa sección, y la vista previa muestra que se eliminarán los del
   destino.
@@ -208,7 +235,9 @@ rechaza con un error comprensible y que la configuración del destino no cambia.
 
 - **FR-011**: Antes de aplicar, el sistema MUST mostrar una vista previa con: los metadatos del
   fichero; por sección, los elementos que se añaden, se modifican (con el valor actual y el nuevo de
-  cada campo que cambia) y se eliminan; y los cambios de zona horaria y moneda destacados.
+  cada campo que cambia) y se eliminan; y los cambios de zona horaria y moneda destacados. Si el
+  chat web del destino está activo, MUST advertir de forma destacada de cualquier cambio en sus webs
+  permitidas (en especial, las que dejarán de poder usar el chat) y en sus topes.
 - **FR-012**: La vista previa MUST mostrar los avisos que tendría el negocio tras importar, calculados
   igual que en el panel, con los críticos destacados, y MUST indicar si la importación será rechazada
   por la regla de avisos críticos.
@@ -221,15 +250,17 @@ rechaza con un error comprensible y que la configuración del destino no cambia.
 
 - **FR-015**: Al confirmar, el sistema MUST aplicar la importación en una sola operación todo o
   nada: o queda aplicada entera o no queda aplicada ninguna parte.
-- **FR-016**: La importación MUST reemplazar la configuración del destino en todas las secciones del
-  fichero: los elementos del destino que no están en el fichero se eliminan y los del fichero se
-  crean o actualizan.
+- **FR-016**: La importación MUST reemplazar la configuración del destino en todas las secciones
+  (FR-002) a la vez: los elementos del destino que no están en el fichero se eliminan y los del
+  fichero se crean o actualizan. El operador MUST NOT poder elegir secciones ni fusionar con la
+  configuración del destino; las únicas excepciones son las de FR-017 y FR-021.
 - **FR-017**: La importación MUST NOT cambiar el estado del negocio (en preparación o activo) ni el
   estado de activación del chat web del destino, ni nada fuera de la configuración del negocio
   (conversaciones, derivaciones en curso, uso del chat web, entorno).
-- **FR-018**: Si el negocio del destino está activo y la configuración resultante tiene algún aviso
-  crítico, la importación MUST rechazarse sin aplicar nada, indicando los avisos que lo impiden
-  (FR-032 de la 001).
+- **FR-018**: La importación MUST permitirse tanto en negocios en preparación como activos, con el
+  mismo flujo de vista previa y confirmación. Si el negocio del destino está activo y la
+  configuración resultante tiene algún aviso crítico, la importación MUST rechazarse sin aplicar
+  nada, indicando los avisos que lo impiden (FR-032 de la 001).
 - **FR-019**: Si la configuración del destino ha cambiado desde que se generó la vista previa, la
   confirmación MUST rechazarse sin aplicar nada y pedir una vista previa nueva.
 - **FR-020**: Tras aplicar, el sistema MUST mostrar el resultado (elementos añadidos, modificados y
@@ -237,15 +268,20 @@ rechaza con un error comprensible y que la configuración del destino no cambia.
   siguiente respuesta en todos los canales.
 - **FR-021**: Los destinos de avisos de derivación del destino MUST cambiar solo si el fichero los
   contiene y el operador eligió importarlos.
+- **FR-022**: Dentro de la misma operación de FR-015, antes de reemplazar nada, el sistema MUST
+  guardar en la instancia la exportación de la configuración que tenía el destino, con sus destinos
+  de avisos. El resultado de la importación y el panel MUST ofrecer descargarla, con la fecha de la
+  importación a la que precede. Se conserva solo la de la última importación aplicada; una
+  importación rechazada no la sustituye.
 
 **Seguridad y trazabilidad**
 
-- **FR-022**: Exportar, previsualizar e importar MUST estar disponibles solo para el operador con
+- **FR-023**: Exportar, previsualizar e importar MUST estar disponibles solo para el operador con
   sesión iniciada y con la misma protección frente a peticiones falsificadas que el resto del panel.
-- **FR-023**: El sistema MUST registrar cada exportación e importación (aplicada, rechazada o
+- **FR-024**: El sistema MUST registrar cada exportación e importación (aplicada, rechazada o
   cancelada) con fecha, resultado, instancia de origen del fichero y recuentos por sección, sin
   registrar el contenido de la configuración, teléfonos, correos ni textos.
-- **FR-024**: La exportación e importación MUST funcionar igual para cualquier negocio de cualquier
+- **FR-025**: La exportación e importación MUST funcionar igual para cualquier negocio de cualquier
   sector, sin nombres ni reglas de un sector o cliente en el núcleo.
 
 ### Key Entities
@@ -257,6 +293,10 @@ rechaza con un error comprensible y que la configuración del destino no cambia.
   actual del destino: cambios por sección, avisos resultantes, si se aplicará o se rechazará, y la
   referencia de la configuración del destino con la que se comparó (para detectar cambios antes de
   confirmar). No modifica nada.
+- **Configuración anterior a la importación**: exportación de la configuración del destino guardada
+  automáticamente al aplicar una importación (FR-022), con el mismo formato que el fichero de
+  configuración y los destinos de avisos incluidos. Solo existe una, la de la última importación
+  aplicada.
 - **Registro de importación o exportación**: anotación técnica de cada operación, con fecha,
   resultado, instancia de origen y recuentos, sin contenido.
 
@@ -285,11 +325,12 @@ rechaza con un error comprensible y que la configuración del destino no cambia.
 
 ## Assumptions
 
-- La importación es **completa por secciones** (FR-016): no hay importación parcial por elementos ni
-  mezcla con la configuración del destino. Para volver atrás, el operador exporta la configuración
-  del destino antes de importar e importa ese fichero si hace falta.
-- La exportación y la importación se hacen desde el panel de cada instancia; no hay sincronización
-  automática entre instancias ni órdenes de terminal en esta feature.
+- La importación es un **reemplazo completo** (FR-016): no hay importación de secciones sueltas, ni
+  parcial por elementos, ni fusión con la configuración del destino. Para volver atrás, el operador
+  descarga la configuración anterior guardada automáticamente (FR-022) y la importa.
+- La exportación y la importación se hacen solo desde el panel de cada instancia; no hay
+  sincronización automática entre instancias ni órdenes de terminal en esta feature. Si más adelante
+  se añade una orden de terminal, será con otra spec y el mismo formato de fichero.
 - El fichero no va cifrado ni firmado: contiene datos del negocio, no de clientes finales ni
   secretos, y lo maneja solo el operador. Si incluye destinos de avisos, contiene un teléfono o correo
   del negocio y el operador lo guarda con el mismo cuidado que el inventario.
