@@ -61,6 +61,11 @@ describe('neutralidad sectorial del código', () => {
     expect(paths).toContain('cli/backup.ts');
     expect(paths).toContain('cli/backup-common.ts');
     expect(paths).toContain('startup.ts');
+    // 007: herramientas de aprovisionamiento de instancias.
+    expect(paths.some((p) => p.startsWith('provisioning/'))).toBe(true);
+    expect(paths).toContain('provisioning/check.ts');
+    expect(paths).toContain('provisioning/messages.ts');
+    expect(paths).toContain('cli/instance.ts');
   });
 
   it('ningún fichero de src/ contiene nombres de sector o cliente', () => {

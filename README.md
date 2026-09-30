@@ -10,6 +10,7 @@ Estados: especificada → planificada → en implementación → completada (o a
 | 004 | Canal web del bot de atención | Núcleo | Completada | `004-web-channel` | [spec](specs/004-web-channel/spec.md) · [plan](specs/004-web-channel/plan.md) · [tareas](specs/004-web-channel/tasks.md) | 2026-09-28  |
 | 005 | Derivación de la conversación al negocio | Núcleo | Completada | `005-handoff-to-business` | [spec](specs/005-handoff-to-business/spec.md) · [plan](specs/005-handoff-to-business/plan.md) · [tareas](specs/005-handoff-to-business/tasks.md) | 2026-09-30  |
 | 006 | Copias de seguridad y restauración por instancia | Núcleo | Completada | `006-instance-backup-restore` | [spec](specs/006-instance-backup-restore/spec.md) · [plan](specs/006-instance-backup-restore/plan.md) · [tareas](specs/006-instance-backup-restore/tasks.md) | 2026-09-29  |
+| 007 | Aprovisionamiento de instancias | Núcleo (operación) | En implementación (código y pruebas terminados; falta recorrer el quickstart en el equipo del operador, T053) | `007-instance-provisioning` | [spec](specs/007-instance-provisioning/spec.md) · [plan](specs/007-instance-provisioning/plan.md) · [tareas](specs/007-instance-provisioning/tasks.md) | 2026-09-30  |
 
 ---
 
@@ -39,6 +40,11 @@ Cada instancia hace **copias de seguridad cifradas** de su base de datos (featur
 a la hora local configurada, una antes de aplicar migraciones (sin ella no migra ni arranca) y las
 que pida el operador. Se restauran y se comprueban con los mismos comandos en todas las
 instancias.
+
+Las instancias se dan de alta con las **herramientas de aprovisionamiento** (feature 007), que el
+operador ejecuta en su equipo: generan el entorno con secretos nuevos, crean la base de datos con
+un usuario propio, validan el entorno antes de desplegar comparándolo con el resto de instancias y
+llevan un inventario sin secretos en claro. No intervienen en el arranque de una instancia.
 
 ## Requisitos
 
@@ -161,6 +167,37 @@ pnpm db:restore <fichero>                   # con la instancia PARADA; pide escr
 
 Guía del operador para comprobar las copias: [docs/operacion-multicliente.md §8](docs/operacion-multicliente.md#8-copias-de-seguridad-guía-de-validación).
 
+## Alta de instancias
+
+Se ejecutan en el equipo del operador, con este repositorio y sin cargar su `.env`. El inventario
+vive fuera del repositorio (`INSTANCE_INVENTORY`, por defecto `~/.chatbotasesor/inventory.json`) y
+su clave se da en `INSTANCE_INVENTORY_KEY` (se crea con el inventario y se muestra una vez):
+
+```bash
+pnpm instance:new --id <id> --client "<cliente>" --url https://… --timezone Europe/Madrid \
+  --region ES --currency EUR --emergency-phone "+34 …" [--whatsapp]   # entorno + alta "en alta"
+pnpm instance:db <id>                       # BD y usuario propios (INSTANCE_DB_ADMIN_URL o se pide)
+pnpm instance:db <id> --print-sql --host <servidor> --port <puerto>  # solo el SQL, sin conectarse
+pnpm instance:check <entorno> [--json]      # APTO / NO APTO antes de desplegar (0 / 1)
+pnpm instance:list [--json]                 # instancias, estado, versión y verificaciones vencidas
+```
+
+- `instance:new` parte de `.env.example`, genera `SESSION_SECRET`, `BACKUP_KEY`, la contraseña del
+  operador (se muestra **una sola vez**; el entorno solo lleva su hash) y el token del webhook, y
+  deja marcados con `# PENDIENTE:` los valores de terceros. Nunca sobrescribe un fichero.
+- `instance:db` crea `chatbot_<id>` con un usuario sin privilegios de administración, retira
+  `CONNECT` a `PUBLIC` y escribe `DATABASE_URL`. La contraseña viaja como verificador SCRAM y las
+  credenciales de administración no se guardan. Nunca reutiliza ni borra una base de datos.
+- `instance:check` aplica las reglas del arranque y las del alta (production, `https`, calidad de
+  cada secreto) y compara con todas las instancias del inventario, también las dadas de baja, por
+  huellas HMAC: un identificador, una BD o un secreto repetidos son error. Nunca muestra un valor.
+- Mantenimiento: `instance:register` (instancia anterior a la 007), `instance:sync` (tras rotar
+  secretos), `instance:update`, `instance:verified <id> <informe de db:verify --json>` e
+  `instance:retire` (solo el inventario; los pasos manuales se muestran al terminar).
+
+Guía completa del alta y la baja: [docs/operacion-multicliente.md §2 y §7](docs/operacion-multicliente.md#2-alta-de-un-cliente-nuevo).
+Contrato de las órdenes: [specs/007-instance-provisioning/contracts/instance-commands.md](specs/007-instance-provisioning/contracts/instance-commands.md).
+
 ## Variables de entorno
 
 | Variable | Obligatoria | Descripción |
@@ -216,6 +253,11 @@ Guía del operador para comprobar las copias: [docs/operacion-multicliente.md §
 | `pnpm db:restore <fichero>` | Restaura una copia con la instancia parada (`--from-instance <id>`, `--yes`, `--json`) |
 | `pnpm db:verify <fichero>` | Restaura la copia en una BD temporal, compara los recuentos y la borra |
 | `pnpm db:backups` | Lista las copias de la instancia; `--prune` aplica la retención |
+| `pnpm instance:new` | Genera el entorno de una instancia nueva con secretos nuevos y la registra en el inventario (necesita terminal) |
+| `pnpm instance:db <id>` | Crea la BD y el usuario propios de la instancia y escribe `DATABASE_URL` (`--print-sql` para solo el SQL) |
+| `pnpm instance:check <entorno>` | Valida un entorno antes de desplegar y lo compara con el inventario (`--json`; 0 apto, 1 no apto) |
+| `pnpm instance:list` | Inventario de instancias con estado, versión y verificaciones de copia vencidas (`--json`) |
+| `pnpm instance:register` · `sync` · `update` · `verified` · `retire` | Mantenimiento del inventario (registrar una instancia existente, rotación, datos, verificación de copia, baja) |
 | `pnpm kb:snapshot` | Imprime el `KnowledgeSnapshot` actual |
 | `pnpm operator:hash-password` | Pide una contraseña sin mostrarla y devuelve su hash Argon2id |
 | `pnpm handoff:templates` | Imprime la definición JSON de las tres plantillas de WhatsApp de los avisos de derivación, para darlas de alta en Meta |
@@ -256,8 +298,10 @@ src/
 ├── llm/           adaptador de Claude, construcción del prompt y resumen de derivaciones
 ├── speech/        adaptador de transcripción (solo con audios activados)
 ├── admin/         panel del operador: sesión, rutas, plantillas Eta + htmx, probar el bot
-├── cli/           kb:snapshot, operator:hash-password, bot:chat, handoff:templates y
-│                  db:backup, db:restore, db:verify, db:backups
+├── provisioning/  herramientas de alta sin HTTP: plantilla de entorno, secretos, huellas,
+│                  inventario, validación y creación de la BD
+├── cli/           kb:snapshot, operator:hash-password, bot:chat, handoff:templates,
+│                  db:backup, db:restore, db:verify, db:backups e instance:*
 ├── bot.ts         composición del bot
 ├── app.ts         construcción de la app Fastify
 ├── startup.ts     arranque: bloqueo de instancia, migraciones con copia previa, purga y programador

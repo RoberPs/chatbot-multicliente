@@ -2,8 +2,8 @@
  * `pnpm operator:hash-password`: pide la contraseña del operador sin mostrarla y devuelve su
  * hash Argon2id para OPERATOR_PASSWORD_HASH. También acepta la contraseña por una tubería.
  */
-import argon2 from 'argon2';
 import { stdin, stdout, stderr } from 'node:process';
+import { argon2Hasher } from '../provisioning/secrets.js';
 
 async function readHidden(prompt: string): Promise<string> {
   if (!stdin.isTTY) {
@@ -45,6 +45,6 @@ if (password.length < 12) {
   stderr.write('La contraseña debe tener al menos 12 caracteres.\n');
   process.exit(1);
 }
-const hash = await argon2.hash(password, { type: argon2.argon2id });
+const hash = await argon2Hasher(password);
 stdout.write(`${hash}\n`);
 stderr.write('Copia el valor en OPERATOR_PASSWORD_HASH del fichero .env\n');

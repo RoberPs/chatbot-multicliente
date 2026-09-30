@@ -29,7 +29,16 @@
     "kb:snapshot": "tsx src/cli/snapshot.ts",
     "bot:chat": "tsx src/cli/bot-chat.ts",
     "handoff:templates": "tsx src/cli/handoff-templates.ts",
-    "operator:hash-password": "tsx src/cli/hash-password.ts"
+    "operator:hash-password": "tsx src/cli/hash-password.ts",
+    "instance:check": "tsx src/cli/instance.ts check",
+    "instance:new": "tsx src/cli/instance.ts new",
+    "instance:db": "tsx src/cli/instance.ts db",
+    "instance:list": "tsx src/cli/instance.ts list",
+    "instance:register": "tsx src/cli/instance.ts register",
+    "instance:sync": "tsx src/cli/instance.ts sync",
+    "instance:update": "tsx src/cli/instance.ts update",
+    "instance:verified": "tsx src/cli/instance.ts verified",
+    "instance:retire": "tsx src/cli/instance.ts retire"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.128.0",

@@ -43,3 +43,36 @@ describe('aislamiento: conexiones a BD', () => {
     expect(schema).not.toMatch(/tenant|client_id|instance_id|business_id/i);
   });
 });
+
+describe('aislamiento: herramientas de aprovisionamiento (007, FR-034)', () => {
+  const imports = (file: string) =>
+    [...readFileSync(file, 'utf8').matchAll(/^import[^'"]*['"]([^'"]+)['"]/gm)].map(
+      (m) => m[1] ?? '',
+    );
+  const provisioning = files(join(SRC, 'provisioning'));
+
+  it('src/provisioning no importa Fastify ni el dominio, los canales o el panel', () => {
+    const forbidden = /fastify|\/(admin|channels|knowledge|conversation|webchat|handoff)\//;
+    const bad = provisioning.flatMap((file) =>
+      imports(file)
+        .filter((spec) => forbidden.test(spec) || spec === 'fastify')
+        .map((spec) => `${relative(SRC, file)}: ${spec}`),
+    );
+    expect(provisioning.length).toBeGreaterThan(5);
+    expect(bad).toEqual([]);
+  });
+
+  it('solo database.ts importa pg', () => {
+    const users = provisioning
+      .filter((file) => imports(file).includes('pg'))
+      .map((file) => relative(SRC, file).replaceAll('\\', '/'));
+    expect(users).toEqual(['provisioning/database.ts']);
+  });
+
+  it('el arranque no importa src/provisioning', () => {
+    for (const entry of ['server.ts', 'startup.ts', 'app.ts']) {
+      const specs = imports(join(SRC, entry));
+      expect(specs.some((s) => s.includes('provisioning'))).toBe(false);
+    }
+  });
+});

@@ -56,7 +56,31 @@ datos de su instancia y se registra en el panel `/admin` de esa instancia, ya en
 
 ## 2. Alta de un cliente nuevo
 
-Hoy se hace a mano. La spec [P1](#p1-aprovisionamiento-de-instancias) propone automatizarlo.
+Desde la feature 007 el alta se hace con las órdenes `pnpm instance:*`, en el equipo del
+operador y con el repositorio del núcleo: `instance:new` genera el entorno con secretos nuevos,
+`instance:db` crea la base de datos con su usuario, `instance:check` lo valida contra el resto de
+instancias y un **inventario** local lleva la lista de instancias sin ningún secreto. Contrato de
+las órdenes: [specs/007-instance-provisioning/contracts/instance-commands.md](../specs/007-instance-provisioning/contracts/instance-commands.md).
+
+### 2.0 Inventario y su clave (una vez)
+
+- **Dónde**: `~/.chatbotasesor/inventory.json` por defecto; otra ruta con `INSTANCE_INVENTORY` o
+  `--inventory`. Nunca dentro del repositorio del núcleo (contiene nombres de clientes): las
+  herramientas lo rechazan aunque la ruta esté en `.gitignore`.
+- **Qué guarda**: cliente, URL, estado, versión de la imagen, workspace de Anthropic, dónde está
+  la `BACKUP_KEY`, identidad de la BD (sin contraseña), fechas y última verificación de copia, y
+  **huellas** HMAC de los secretos. Con las huellas se detecta un secreto repetido entre
+  instancias sin poder recuperarlo.
+- **Clave del inventario** (`INSTANCE_INVENTORY_KEY`, 64 hex): se crea con el inventario (la
+  primera `instance:new` o `instance:register`, tras escribir `crear`) y se muestra **una sola
+  vez**. Guárdala en el gestor de secretos, junto a los entornos, y expórtala en la terminal antes
+  de usar las herramientas; nunca se pasa por argumento. Sin ella nada compara ni escribe y
+  `instance:check` da "no apto". Si la pierdes: crea un inventario nuevo en otra ruta y vuelve a
+  registrar cada instancia con `pnpm instance:register <entorno> --client "<nombre>"`.
+- **Copia**: el inventario no tiene secretos, pero sí nombres de clientes; haz copia de él (por
+  ejemplo en un repositorio privado tuyo) y de su clave.
+- **Permisos en Windows**: el modo `0600` no aplica; el inventario y los entornos heredan la ACL
+  del directorio (por defecto, tu perfil de usuario). No los pongas en carpetas compartidas.
 
 ### 2.1 Antes de tocar nada
 
@@ -66,37 +90,80 @@ Hoy se hace a mano. La spec [P1](#p1-aprovisionamiento-de-instancias) propone au
 - [ ] Decidido quién paga la API de Anthropic (ver [sección 4](#4-coste-de-la-api)).
 - [ ] Subdominio elegido, por ejemplo `nombrecliente.tudominio.com`, con certificado TLS.
 
-### 2.2 Recursos de la instancia
+### 2.2 Generar el entorno: `pnpm instance:new`
 
-1. **Base de datos nueva y vacía**, dedicada al cliente, con un usuario de PostgreSQL que solo
-   tenga permisos sobre esa BD:
+En una terminal (no redirijas la salida: muestra secretos una sola vez):
 
-   ```sql
-   CREATE ROLE cliente_x LOGIN PASSWORD '<aleatoria, larga>';
-   CREATE DATABASE chatbot_cliente_x OWNER cliente_x;
-   REVOKE CONNECT ON DATABASE chatbot_cliente_x FROM PUBLIC;
-   ```
+```bash
+pnpm instance:new --id cliente-x --client "Nombre del cliente" --url https://cliente-x.tudominio.com \
+  --timezone Europe/Madrid --region ES --currency EUR --emergency-phone "+34 600 000 000" [--whatsapp]
+```
 
-2. **Secretos nuevos**, nunca copiados de otra instancia:
+- Parte siempre de `.env.example` y genera **secretos nuevos**: `SESSION_SECRET`, `BACKUP_KEY`,
+  la contraseña del operador (24 caracteres, se muestra **una sola vez**; el entorno solo lleva su
+  hash Argon2id) y, con `--whatsapp`, `WHATSAPP_VERIFY_TOKEN`. No acepta contraseñas tecleadas.
+- Escribe el entorno en `<dir. del inventario>/envs/<id>.env` (o `--out`), legible solo por tu
+  usuario, y nunca sobrescribe un fichero. Dentro del repositorio solo acepta rutas excluidas por
+  `git`.
+- Deja vacías y marcadas con `# PENDIENTE:` las variables de terceros: `DATABASE_URL` (siguiente
+  paso), `ANTHROPIC_API_KEY`, `WHATSAPP_*` y `SMTP_*`.
+- Registra la instancia en el inventario en estado "en alta". Rechaza un `id` o una URL ya usados,
+  también por instancias dadas de baja.
+
+Después: guarda el fichero, la contraseña y la `BACKUP_KEY` en el gestor de secretos (la clave,
+fuera de `BACKUP_DIR`) y anota dónde con `pnpm instance:update <id> --backup-key-location "<dónde>"`.
+
+### 2.3 Crear la base de datos: `pnpm instance:db`
+
+```bash
+export INSTANCE_DB_ADMIN_URL=postgres://admin:…@servidor:5432/postgres   # o se pide sin eco
+pnpm instance:db cliente-x [--env <fichero>] [--host <servidor> --port <puerto>]
+```
+
+Crea una **BD nueva y vacía** `chatbot_<id>` y un **usuario propio** sin privilegios de
+administración, con contraseña aleatoria enviada al servidor como verificador SCRAM (la contraseña
+en claro no viaja), retira `CONNECT` a `PUBLIC`, comprueba que el usuario entra y escribe
+`DATABASE_URL` en el entorno. Las credenciales de administración solo se usan en memoria. Si ya
+existe una BD o un usuario con ese nombre, no toca nada. **Nunca borra una base de datos**: si
+falla a mitad, retira solo el usuario recién creado o informa de lo que quedó creado y de las
+órdenes para terminarlo a mano.
+
+`--host`/`--port` indican cómo ve la instancia el servidor si no es igual que desde tu equipo (p.
+ej. una red Docker). En un servidor gestionado sin permiso para crear bases de datos, usa
+`--print-sql --host <servidor> --port <puerto>`: imprime el SQL exacto (sin la contraseña) para
+ejecutarlo en la consola del proveedor, sin conectarse a nada.
+
+**Limitación**: la comparación de bases de datos es por servidor, puerto y nombre tal como están
+escritos; el mismo servidor con dos nombres (alias) no se detecta. Lo cubre el usuario propio de
+cada base de datos.
+
+### 2.4 Completar y validar: `pnpm instance:check`
+
+1. Completa en el fichero los valores `PENDIENTE`: **clave de Anthropic propia** del cliente (en un
+   workspace propio con límite de gasto), **WhatsApp** (las cinco variables o ninguna) y el correo
+   de avisos (`SMTP_URL` y `SMTP_FROM`, o ninguna).
+2. Revisa el resto de valores con la tabla de abajo (`TRUST_PROXY`, audios…).
+3. Valida:
 
    ```bash
-   openssl rand -hex 32            # SESSION_SECRET
-   pnpm operator:hash-password     # OPERATOR_PASSWORD_HASH (contraseña ≥ 12 caracteres, distinta por cliente)
-   openssl rand -hex 24            # WHATSAPP_VERIFY_TOKEN, si usa WhatsApp
+   pnpm instance:check <fichero> [--json]
    ```
 
-3. **Clave de Anthropic propia** del cliente, en un workspace propio con límite de gasto.
+   Da **APTO** / **NO APTO** con errores y advertencias por variable y la acción que lo corrige,
+   sin mostrar nunca un valor. Aplica las mismas reglas que el arranque más las del alta
+   (production, `https`, calidad de cada secreto) y compara con **todas** las instancias del
+   inventario, también las dadas de baja: `INSTANCE_ID`, BD, usuario de BD, URL, número de
+   WhatsApp y cualquier secreto (vigente o anterior) repetidos son error; `SMTP_URL` o
+   `BACKUP_DIR` compartidos, advertencia. No escribe nada. Código de salida 0 apto, 1 no apto: se
+   puede usar como paso de despliegue.
 
-4. **WhatsApp** (opcional): número y app de Meta del cliente; las cinco variables `WHATSAPP_*` o
-   ninguna.
+Pasa también por `instance:check` cualquier cambio posterior del entorno.
 
-### 2.3 Fichero de entorno
-
-Parte **siempre** de `.env.example`, nunca del `.env` de otro cliente.
+Referencia de variables del entorno:
 
 | Variable | Valor para el cliente |
 |---|---|
-| `DATABASE_URL` | La BD y el usuario creados en 2.2 |
+| `DATABASE_URL` | La escribe `instance:db` (2.3) |
 | `OPERATOR_USER` · `OPERATOR_PASSWORD_HASH` | Credencial propia de esta instancia |
 | `SESSION_SECRET` | Recién generado |
 | `NODE_ENV` | `production` |
@@ -122,14 +189,30 @@ perder la máquina haría perder las copias.
 Guarda este fichero en un gestor de secretos (o en las variables cifradas de tu plataforma), no en
 el repositorio. Sin `BACKUP_KEY` las copias de la instancia no se pueden restaurar.
 
-### 2.4 Despliegue
+**Rotar un secreto o cambiar la BD, la URL o el directorio de copias**: edita el entorno, pásalo
+por `instance:check` y actualiza el inventario con `pnpm instance:sync <id> <fichero>`. Los valores
+anteriores quedan como usados y nunca se podrán reutilizar.
+
+**Si pierdes el fichero de entorno**: los secretos no se pueden recuperar del inventario y el `id`
+no se puede volver a generar. Rehaz el fichero a partir de `.env.example` con secretos nuevos
+(`openssl rand -hex 32`, `pnpm operator:hash-password`) y la misma `DATABASE_URL` si la conoces;
+si conservas la `BACKUP_KEY` antigua en el gestor de secretos, ponla en `BACKUP_KEYS_PREVIOUS`
+para poder restaurar las copias anteriores (sin ella no se pueden restaurar). Después,
+`instance:check` y `instance:sync`.
+
+**Instancia existente antes de la 007**: regístrala con
+`pnpm instance:register <entorno> --client "<nombre>" [--status testing]`. Si algún secreto no
+cumple las reglas de calidad o coincide con otra instancia, `instance:check` lo dirá: rótalo y haz
+`instance:sync`.
+
+### 2.5 Despliegue
 
 1. Arranca un contenedor con la **misma imagen etiquetada** que el resto (`chatbot:X.Y.Z`) y el
    entorno del cliente. Al arrancar aplica las migraciones y crea el negocio vacío en
    "En preparación".
 2. Comprueba que `https://nombrecliente.tudominio.com/admin` pide login y que la cookie es `Secure`.
 
-### 2.5 Configuración del negocio (en el panel de producción)
+### 2.6 Configuración del negocio (en el panel de producción)
 
 1. Rellena datos del negocio, horarios, servicios, precios y preguntas frecuentes.
 2. Resuelve los avisos críticos: el sistema no deja activar un negocio que los tenga (FR-032).
@@ -141,13 +224,16 @@ el repositorio. Sin `BACKUP_KEY` las copias de la instancia no se pueden restaur
 6. WhatsApp: registra en Meta el webhook `https://…/webhooks/whatsapp` con el `WHATSAPP_VERIFY_TOKEN`
    y envía un mensaje de prueba.
 
-### 2.6 Cierre del alta
+### 2.7 Cierre del alta
 
 - [ ] Copia de seguridad inicial: `node dist/src/cli/backup.js` en el contenedor.
 - [ ] Copia comprobada con la [guía de validación de copias](#8-copias-de-seguridad-guía-de-validación)
-      (`pnpm db:verify` desde tu instancia de pruebas) y resultado anotado.
-- [ ] Anotada la instancia en tu inventario: cliente, subdominio, versión de la imagen, workspace
-      de Anthropic, `INSTANCE_ID`, dónde está guardada su `BACKUP_KEY`, fecha de alta.
+      (`pnpm db:verify <copia> --json > v.json`) y anotada:
+      `pnpm instance:verified <id> v.json` (rechaza el informe de otra instancia).
+- [ ] Inventario al día: `pnpm instance:update <id> --status active --image X.Y.Z
+      --llm-workspace "<workspace>"` (y `--backup-key-location` si no lo hiciste en 2.2).
+- [ ] `pnpm instance:list` muestra la instancia activa. La marca `!` señala las activas sin una
+      verificación de copia correcta en los últimos 31 días.
 - [ ] El cliente sabe cómo pedirte cambios (canal y plazo).
 
 ---
@@ -238,13 +324,19 @@ Antes de programar nada, en este orden (Principio II):
 
 ## 7. Baja de un cliente
 
+Empieza con `pnpm instance:retire <id>` (pide escribir el `id` para confirmar; `--yes` sin
+terminal). Solo cambia el inventario: la instancia pasa a "de baja" con la fecha de hoy y su `id`,
+su BD y sus secretos **siguen contando como usados para siempre**. Las herramientas no borran
+nada; los pasos siguientes son manuales:
+
 1. Desactiva el chat web y retira el webhook de WhatsApp en Meta.
 2. Entrega al cliente los datos que le correspondan según el contrato.
 3. Para el contenedor, revoca su clave de Anthropic y elimina sus secretos.
-4. Borra la BD y sus copias de seguridad en el plazo acordado, y anótalo en el inventario. Las
-   copias viven en el volumen de `BACKUP_DIR` (y en sus réplicas o instantáneas, si las hay):
-   borra ese volumen y las réplicas. Destruir la `BACKUP_KEY` de la instancia deja ilegibles las
-   copias que quedaran en cualquier otro sitio.
+4. Borra la BD y sus copias de seguridad en el plazo acordado, y anótalo en el inventario con
+   `pnpm instance:update <id> --data-deleted <AAAA-MM-DD>`. Las copias viven en el volumen de
+   `BACKUP_DIR` (y en sus réplicas o instantáneas, si las hay): borra ese volumen y las réplicas.
+   Destruir la `BACKUP_KEY` de la instancia deja ilegibles las copias que quedaran en cualquier
+   otro sitio.
 
 ---
 
@@ -273,7 +365,8 @@ minutos.
 - Tras cada actualización del núcleo con migraciones, con la copia `premigration`.
 - Tras cambiar `BACKUP_KEY`.
 
-Anota en el inventario la fecha, el fichero y el resultado de `db:verify --json`.
+Anota en el inventario la fecha, el fichero y el resultado de `db:verify --json` con
+`pnpm instance:verified <id> <informe.json>` (o `-` para leerlo de la entrada estándar).
 
 ### Antes de empezar (una vez por instancia)
 
@@ -339,9 +432,10 @@ Estado tomado del [README](../README.md) a 2026-09-30.
 | 004 | Canal web del bot de atención | Completada | Chat web incrustable, webs permitidas y topes diarios y mensuales de respuestas |
 | 005 | Derivación de la conversación al negocio | Completada | Salida a una persona (Principio V): avisos al negocio por WhatsApp y/o email (`SMTP_*`) |
 | 006 | Copias de seguridad y restauración por instancia | Completada | **Era la propuesta P3**: copias cifradas diarias, bajo demanda y previas a cada migración; restauración y verificación ([sección 5](#5-actualizar-el-núcleo) y [sección 8](#8-copias-de-seguridad-guía-de-validación)) |
+| 007 | Aprovisionamiento de instancias | Implementada (pendiente de recorrer el quickstart en el equipo del operador, T053) | **Era la propuesta P1**: `pnpm instance:new`, `instance:db`, `instance:check` e inventario sin secretos ([sección 2](#2-alta-de-un-cliente-nuevo) y [sección 7](#7-baja-de-un-cliente)) |
 
-Todas están completadas. Solo queda aplazada la evaluación de audios de la 002 (T083), que se hace
-antes de activar los audios en una instancia.
+Todas están completadas salvo la validación manual de la 007 (T053). Queda aplazada la evaluación
+de audios de la 002 (T083), que se hace antes de activar los audios en una instancia.
 
 ### 9.2 Orden de ejecución
 
@@ -350,7 +444,7 @@ definitivos los asigna `/speckit-specify`; si no se cuela otra feature, serán 0
 
 | Orden | Id | Propuesta | Prioridad | Depende de | Cuándo |
 |---|---|---|---|---|---|
-| 1 | P1 | Aprovisionamiento de instancias | Alta | 006 (variables de copia) | Antes del 2.º cliente |
+| — | P1 | Aprovisionamiento de instancias | — | — | **Hecha** (feature 007) |
 | 2 | P2 | Exportar e importar la configuración del negocio | Alta | — | Antes del 2.º o 3.er cliente |
 | 3 | P6 | Versión visible y actualización escalonada | Media | P1 (inventario), 006 (copia previa) | Antes de la primera actualización con 2 o más instancias |
 | 4 | P4 | Consumo y coste por instancia | Media | — | Antes de facturar el consumo o de activar WhatsApp en un cliente con tráfico abierto |
@@ -373,6 +467,9 @@ Por qué este orden:
 5. **P5** no se adelanta: se diseña a partir de un caso real.
 
 ### P1. Aprovisionamiento de instancias
+
+> **Hecha** en la feature 007 ([spec](../specs/007-instance-provisioning/spec.md)). Se conserva
+> la propuesta original como referencia.
 
 - **Ámbito**: núcleo (herramientas de operación).
 - **Problema**: el alta se hace a mano y cada paso manual puede romper el aislamiento (secretos
@@ -491,7 +588,8 @@ Por qué este orden:
 ## 10. Resumen de reglas
 
 1. Una imagen para todos; un entorno y una BD por cliente.
-2. Secretos, credenciales y clave de Anthropic nuevos para cada cliente, nunca copiados.
+2. Secretos, credenciales y clave de Anthropic nuevos para cada cliente, nunca copiados: el
+   entorno sale de `pnpm instance:new` y pasa por `pnpm instance:check` antes de cada despliegue.
 3. La información del negocio se registra en el panel de su instancia; el cliente no la edita.
 4. Nada específico de un cliente o sector en `src/`.
 5. Antes de actualizar: tests, evaluación e instancia de pruebas; la copia previa la hace la

@@ -3,6 +3,9 @@ import { parsePhoneNumberFromString } from 'libphonenumber-js';
 import { z } from 'zod';
 import { isValidTimezone } from '../knowledge/schemas/common.js';
 
+// Reutilizado por las herramientas de aprovisionamiento (007) con las mismas reglas del arranque.
+export { isValidTimezone };
+
 /** Texto opcional: vacío o solo espacios cuenta como ausente (líneas `VAR=` de `.env`). */
 const optionalText = z
   .string()
@@ -20,7 +23,7 @@ const RETENTION_MESSAGE = 'BACKUP_RETENTION_DAYS debe estar entre 1 y 30 días (
  * Origen de una URL pública (`https://host[:puerto]`), o `null` si tiene ruta, consulta,
  * credenciales o es `http` fuera de localhost.
  */
-function publicOrigin(value: string): string | null {
+export function publicOrigin(value: string): string | null {
   let url: URL;
   try {
     url = new URL(value);
@@ -89,6 +92,7 @@ const envSchema = z.object({
         ctx.addIssue({
           code: 'custom',
           message: 'TRUST_PROXY no admite true: indica saltos o IP/CIDR',
+          params: { rule: 'trust_proxy_all' },
         });
         return z.NEVER;
       }
@@ -132,6 +136,7 @@ const envSchema = z.object({
             code: 'custom',
             message:
               'PUBLIC_BASE_URL debe ser una URL https sin ruta (http solo con localhost o 127.0.0.1)',
+            params: { rule: 'public_url_invalid' },
           });
           return z.NEVER;
         }
@@ -278,7 +283,7 @@ export interface BackupEnv {
 }
 
 /** Normaliza un teléfono a E.164 o devuelve `null` si no es válido. */
-function toE164(value: string): string | null {
+export function toE164(value: string): string | null {
   const phone = parsePhoneNumberFromString(value);
   return phone?.isValid() ? phone.number : null;
 }
@@ -303,6 +308,7 @@ const botSchema = envSchema.transform((raw, ctx) => {
     ctx.addIssue({
       code: 'custom',
       message: `Las variables WHATSAPP_* van juntas; faltan: ${missing.join(', ')}`,
+      params: { rule: 'whatsapp_incomplete', variables: missing },
     });
   }
 
@@ -313,6 +319,7 @@ const botSchema = envSchema.transform((raw, ctx) => {
       ctx.addIssue({
         code: 'custom',
         message: 'EMERGENCY_CONTACT_PHONE debe ser un teléfono en formato E.164 (+34...)',
+        params: { rule: 'emergency_phone_invalid', variables: ['EMERGENCY_CONTACT_PHONE'] },
       });
     }
   } else if (raw.ANTHROPIC_API_KEY !== undefined || whatsapp) {
@@ -320,6 +327,7 @@ const botSchema = envSchema.transform((raw, ctx) => {
     ctx.addIssue({
       code: 'custom',
       message: 'EMERGENCY_CONTACT_PHONE es obligatoria con ANTHROPIC_API_KEY',
+      params: { rule: 'emergency_phone_required', variables: ['EMERGENCY_CONTACT_PHONE'] },
     });
   }
 
@@ -327,6 +335,7 @@ const botSchema = envSchema.transform((raw, ctx) => {
     ctx.addIssue({
       code: 'custom',
       message: 'ANTHROPIC_API_KEY es obligatoria con el canal de WhatsApp',
+      params: { rule: 'llm_key_required', variables: ['ANTHROPIC_API_KEY'] },
     });
   }
 
@@ -335,6 +344,7 @@ const botSchema = envSchema.transform((raw, ctx) => {
     ctx.addIssue({
       code: 'custom',
       message: 'STT_API_KEY es obligatoria con AUDIO_TRANSCRIPTION=on',
+      params: { rule: 'stt_key_required', variables: ['STT_API_KEY'] },
     });
   }
 
@@ -346,6 +356,10 @@ const botSchema = envSchema.transform((raw, ctx) => {
     ctx.addIssue({
       code: 'custom',
       message: 'SMTP_URL y SMTP_FROM van juntas: indica las dos o ninguna',
+      params: {
+        rule: 'smtp_incomplete',
+        variables: [raw.SMTP_URL === undefined ? 'SMTP_URL' : 'SMTP_FROM'],
+      },
     });
   }
 
@@ -361,17 +375,23 @@ const botSchema = envSchema.transform((raw, ctx) => {
       previousKeys: raw.BACKUP_KEYS_PREVIOUS,
     };
     if (backup.key === raw.SESSION_SECRET.toLowerCase()) {
-      ctx.addIssue({ code: 'custom', message: 'BACKUP_KEY debe ser distinta de SESSION_SECRET' });
+      ctx.addIssue({
+        code: 'custom',
+        message: 'BACKUP_KEY debe ser distinta de SESSION_SECRET',
+        params: { rule: 'backup_key_equals_session', variables: ['BACKUP_KEY'] },
+      });
     }
   } else if (raw.NODE_ENV === 'production') {
     ctx.addIssue({
       code: 'custom',
       message: `En production las copias son obligatorias; faltan: ${backupMissing.join(', ')}`,
+      params: { rule: 'backup_required', variables: backupMissing },
     });
   } else if (backupPresent.length > 0) {
     ctx.addIssue({
       code: 'custom',
       message: `INSTANCE_ID, BACKUP_DIR y BACKUP_KEY van juntas; faltan: ${backupMissing.join(', ')}`,
+      params: { rule: 'backup_incomplete', variables: backupMissing },
     });
   }
 
@@ -395,6 +415,42 @@ export function loadEnv(source: NodeJS.ProcessEnv = process.env): Env {
     throw new Error(`Configuración de la instancia no válida:\n${detail}`);
   }
   return result.data;
+}
+
+/**
+ * Incidencia de la validación del entorno (007, research R2): la variable afectada, la regla
+ * (`missing`, `core_rule` o la de una regla propia del núcleo) y el mensaje del arranque.
+ */
+export interface EnvIssue {
+  variable: string | null;
+  rule: string;
+  message: string;
+}
+
+/**
+ * Las mismas reglas que `loadEnv`, una entrada por variable afectada. No lanza ni cambia el
+ * arranque: lo usan las herramientas de aprovisionamiento para validar un entorno leído.
+ */
+export function checkEnv(source: NodeJS.ProcessEnv): EnvIssue[] {
+  const result = botSchema.safeParse(source);
+  if (result.success) return [];
+  return result.error.issues.flatMap((issue): EnvIssue[] => {
+    const params = (issue as { params?: { rule?: unknown; variables?: unknown } }).params;
+    const field = typeof issue.path[0] === 'string' ? issue.path[0] : null;
+    if (typeof params?.rule === 'string') {
+      const variables = Array.isArray(params.variables)
+        ? params.variables.filter((v): v is string => typeof v === 'string')
+        : [field];
+      return variables.map((variable) => ({
+        variable,
+        rule: String(params.rule),
+        message: issue.message,
+      }));
+    }
+    const value = field === null ? undefined : source[field];
+    const rule = value === undefined || value.trim() === '' ? 'missing' : 'core_rule';
+    return [{ variable: field, rule, message: issue.message }];
+  });
 }
 
 /** Carga `.env` si existe (desarrollo local). En producción las variables llegan del entorno. */

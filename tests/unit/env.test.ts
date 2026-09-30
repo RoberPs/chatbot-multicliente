@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { loadEnv } from '../../src/config/env.js';
+import { checkEnv, loadEnv } from '../../src/config/env.js';
 
 const base = {
   DATABASE_URL: 'postgres://x',
@@ -327,5 +327,180 @@ describe('variables de la instancia', () => {
           .BACKUP_VERIFY_URL,
       ).toBe('postgres://verificador@otra/postgres');
     });
+  });
+});
+
+describe('checkEnv (007, research R2)', () => {
+  const rules = (source: Record<string, string | undefined>) =>
+    checkEnv(source).map((i) => `${i.rule}:${i.variable ?? '-'}`);
+
+  it('entorno válido → sin incidencias', () => {
+    expect(checkEnv(base)).toEqual([]);
+  });
+
+  it('cada incidencia trae variable, regla y el mensaje del núcleo', () => {
+    expect(checkEnv({ ...base, TRUST_PROXY: 'true' })).toEqual([
+      {
+        variable: 'TRUST_PROXY',
+        rule: 'trust_proxy_all',
+        message: 'TRUST_PROXY no admite true: indica saltos o IP/CIDR',
+      },
+    ]);
+  });
+
+  it('WhatsApp parcial → una entrada whatsapp_incomplete por variable que falta', () => {
+    const issues = checkEnv({
+      ...base,
+      WHATSAPP_PHONE_NUMBER_ID: '1',
+      WHATSAPP_VERIFY_TOKEN: 'v',
+      WHATSAPP_GRAPH_VERSION: 'v23.0',
+      ANTHROPIC_API_KEY: 'k',
+      EMERGENCY_CONTACT_PHONE: '+34600111222',
+    });
+    expect(issues.map((i) => `${i.rule}:${i.variable ?? '-'}`)).toEqual([
+      'whatsapp_incomplete:WHATSAPP_ACCESS_TOKEN',
+      'whatsapp_incomplete:WHATSAPP_APP_SECRET',
+    ]);
+    expect(issues[0]?.message).toBe(
+      'Las variables WHATSAPP_* van juntas; faltan: WHATSAPP_ACCESS_TOKEN, WHATSAPP_APP_SECRET',
+    );
+  });
+
+  it('copias que faltan en production → backup_required por variable', () => {
+    const { BACKUP_DIR: _d, BACKUP_KEY: _k, ...rest } = base;
+    expect(rules(rest)).toEqual(['backup_required:BACKUP_DIR', 'backup_required:BACKUP_KEY']);
+  });
+
+  it('copias parciales fuera de production → backup_incomplete', () => {
+    const { BACKUP_KEY: _k, ...rest } = base;
+    expect(rules({ ...rest, NODE_ENV: 'development' })).toEqual(['backup_incomplete:BACKUP_KEY']);
+  });
+
+  it('SMTP a medias → smtp_incomplete con la variable que falta', () => {
+    expect(rules({ ...base, SMTP_URL: 'smtp://correo.ejemplo.com:587' })).toEqual([
+      'smtp_incomplete:SMTP_FROM',
+    ]);
+    expect(rules({ ...base, SMTP_FROM: 'avisos@ejemplo.com' })).toEqual([
+      'smtp_incomplete:SMTP_URL',
+    ]);
+  });
+
+  it('BACKUP_KEY igual a SESSION_SECRET → backup_key_equals_session', () => {
+    expect(rules({ ...base, BACKUP_KEY: base.SESSION_SECRET })).toEqual([
+      'backup_key_equals_session:BACKUP_KEY',
+    ]);
+  });
+
+  it('reglas del bot: teléfono de emergencia, clave del modelo y transcripción', () => {
+    expect(rules({ ...base, ANTHROPIC_API_KEY: 'k' })).toEqual([
+      'emergency_phone_required:EMERGENCY_CONTACT_PHONE',
+    ]);
+    expect(rules({ ...base, EMERGENCY_CONTACT_PHONE: '600' })).toEqual([
+      'emergency_phone_invalid:EMERGENCY_CONTACT_PHONE',
+    ]);
+    expect(
+      rules({
+        ...base,
+        ANTHROPIC_API_KEY: 'k',
+        EMERGENCY_CONTACT_PHONE: '+34600111222',
+        AUDIO_TRANSCRIPTION: 'on',
+      }),
+    ).toEqual(['stt_key_required:STT_API_KEY']);
+    const whatsapp = {
+      WHATSAPP_PHONE_NUMBER_ID: '1',
+      WHATSAPP_ACCESS_TOKEN: 't',
+      WHATSAPP_APP_SECRET: 's',
+      WHATSAPP_VERIFY_TOKEN: 'v',
+      WHATSAPP_GRAPH_VERSION: 'v23.0',
+      EMERGENCY_CONTACT_PHONE: '+34600111222',
+    };
+    expect(rules({ ...base, ...whatsapp })).toEqual(['llm_key_required:ANTHROPIC_API_KEY']);
+  });
+
+  it('PUBLIC_BASE_URL no válida → public_url_invalid', () => {
+    expect(rules({ ...base, PUBLIC_BASE_URL: 'http://chat.ejemplo.com' })).toEqual([
+      'public_url_invalid:PUBLIC_BASE_URL',
+    ]);
+  });
+
+  it('incidencias de campo sin regla propia: missing si falta el valor, core_rule si no', () => {
+    const { SESSION_SECRET: _s, ...rest } = base;
+    expect(rules({ ...rest, BACKUP_RETENTION_DAYS: '40' })).toEqual([
+      'missing:SESSION_SECRET',
+      'core_rule:BACKUP_RETENTION_DAYS',
+    ]);
+    expect(rules({ ...base, DATABASE_URL: '' })).toEqual(['missing:DATABASE_URL']);
+    expect(rules({ ...base, OPERATOR_PASSWORD_HASH: ' ' })).toEqual([
+      'missing:OPERATOR_PASSWORD_HASH',
+    ]);
+    expect(rules({ ...base, SESSION_SECRET: 'abc' })).toEqual([
+      'core_rule:SESSION_SECRET',
+      'core_rule:SESSION_SECRET',
+    ]);
+  });
+
+  // FR-034: el arranque no cambia. Textos capturados antes de añadir checkEnv.
+  it.each([
+    [
+      'vacío',
+      {},
+      'Configuración de la instancia no válida:\n- Invalid input: expected string, received undefined\n- Invalid input: expected string, received undefined\n- Invalid input: expected string, received undefined\n- Invalid input: expected string, received undefined\n- NODE_ENV es obligatoria: development, production o test',
+    ],
+    [
+      'WhatsApp parcial',
+      {
+        ...base,
+        WHATSAPP_PHONE_NUMBER_ID: '1',
+        WHATSAPP_ACCESS_TOKEN: 't',
+        ANTHROPIC_API_KEY: 'k',
+        EMERGENCY_CONTACT_PHONE: '+34600111222',
+      },
+      'Configuración de la instancia no válida:\n- Las variables WHATSAPP_* van juntas; faltan: WHATSAPP_APP_SECRET, WHATSAPP_VERIFY_TOKEN, WHATSAPP_GRAPH_VERSION',
+    ],
+    [
+      'copias en production',
+      { ...base, BACKUP_KEY: undefined, BACKUP_DIR: undefined },
+      'Configuración de la instancia no válida:\n- En production las copias son obligatorias; faltan: BACKUP_DIR, BACKUP_KEY',
+    ],
+    [
+      'proxy y URL',
+      { ...base, TRUST_PROXY: 'true', PUBLIC_BASE_URL: 'http://x.com', SMTP_URL: 'smtp://h:587' },
+      'Configuración de la instancia no válida:\n- TRUST_PROXY no admite true: indica saltos o IP/CIDR\n- PUBLIC_BASE_URL debe ser una URL https sin ruta (http solo con localhost o 127.0.0.1)',
+    ],
+    [
+      'reglas del bot y clave igual',
+      {
+        ...base,
+        BACKUP_KEY: base.SESSION_SECRET,
+        AUDIO_TRANSCRIPTION: 'on',
+        ANTHROPIC_API_KEY: 'k',
+      },
+      'Configuración de la instancia no válida:\n- EMERGENCY_CONTACT_PHONE es obligatoria con ANTHROPIC_API_KEY\n- STT_API_KEY es obligatoria con AUDIO_TRANSCRIPTION=on\n- BACKUP_KEY debe ser distinta de SESSION_SECRET',
+    ],
+    [
+      'campos',
+      {
+        ...base,
+        SESSION_SECRET: 'x',
+        BACKUP_RETENTION_DAYS: '40',
+        BACKUP_KEYS_PREVIOUS: 'abc',
+        EMERGENCY_CONTACT_PHONE: '600',
+      },
+      'Configuración de la instancia no válida:\n- SESSION_SECRET debe ser 32 bytes aleatorios en hexadecimal (openssl rand -hex 32)\n- SESSION_SECRET no parece aleatoria\n- BACKUP_KEYS_PREVIOUS debe ser una lista de claves de 64 hex separadas por comas\n- BACKUP_RETENTION_DAYS debe estar entre 1 y 30 días (máximo 30)',
+    ],
+    [
+      'copias parciales en development',
+      { ...base, NODE_ENV: 'development', BACKUP_KEY: undefined },
+      'Configuración de la instancia no válida:\n- INSTANCE_ID, BACKUP_DIR y BACKUP_KEY van juntas; faltan: BACKUP_KEY',
+    ],
+  ])('el error de loadEnv es idéntico al de antes (%s)', (_name, source, expected) => {
+    const env = Object.fromEntries(Object.entries(source).filter(([, v]) => v !== undefined));
+    let message = '';
+    try {
+      loadEnv(env);
+    } catch (error) {
+      message = (error as Error).message;
+    }
+    expect(message).toBe(expected);
   });
 });
