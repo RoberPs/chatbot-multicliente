@@ -124,8 +124,9 @@ guarda `collecting`. En el turno siguiente (fila 5):
 3. ≥ 1 vía `ok` → transacción: `handoff` `active` (`reminder_due_at` según R13) + un
    `handoff_notice` por vía + `handoff_step = null` + saliente de confirmación que cubre los
    entrantes. Respuesta: R-HANDOFF-OK (o R-HANDOFF-COMPLAINT) con la franja si procede (FR-010).
-4. Ninguna `ok` → nada guardado de la derivación; respuesta de FR-012: cuerpo del modelo +
-   CONTACTO (`handoff_unavailable`) o, si era una queja, la fila 2.
+4. Ninguna `ok` → nada guardado de la derivación; respuesta de FR-012: R-HANDOFF-FAIL +
+   CONTACTO (`handoff_unavailable`) o, si era una queja, la fila 2. **Nunca** el cuerpo del
+   modelo: al recibir los datos de contacto suele contestar que le contactarán (hallado en T132).
 
 Con `simulateAlerts` (playground) la única vía es `simulated`: siempre `ok` y guarda el texto
 del aviso en `handoff_notice.body` (FR-021).
@@ -147,6 +148,7 @@ la franja calculada y, cuando se indica, el bloque CONTACTO.
 | R-HANDOFF-OK | derivación iniciada, negocio cerrado | "He avisado a {negocio}. Ahora mismo no están atendiendo; te contactarán en el {teléfono} a partir de {franja}." (sin franja en 60 días: "…te contactarán en el {teléfono} en cuanto puedan.") |
 | R-HANDOFF-COMPLAINT | queja derivada | "Siento las molestias. He pasado tu reclamación a {negocio}; te contactarán en el {teléfono}" + (" lo antes posible." · " a partir de {franja}.") |
 | R-HANDOFF-COMPLAINT | queja sin vías o sin entrega | "Siento las molestias. Para tu reclamación, puedes contactar directamente con {negocio}." + CONTACTO |
+| R-HANDOFF-FAIL | petición o consulta sin entrega (FR-012) | "No he podido avisar a {negocio} ahora mismo. Puedes contactar directamente:" + CONTACTO |
 | R-HANDOFF-LATE | recordatorio (FR-019) | "{negocio} todavía no ha podido responderte. Si lo prefieres, puedes contactar directamente:" + CONTACTO |
 
 En WhatsApp, "te contactarán en el {teléfono}" usa el número del propio cliente (su

@@ -19,6 +19,7 @@ const TEMPLATE_NAMES: Record<NonNullable<ReplyTrace['template']>, string> = {
   'R-HANDOFF-PHONE': 'pide de nuevo el teléfono',
   'R-HANDOFF-OK': 'derivación confirmada',
   'R-HANDOFF-COMPLAINT': 'queja',
+  'R-HANDOFF-FAIL': 'no se pudo avisar al negocio',
   'R-HANDOFF-LATE': 'el negocio aún no ha respondido',
 };
 

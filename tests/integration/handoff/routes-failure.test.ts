@@ -12,6 +12,7 @@ import { FakeAlertRoute, FakeSummarizer, reply } from '../../helpers/fakes.js';
 const ALERTS = { whatsapp: '+34611000111', email: 'avisos@negocio.es' };
 const OK = 'He avisado a Peluquería Tijeras.';
 const CONTACT = 'Para hablar con una persona de Peluquería Tijeras:';
+const FAIL = 'No he podido avisar a Peluquería Tijeras ahora mismo.';
 
 describe('US1: fallos de las vías de aviso', () => {
   let t: TestDatabase;
@@ -28,9 +29,9 @@ describe('US1: fallos de las vías de aviso', () => {
     bot = null;
   });
 
-  async function request(opts: TestBotOptions) {
+  async function request(opts: TestBotOptions, modelBody = 'De acuerdo.') {
     const b = (bot = await createTestBot(t, opts));
-    b.model.queue(reply('De acuerdo.', { handoffRequested: true }));
+    b.model.queue(reply(modelBody, { handoffRequested: true }));
     await b.send('Quiero hablar con una persona');
     await b.settle();
     const [outbound] = await t.db
@@ -69,8 +70,10 @@ describe('US1: fallos de las vías de aviso', () => {
       },
     });
     expect(outbound?.body).not.toContain(OK);
+    expect(outbound?.body).toContain(FAIL);
     expect(outbound?.body).toContain(CONTACT);
     expect(outbound?.replyTrace).toMatchObject({
+      template: 'R-HANDOFF-FAIL',
       contact: { added: true, reason: 'handoff_unavailable' },
       handoff: { action: 'not_started', routes: { whatsapp: 'failed', email: 'failed' } },
     });
@@ -79,6 +82,22 @@ describe('US1: fallos de las vías de aviso', () => {
     expect(b.log.named('handoff_not_started')).toEqual([
       expect.objectContaining({ reason: 'delivery_failed' }),
     ]);
+  });
+
+  it('sin entrega, el cuerpo del modelo no llega al cliente aunque prometa el contacto', async () => {
+    const { outbound } = await request(
+      {
+        handoffAlerts: ALERTS,
+        alertRoutes: {
+          whatsapp: new FakeAlertRoute('whatsapp', { fail: 'network' }),
+          email: new FakeAlertRoute('email', { fail: 'network' }),
+        },
+      },
+      'Gracias. Hemos anotado sus datos, en breve le contactarán.',
+    );
+    expect(outbound?.body).not.toContain('anotado');
+    expect(outbound?.body).not.toContain('contactarán');
+    expect(outbound?.body).toContain(FAIL);
   });
 
   it('ninguna vía configurada → el contacto de la 002 y no_routes', async () => {

@@ -98,6 +98,15 @@ export const complaintContactReply = (business: string, form: Form): string =>
     ? `Siento las molestias. Para su reclamación, puede contactar directamente con ${business}.`
     : `Siento las molestias. Para tu reclamación, puedes contactar directamente con ${business}.`;
 
+/**
+ * R-HANDOFF-FAIL (FR-012): petición o consulta sin aviso entregado. Sustituye al cuerpo del
+ * modelo, que puede haber prometido el contacto (p. ej. al recibir los datos). Va con CONTACTO.
+ */
+export const failedReply = (business: string, form: Form): string =>
+  form === 'usted'
+    ? `No he podido avisar a ${business} ahora mismo. Puede contactar directamente:`
+    : `No he podido avisar a ${business} ahora mismo. Puedes contactar directamente:`;
+
 /** R-HANDOFF-LATE (FR-019): el negocio no ha confirmado en 2 horas de horario. Va con CONTACTO. */
 export const lateReply = (business: string, form: Form): string =>
   form === 'usted'

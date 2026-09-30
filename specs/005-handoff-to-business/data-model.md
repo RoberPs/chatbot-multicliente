@@ -183,7 +183,7 @@ interface NoticeHandoff {
 - `ReplyContext`: + `handoffStep: HandoffStep | null` y `handoffEnded: boolean` (hubo una
   derivación terminada en esta conversación), que el prompt convierte en indicaciones.
 - `ReplyTemplate` y `replyTraceSchema.template`: + `R-HANDOFF-ASK`, `R-HANDOFF-PHONE`,
-  `R-HANDOFF-OK`, `R-HANDOFF-COMPLAINT`, `R-HANDOFF-LATE`.
+  `R-HANDOFF-OK`, `R-HANDOFF-COMPLAINT`, `R-HANDOFF-FAIL`, `R-HANDOFF-LATE`.
 - `ContactReason`: + `handoff_unavailable` (petición o queja sin vías o con el aviso no
   entregado, FR-012) y `contact_refused` (el cliente no dio sus datos, FR-004); `offer_contact` y
   `booking_requested` siguen existiendo para cuando no hay vías.

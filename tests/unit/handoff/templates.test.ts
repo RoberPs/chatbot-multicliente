@@ -6,6 +6,7 @@ import {
   complaintContactReply,
   complaintReply,
   confirmedReply,
+  failedReply,
   lateReply,
   lateReplyWithContact,
   offerQuestion,
@@ -179,6 +180,17 @@ describe('R-HANDOFF-COMPLAINT (US6)', () => {
     );
     expect(complaintContactReply(BUSINESS, 'usted')).toBe(
       'Siento las molestias. Para su reclamación, puede contactar directamente con Peluquería Tijeras.',
+    );
+  });
+});
+
+describe('R-HANDOFF-FAIL (FR-012)', () => {
+  it('no confirma nada y remite al contacto directo, en tú y en usted', () => {
+    expect(failedReply(BUSINESS, 'tu')).toBe(
+      'No he podido avisar a Peluquería Tijeras ahora mismo. Puedes contactar directamente:',
+    );
+    expect(failedReply(BUSINESS, 'usted')).toBe(
+      'No he podido avisar a Peluquería Tijeras ahora mismo. Puede contactar directamente:',
     );
   });
 });

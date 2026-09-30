@@ -74,6 +74,7 @@ export const REPLY_TEMPLATES = [
   'R-HANDOFF-PHONE',
   'R-HANDOFF-OK',
   'R-HANDOFF-COMPLAINT',
+  'R-HANDOFF-FAIL',
   'R-HANDOFF-LATE',
 ] as const;
 
