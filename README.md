@@ -8,7 +8,7 @@ Estados: especificada → planificada → en implementación → completada (o a
 | 002 | Atención de dudas y precios por WhatsApp | Núcleo | En implementación | `002-whatsapp-faq-bot` | [spec](specs/002-whatsapp-faq-bot/spec.md) · [plan](specs/002-whatsapp-faq-bot/plan.md) · [tareas](specs/002-whatsapp-faq-bot/tasks.md) | 2026-09-25  |
 | 003 | Claridad del panel del operador y enlace a mapa | Núcleo | En implementación | `004-web-channel` | [spec](specs/003-admin-panel-clarity/spec.md) · [plan](specs/003-admin-panel-clarity/plan.md) · [tareas](specs/003-admin-panel-clarity/tasks.md) | 2026-09-28  |
 | 004 | Canal web del bot de atención | Núcleo | Completada | `004-web-channel` | [spec](specs/004-web-channel/spec.md) · [plan](specs/004-web-channel/plan.md) · [tareas](specs/004-web-channel/tasks.md) | 2026-09-28  |
-| 005 | Derivación de la conversación al negocio | Núcleo | En implementación | `005-handoff-to-business` | [spec](specs/005-handoff-to-business/spec.md) · [plan](specs/005-handoff-to-business/plan.md) · [tareas](specs/005-handoff-to-business/tasks.md) | 2026-09-29  |
+| 005 | Derivación de la conversación al negocio | Núcleo | Completada | `005-handoff-to-business` | [spec](specs/005-handoff-to-business/spec.md) · [plan](specs/005-handoff-to-business/plan.md) · [tareas](specs/005-handoff-to-business/tasks.md) | 2026-09-30  |
 | 006 | Copias de seguridad y restauración por instancia | Núcleo | Completada | `006-instance-backup-restore` | [spec](specs/006-instance-backup-restore/spec.md) · [plan](specs/006-instance-backup-restore/plan.md) · [tareas](specs/006-instance-backup-restore/tasks.md) | 2026-09-29  |
 
 ---
@@ -111,8 +111,8 @@ siguiente petición: los visitantes pasan a ver "no disponible" con el contacto 
 
 En `http://localhost:3000/admin/handoffs` se configuran los destinos de los avisos: un WhatsApp,
 un email o ambos. Sin ninguno configurado el bot sigue dando el contacto de derivación de la
-002 (el panel lo avisa, sin bloquear la activación del negocio); con uno solo, el panel avisa de
-que solo llegan por esa vía.
+002 y el panel muestra el aviso normal `HANDOFF_ALERTS_NONE`, que no bloquea la activación del
+negocio; con uno solo, el aviso `HANDOFF_ALERTS_SINGLE` recuerda que solo llegan por esa vía.
 
 - La vía **WhatsApp** necesita el canal de WhatsApp ya configurado y las tres plantillas de
   utilidad aprobadas por Meta (aviso, recordatorio y reenvío de mensajes): `pnpm handoff:templates`
@@ -128,7 +128,9 @@ se reenvían al negocio, y el chat web muestra una franja fija en su lugar. El n
 ("Le atiendo") o termina ("Terminado") con los botones de WhatsApp o los enlaces del email; el
 operador también puede terminarla desde el panel o desde "Probar el bot". Sin confirmar, a las
 24 h sin mensajes del cliente la conversación vuelve sola al bot; si el negocio no confirma en
-2 horas de horario, recibe un recordatorio único y el cliente, el contacto directo. La guía de
+2 horas de horario, recibe un recordatorio único y el cliente, el contacto directo. Si el aviso
+no llega por ninguna vía, la conversación no se deriva: el bot dice que no ha podido avisar al
+negocio y da el contacto de derivación, sin prometer que le contactarán. La guía de
 validación manual está en
 [specs/005-handoff-to-business/quickstart.md](specs/005-handoff-to-business/quickstart.md).
 

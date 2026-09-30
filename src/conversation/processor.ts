@@ -13,6 +13,7 @@ import {
   complaintContactReply,
   complaintReply,
   confirmedReply,
+  failedReply,
   offerQuestion,
   phoneRetryReply,
 } from '../handoff/templates.js';
@@ -410,8 +411,10 @@ export function createProcessor(deps: ProcessorDeps): Processor {
       modelMs: response.modelMs,
     });
     /**
-     * Salida a una persona sin derivación (FR-004, FR-012): cuerpo del modelo con CONTACTO o, si
-     * es una queja, la disculpa de R-HANDOFF-COMPLAINT con CONTACTO y nunca el cuerpo (FR-003).
+     * Salida a una persona sin derivación (FR-004, FR-012), siempre con CONTACTO: si es una
+     * queja, la disculpa de R-HANDOFF-COMPLAINT (FR-003); si el aviso no se entregó, R-HANDOFF-FAIL,
+     * porque el cuerpo del modelo puede haber prometido el contacto; si el cliente no dio sus
+     * datos, el cuerpo del modelo.
      */
     const withContact = (reason: 'handoff_unavailable' | 'contact_refused', kind: HandoffKind) => ({
       ...composeReply({
@@ -425,7 +428,9 @@ export function createProcessor(deps: ProcessorDeps): Processor {
               body: complaintContactReply(business, form),
               template: 'R-HANDOFF-COMPLAINT' as const,
             }
-          : { body: model.reply.body }),
+          : reason === 'handoff_unavailable'
+            ? { body: failedReply(business, form), template: 'R-HANDOFF-FAIL' as const }
+            : { body: model.reply.body }),
       }),
       modelMs: response.modelMs,
     });

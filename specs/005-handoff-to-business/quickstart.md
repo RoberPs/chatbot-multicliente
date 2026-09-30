@@ -18,7 +18,7 @@ en [contracts/business-alerts.md](contracts/business-alerts.md) y las páginas e
 
   ```env
   SMTP_URL=smtp://localhost:1025
-  SMTP_FROM=asistente@localhost
+  SMTP_FROM=asistente@ejemplo.com
   PUBLIC_BASE_URL=http://localhost:3000
   ```
 
