@@ -178,6 +178,10 @@ rechaza con un error comprensible y que la configuración del destino no cambia.
 - **Webs permitidas distintas entre origen y destino con el chat web del destino activo** (por
   ejemplo, una web de pruebas en el origen): se importan las del fichero, y la vista previa advierte
   de las webs que dejarán de poder usar el chat antes de confirmar.
+- **Chat web del destino activado y fichero sin webs permitidas o sin enlace de privacidad**: la
+  importación se rechaza sin aplicar nada, igual que el panel no deja guardar esa configuración
+  con el chat web activado; la vista previa lo anticipa y pide desactivar antes el chat web o
+  corregir el fichero.
 - **Fichero vacío de una sección** (por ejemplo, sin preguntas frecuentes): se interpreta como que el
   negocio no tiene elementos en esa sección, y la vista previa muestra que se eliminarán los del
   destino.
@@ -260,7 +264,9 @@ rechaza con un error comprensible y que la configuración del destino no cambia.
 - **FR-018**: La importación MUST permitirse tanto en negocios en preparación como activos, con el
   mismo flujo de vista previa y confirmación. Si el negocio del destino está activo y la
   configuración resultante tiene algún aviso crítico, la importación MUST rechazarse sin aplicar
-  nada, indicando los avisos que lo impiden (FR-032 de la 001).
+  nada, indicando los avisos que lo impiden (FR-032 de la 001). Del mismo modo, si el chat web del
+  destino está activado y el fichero no trae webs permitidas o enlace de privacidad, la
+  importación MUST rechazarse sin aplicar nada.
 - **FR-019**: Si la configuración del destino ha cambiado desde que se generó la vista previa, la
   confirmación MUST rechazarse sin aplicar nada y pedir una vista previa nueva.
 - **FR-020**: Tras aplicar, el sistema MUST mostrar el resultado (elementos añadidos, modificados y
@@ -316,7 +322,8 @@ rechaza con un error comprensible y que la configuración del destino no cambia.
 - **SC-004**: En el 100 % de las importaciones, el estado del negocio y del chat web del destino es
   el mismo antes y después.
 - **SC-005**: En el 100 % de las importaciones rechazadas (fichero inválido, versión futura, aviso
-  crítico en un negocio activo, cambio concurrente o fallo a mitad), la configuración del destino
+  crítico en un negocio activo, chat web activado que quedaría sin webs o sin enlace de privacidad,
+  cambio concurrente o fallo a mitad), la configuración del destino
   es idéntica a la de antes.
 - **SC-006**: El operador pasa la configuración de un negocio completo de la instancia de pruebas a
   producción en menos de 5 minutos, frente a volver a registrarla a mano.
