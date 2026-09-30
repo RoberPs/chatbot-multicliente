@@ -129,7 +129,7 @@ Quitar medios de derivación, el recuadro "Contacto que usa el bot", los mensaje
 los resúmenes de la portada y el campo "Enlace a mapa" se validan con los escenarios de la
 [guía de la 003](../003-admin-panel-clarity/quickstart.md).
 
-## Resultado de la validación (2026-09-24)
+## Resultado de la validación (2026-09-24; escenario 8, 2026-09-30)
 
 Escenarios 1–6 recorridos contra `pnpm dev` con un script que envía los formularios del panel
 como un navegador sin JavaScript y comprueba cada paso con `pnpm kb:snapshot` y la portada:
@@ -144,7 +144,7 @@ como un navegador sin JavaScript y comprueba cada paso con `pnpm kb:snapshot` y 
 | 5. FAQ, políticas, tono y derivación | Correcto: antelación 31 días rechazada en `min_advance` |
 | 6. Activación y protección | Correcto: `409` al borrar el teléfono con el negocio activo; tras desactivar, `HANDOFF_UNREACHABLE` |
 | 7. Neutralidad sectorial | Correcto: `pnpm test sector-neutrality` en verde |
-| 8. Tiempo de alta (SC-001) | Pendiente: lo tiene que cronometrar una persona en el panel |
+| 8. Tiempo de alta (SC-001) | Correcto (2026-09-30): unos 15 minutos en el panel, con BD recién creada, incluido el tiempo de buscar algunos datos fuera del panel. Registrado: datos del negocio, horario de 5 días, 6 servicios (de los 10 previstos), 3 recursos, 10 FAQ, políticas, tono y contacto de derivación; negocio activado |
 
 Rendimiento medido con `tests/integration/performance.test.ts` (Docker Desktop en Windows):
 `getSnapshot()` p95 ≈ 25–31 ms con la suite completa en paralelo (objetivo < 50 ms; el estado se carga en una sola consulta) y guardado de servicio p95 ≈ 60–70 ms

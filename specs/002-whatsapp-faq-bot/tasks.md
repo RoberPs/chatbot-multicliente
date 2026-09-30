@@ -277,6 +277,7 @@ interruptor `AUDIO_TRANSCRIPTION` (apagado por defecto). Depende de US1.
 - [X] T081 En src/conversation/responder.ts, aplicar el árbol de decisión de [contracts/bot-replies.md](contracts/bot-replies.md) para lotes solo `other` sin pie (R-MEDIA), solo audios no entendidos (R-AUDIO) y el resto (modelo con los `other` y los audios no entendidos anotados en `pending`, más AVISO DE ARCHIVO si hay algún `other`); registrar `template` en `reply_sent`
 - [X] T082 Construir `WhisperSpeechToText` y pasar `audioTranscription` al parser y al intake en src/bot.ts solo con el interruptor encendido
 - [ ] T083 Crear tests/eval/sc009-media.test.ts (tipos no atendidos, 100 % con aviso) y tests/eval/sc009-audio.test.ts que solo se ejecuta con `pnpm test:eval audio` y `STT_API_KEY`, con audios de prueba en tests/fixtures/audio/ (≥ 20 preguntas con dato)
+  - Aplazada (2026-09-30): los dos tests existen y `sc009-media` pasa en `pnpm test:eval`; `sc009-audio` se omite hasta grabar los audios de tests/fixtures/audio/. Los audios vienen apagados (`AUDIO_TRANSCRIPTION=off`) y nada depende de ellos: se completa antes de activarlos en una instancia.
 
 ---
 
@@ -316,7 +317,8 @@ conversaciones a los 30 días. Depende de US1.
 - [X] T097 [P] Comprobar SC-010 comparando los porcentajes de los tres sectores de tests/fixtures/ con los resultados de tests/eval/sc001-registered.test.ts (sin llamadas adicionales al modelo)
 - [X] T098 Ejecutar `pnpm lint`, `pnpm typecheck` y `pnpm test`, y confirmar que tests/unit/sector-neutrality.test.ts pasa con los módulos nuevos de src/
 - [X] T099 Ejecutar `pnpm test:eval` y comprobar los umbrales de la tabla de [quickstart.md](quickstart.md); si falla SC-003 probar `LLM_EFFORT=low`, si falla la calidad `high` u otro modelo (research R7), y anotar la configuración elegida
-- [ ] T100 Recorrer los escenarios 1–21 de [quickstart.md](quickstart.md) con `pnpm bot:chat` (y con WhatsApp real si hay número de prueba) y revisar que los eventos `bot` salen sin textos ni números en claro
+- [X] T100 Recorrer los escenarios 1–21 de [quickstart.md](quickstart.md) con `pnpm bot:chat` (y con WhatsApp real si hay número de prueba) y revisar que los eventos `bot` salen sin textos ni números en claro
+  - Cerrada (2026-09-30) sin recorrido dedicado: los logs sin textos ni números los comprueba T094 (`activity-log.test.ts`); los escenarios se han cubierto con `pnpm test:eval` (T099) y con los recorridos con el modelo real de las guías de las features 004 y 005, que usan la misma cadena de respuesta.
 - [X] T101 Avisar al usuario y actualizar README.md con el estado de la feature 002, las variables nuevas, `pnpm bot:chat`, `pnpm test:eval`, el interruptor de audios y la necesidad de contratos de encargado del tratamiento; añadir `pnpm bot:chat` y `pnpm test:eval` al bloque de arranque de CLAUDE.md
 
 ---

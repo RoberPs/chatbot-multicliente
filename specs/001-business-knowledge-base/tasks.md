@@ -281,7 +281,7 @@ datos los hace desaparecer; el guardado nunca se bloquea por avisos normales.
 - [X] T110 [P] Documentar puesta en marcha, variables de entorno y comandos (enlazando specs/001-business-knowledge-base/quickstart.md) en README.md
 - [X] T111 Revisión de seguridad del panel en src/app.ts y src/admin/auth/plugin.ts: cabeceras `X-Frame-Options: DENY`, `Content-Security-Policy` restrictiva (htmx servido localmente), `Referrer-Policy`, `Cache-Control: no-store` en `/admin`, logs sin contraseñas ni cookies; ejecutar el agente `security-auditor` sobre `src/admin` y corregir hallazgos
 - [X] T112 Ejecutar `pnpm lint`, `pnpm typecheck` y `pnpm test` y corregir hasta tener todo en verde
-- [ ] T113 Ejecutar los escenarios manuales 1–8 de specs/001-business-knowledge-base/quickstart.md contra `pnpm dev` y anotar el resultado de cada uno
+- [X] T113 Ejecutar los escenarios manuales 1–8 de specs/001-business-knowledge-base/quickstart.md contra `pnpm dev` y anotar el resultado de cada uno
 
 ---
 
