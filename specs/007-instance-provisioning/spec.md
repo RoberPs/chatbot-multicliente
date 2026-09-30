@@ -30,6 +30,21 @@ P1 de la guía y se necesita antes de dar de alta el segundo cliente.
 Las herramientas son de operación: se ejecutan en el equipo del operador (o donde él las lance),
 no forman parte del servicio que atiende a los clientes finales y no cambian su comportamiento.
 
+## Clarifications
+
+### Session 2026-09-30
+
+- Q: ¿La contraseña del operador del panel la genera siempre la herramienta o puede teclearla el
+  operador en el alta? → A: La genera siempre la herramienta, aleatoria y larga, y la muestra una
+  sola vez; el alta no acepta contraseñas tecleadas.
+- Q: ¿Las huellas de los secretos del inventario se calculan con una clave propia del inventario o
+  sin clave? → A: Con una clave propia del inventario, creada junto con él y guardada fuera de él
+  (en el gestor de secretos del operador); sin esa clave no se puede comparar.
+- Q: Al dar de baja una instancia, ¿la herramienta solo cambia su estado en el inventario o también
+  borra su base de datos? → A: Solo el inventario: marca la baja, recuerda los pasos manuales
+  (webhook, clave del modelo de lenguaje, borrado de base de datos y copias en el plazo acordado) y
+  permite anotar después la fecha de borrado. Las herramientas nunca borran bases de datos.
+
 ## User Scenarios & Testing *(mandatory)*
 
 ### User Story 1 - El operador valida un entorno antes de desplegar (Priority: P1)
@@ -157,7 +172,7 @@ existente.
 
 El operador tiene un único inventario local, fuera del repositorio, con todas sus instancias:
 identificador, cliente, URL pública, versión de la imagen desplegada, espacio de trabajo del
-proveedor del modelo de lenguaje, dónde está guardada la clave de copias, fechas de alta y de baja,
+proveedor del modelo de lenguaje, dónde está guardada la clave de copias, fechas de alta, de baja y de borrado de datos,
 estado, y fecha y resultado de la última verificación de copia. El inventario guarda **huellas** de
 los secretos para poder detectar repeticiones, pero ningún secreto en claro ni nada que permita
 recuperarlo. El operador puede listar las instancias, registrar una instancia que ya existía antes
@@ -197,6 +212,9 @@ de los entornos usados).
 - **Inventario inexistente**: la primera generación o registro lo crea; la validación sin
   inventario comprueba solo la coherencia del entorno y lo advierte ("no se ha podido comparar con
   otras instancias").
+- **Clave del inventario ausente o equivocada**: ninguna herramienta compara ni escribe; la
+  validación da "no apto" y explica que falta la clave. Si la clave se ha perdido, el operador crea
+  un inventario nuevo y vuelve a registrar las instancias desde sus ficheros de entorno.
 - **Inventario ilegible o con formato inválido**: ninguna herramienta lo sobrescribe; se detienen y
   explican el problema.
 - **Dos operaciones a la vez sobre el inventario**: una de ellas espera o falla con un mensaje; el
@@ -264,7 +282,8 @@ de los entornos usados).
   de sesión, la clave de copias, la contraseña del operador (y su huella en el formato que espera el
   núcleo) y, si usa WhatsApp, el token de verificación del webhook; y MUST comprobar antes de
   escribir que ninguno coincide con el inventario.
-- **FR-012**: La contraseña del operador MUST mostrarse una sola vez al terminar y MUST NOT quedar
+- **FR-012**: La contraseña del operador MUST generarla siempre la herramienta (la generación no
+  acepta una contraseña tecleada), MUST mostrarse una sola vez al terminar y MUST NOT quedar
   escrita en ningún fichero; el entorno solo contiene su huella.
 - **FR-013**: La generación MUST dejar los valores que aporta un tercero (clave del modelo de
   lenguaje, credenciales de WhatsApp, servidor de correo, dirección de la base de datos si aún no se
@@ -307,16 +326,26 @@ de los entornos usados).
   pública, estado (en alta, activa, de pruebas, dada de baja), versión de la imagen desplegada,
   espacio de trabajo del proveedor del modelo de lenguaje, dónde está guardada la clave de copias
   (texto descriptivo), identidad de la base de datos sin contraseña, directorio de copias, fechas de
-  alta y de baja, fecha, fichero y resultado de la última verificación de copia, y las huellas de
+  alta, de baja y de borrado de sus datos, fecha, fichero y resultado de la última verificación de copia, y las huellas de
   sus secretos.
-- **FR-026**: Las huellas MUST permitir detectar que dos secretos son iguales sin permitir recuperar
-  ni comprobar por fuerza bruta el secreto a partir del inventario.
+- **FR-026**: Las huellas MUST calcularse con una clave propia del inventario, de forma que permitan
+  detectar que dos secretos son iguales pero no recuperar el secreto ni comprobar si un valor dado
+  es el secreto de una instancia sin esa clave. La clave MUST crearse junto con el inventario, se
+  indica a las herramientas al usarlas y MUST NOT guardarse dentro del inventario.
+- **FR-026a**: Si existe inventario pero no se dispone de su clave, o la clave no es la del
+  inventario, las herramientas MUST detenerse con un error explicativo sin comparar ni escribir; la
+  validación da en ese caso "no apto".
 - **FR-027**: El inventario MUST NOT contener ningún secreto, contraseña ni dirección de conexión con
   contraseña.
 - **FR-028**: Las herramientas MUST permitir: listar instancias; registrar una instancia existente a
   partir de su fichero de entorno (avisando de coincidencias); actualizar sus datos descriptivos y
   su estado; anotar el resultado estructurado de una verificación de copia de la feature 006
   (rechazándolo si es de otra instancia); y dar de baja una instancia.
+- **FR-028a**: Dar de baja una instancia MUST limitarse a cambiar su estado y fecha de baja en el
+  inventario y mostrar los pasos manuales de la baja (retirar el webhook de WhatsApp, revocar la
+  clave del modelo de lenguaje y sus secretos, borrar la base de datos y las copias en el plazo
+  acordado). El operador MUST poder anotar después la fecha en que se borraron la base de datos y
+  las copias. Las herramientas de esta feature MUST NOT borrar una base de datos ni copias.
 - **FR-029**: Una instancia dada de baja MUST permanecer en el inventario y sus identificadores y
   huellas MUST seguir contando como usados.
 - **FR-030**: El listado MUST señalar las instancias activas sin una verificación de copia correcta
@@ -343,7 +372,9 @@ de los entornos usados).
 - **Instancia (en el inventario)**: el registro descriptivo de una instancia: identificador,
   cliente, URL, estado, versión, base de datos sin contraseña, directorio de copias, fechas, última
   verificación de copia y huellas de sus secretos. No contiene secretos.
-- **Huella de secreto**: valor derivado de un secreto que solo sirve para saber si otro secreto es
+- **Clave del inventario**: secreto del operador, creado con el inventario y guardado fuera de él,
+  con el que se calculan las huellas; sin ella el inventario no sirve para comparar.
+- **Huella de secreto**: valor derivado de un secreto (con la clave del inventario) que solo sirve para saber si otro secreto es
   igual; asociada a la variable de origen y a si es vigente o anterior.
 - **Inventario**: el conjunto de instancias del operador, en un único fichero local.
 - **Resultado de validación**: apto / no apto, con errores y advertencias por variable y, en las
@@ -376,13 +407,14 @@ de los entornos usados).
 - Crear la infraestructura (máquina, contenedor, volumen, dominio, certificado) y elegir proveedor
   quedan fuera de alcance; el directorio de copias se da como una ruta y su existencia en el
   destino no se comprueba desde el equipo del operador.
-- La contraseña del operador se genera siempre aleatoria (no la teclea el operador): así es única
+- Como la contraseña del operador la genera siempre la herramienta (ver Clarifications), es única
   por instancia y su huella en el inventario no se puede atacar por fuerza bruta. El comando actual
   para calcular la huella a partir de una contraseña tecleada sigue existiendo para cambios
-  posteriores.
-- Las huellas se calculan con una clave propia del inventario, que se crea con el inventario y se
-  guarda fuera de él; sin esa clave el inventario no permite comparar, y perderla obliga a
-  registrar de nuevo las instancias desde sus entornos. El mecanismo concreto se decide en el plan.
+  posteriores, fuera del alta.
+- La clave del inventario (ver Clarifications) se guarda en el mismo gestor de secretos que los
+  ficheros de entorno; perderla obliga a crear un inventario nuevo y registrar de nuevo las
+  instancias desde sus entornos. El algoritmo de huella y la forma de indicar la clave se deciden
+  en el plan.
 - El inventario se guarda en el equipo del operador; hacer copia de él y de su clave es
   responsabilidad del operador (no contiene secretos, pero sí nombres de clientes).
 - La creación de base de datos se hace contra un servidor compatible con el del núcleo y con una
@@ -393,5 +425,5 @@ de los entornos usados).
   inventario.
 - La verificación de copias es la de la feature 006 y su salida estructurada es la que se anota en
   el inventario.
-- La rotación automática de secretos, el despliegue y la baja automática (borrado de base de datos y
-  copias) quedan fuera de alcance; la baja solo cambia el estado en el inventario.
+- La rotación automática de secretos, el despliegue y el borrado de la base de datos y las copias
+  quedan fuera de alcance (ver Clarifications): se hacen a mano siguiendo la guía de operación.
