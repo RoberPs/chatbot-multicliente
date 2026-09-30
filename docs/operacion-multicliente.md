@@ -440,15 +440,18 @@ antes de activar los audios en una instancia.
 ### 9.2 Orden de ejecución
 
 Una spec cada vez, en este orden (`/speckit-specify` → plan → tasks → implement). Los números
-definitivos los asigna `/speckit-specify`; si no se cuela otra feature, serán 007, 008…
+definitivos los asigna `/speckit-specify`; si no se cuela otra feature, serán 008, 009…
+
+Al terminar una spec, actualiza esta sección y la 9.1 (estado, feature que cubre cada propuesta y
+orden de las pendientes).
 
 | Orden | Id | Propuesta | Prioridad | Depende de | Cuándo |
 |---|---|---|---|---|---|
+| 1 | P2 | Exportar e importar la configuración del negocio | Alta | — | **En especificación** (feature 008). Antes del 2.º o 3.er cliente |
+| 2 | P6 | Versión visible y actualización escalonada | Media | P1 (inventario), 006 (copia previa) | Antes de la primera actualización con 2 o más instancias |
+| 3 | P4 | Consumo y coste por instancia | Media | — | Antes de facturar el consumo o de activar WhatsApp en un cliente con tráfico abierto |
+| 4 | P5 | Puntos de extensión del núcleo | Baja | — | Solo cuando llegue la primera petición que no quepa en la configuración |
 | — | P1 | Aprovisionamiento de instancias | — | — | **Hecha** (feature 007) |
-| 2 | P2 | Exportar e importar la configuración del negocio | Alta | — | Antes del 2.º o 3.er cliente |
-| 3 | P6 | Versión visible y actualización escalonada | Media | P1 (inventario), 006 (copia previa) | Antes de la primera actualización con 2 o más instancias |
-| 4 | P4 | Consumo y coste por instancia | Media | — | Antes de facturar el consumo o de activar WhatsApp en un cliente con tráfico abierto |
-| 5 | P5 | Puntos de extensión del núcleo | Baja | — | Solo cuando llegue la primera petición que no quepa en la configuración |
 | — | P3 | Copias de seguridad y restauración por instancia | — | — | **Hecha** (feature 006) |
 
 Por qué este orden:

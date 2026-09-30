@@ -43,5 +43,6 @@ pnpm lint && pnpm typecheck
 - Migraciones de solo añadir; las ya publicadas no se editan nunca (la restauración de copias las reaplica y compara su hash).
 - Specs, comentarios y mensajes, en español.
 - Actualiza `README.md` cada vez que una feature cambie de estado, y avisa antes al usuario.
+- Al terminar una spec, actualiza también `docs/operacion-multicliente.md`: la tabla de specs realizadas (9.1, con su fecha), el orden de las propuestas pendientes (9.2), la propuesta que cubre (marcarla como hecha) y las secciones de operación que cambien.
 
 Las reglas de producto viven en .specify/memory/constitution.md y el estado del producto en README.md
