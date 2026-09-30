@@ -104,7 +104,7 @@ validación sin tocar esta feature.
 
 | Código | Cuándo |
 |---|---|
-| `not_compared` | No hay inventario: solo se ha comprobado la coherencia |
+| `not_compared` | No hay inventario en `<ruta>` (la ruta buscada va en el mensaje): solo se ha comprobado la coherencia |
 | `not_registered` | El `INSTANCE_ID` no está en el inventario (se comparó igualmente) |
 | `pending_optional` | Grupo opcional vacío: `ANTHROPIC_API_KEY` (instancia sin bot), `SMTP_*` (sin avisos por email), `WHATSAPP_*` (sin WhatsApp) |
 | `shared_smtp` | `SMTP_URL` igual a la de otra instancia |

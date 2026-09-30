@@ -24,7 +24,7 @@ conversación) y un único punto de entrada **`src/cli/instance.ts`** con subór
 |---|---|---|
 | `pnpm instance:check <entorno> [--json]` | `check` | US1 |
 | `pnpm instance:new [--out <ruta>] …` | `new` | US2 |
-| `pnpm instance:db <id> --env <entorno> [--print-sql] …` | `db` | US3 |
+| `pnpm instance:db <id> [--env <entorno>] [--print-sql] …` | `db` | US3 |
 | `pnpm instance:list [--json]` | `list` | US4 |
 | `pnpm instance:register <entorno> --client <nombre> [--status …]` | `register` | US4 |
 | `pnpm instance:sync <id> <entorno>` | `sync` | US4 (FR-032) |
@@ -54,12 +54,19 @@ fuente de las reglas); nueve ficheros `src/cli/instance-*.ts` (más repetición)
 **Decisión**: la validación ejecuta **el mismo esquema que el arranque** y añade encima las
 reglas propias del alta.
 
-1. `src/config/env.ts` exporta `checkEnv(source): EnvIssue[]` (`{ variable, message }`), que hace
-   `safeParse` del esquema actual y traduce cada incidencia. Las incidencias de campo ya tienen
-   `path: ['VAR']`; a las incidencias personalizadas de `botSchema` (WhatsApp incompleto, SMTP sin
-   remitente, `BACKUP_KEY` igual a `SESSION_SECRET`, copias obligatorias en production…) se les
-   añade el `path` de la variable. `loadEnv` sigue usando solo `message`: **el arranque no cambia**
-   (FR-034).
+1. `src/config/env.ts` exporta `checkEnv(source): EnvIssue[]` (`{ variable, rule, message }`),
+   que hace `safeParse` del esquema actual y traduce cada incidencia. A cada `ctx.addIssue`
+   personalizado de `botSchema` se le añade `params: { rule, variables }` **sin cambiar su
+   `message`**: `whatsapp_incomplete` (variables que faltan), `backup_required` (faltan en
+   production), `backup_incomplete`, `smtp_incomplete`, `llm_key_required`,
+   `emergency_phone_required`, `emergency_phone_invalid`, `stt_key_required` y
+   `backup_key_equals_session`. Las incidencias de campo con refinamiento propio (`TRUST_PROXY`,
+   `PUBLIC_BASE_URL`…) reciben igualmente `params.rule` (`trust_proxy_all`,
+   `public_url_invalid`). `checkEnv` produce **una entrada por cada variable** de
+   `params.variables` (o una sola con `path[0]` si no hay lista); una incidencia de campo de Zod
+   sin `rule` sale como `missing` si el valor falta y como `core_rule` en otro caso. `loadEnv`
+   sigue formateando solo `message`, una línea por incidencia: sus mensajes no cambian y **el
+   arranque no cambia** (FR-034).
 2. `src/provisioning/check.ts` añade las reglas de alta que el arranque no exige:
    `NODE_ENV=production`, `PUBLIC_BASE_URL` presente y `https` (no `localhost`), `TRUST_PROXY`
    vacío en production (advertencia), `DATABASE_URL` de ejemplo o con superusuario, calidad de
@@ -95,9 +102,21 @@ sí todas las reglas del núcleo, la calidad de los secretos y la comparación c
 | `STT_API_KEY` | ≥ 20 caracteres |
 | Contraseña de `DATABASE_URL` | ≥ 16 caracteres; error si es `chatbot` (la de `.env.example`) |
 
-Y para todos: error si el valor es de relleno — contiene (sin distinguir mayúsculas) `changeme`,
-`example`, `ejemplo`, `placeholder`, `pendiente`, `todo`, `xxx`, `secret`, `password`, `test`, o
-es una repetición de un solo carácter o una secuencia `0123…`/`abcd…`.
+Y para todos: error si el valor es de relleno, es decir, si cumple alguna de estas condiciones
+(sin distinguir mayúsculas), con las palabras `changeme`, `example`, `ejemplo`, `placeholder`,
+`pendiente`, `todo`, `xxx`, `secret`, `password` y `test`:
+
+- **a)** tras quitar cifras y los signos `_ - . espacio`, lo que queda son solo una o varias de
+  esas palabras (`changeme123`, `test-secret`);
+- **b)** tiene menos de 24 caracteres y contiene una de ellas;
+- **c)** contiene una de ellas al principio o entre separadores `_ - . espacio`
+  (`sk-ant-test-…`, `mi_password_…`);
+- **d)** es un solo carácter repetido o una secuencia `0123…`/`abcd…`.
+
+Un valor de 24 caracteres o más que contiene una de esas palabras por azar en medio de caracteres
+aleatorios **no** es relleno: en un token base64url de 32 caracteres, `xxx` aparece por azar en
+≈ 0,1 % de los casos. Además, cada generador comprueba su valor con `secretQuality` y lo regenera
+si no pasa, de modo que un valor generado nunca da `weak_secret` (SC-003, SC-004).
 
 **Motivo**: las reglas del núcleo ya fijan las claves hex; para los valores de terceros no se
 conoce el formato exacto, así que se exige solo una longitud mínima conservadora (para no rechazar
@@ -196,11 +215,16 @@ lo cubre el usuario propio de cada base de datos (US3) y la coincidencia del usu
   leer o no es válido, se aborta sin escribir (FR-031, caso límite). Se escribe
   `<inventario>.tmp-<aleatorio>` con modo `0600`, `fsync`, y `rename` sobre el definitivo (con
   hasta 3 reintentos ante `EPERM`/`EBUSY` en Windows por antivirus o indexador).
-- **Creación**: si no existe, la primera orden que escribe (`new` o `register`) lo crea con su
-  `keyCheck`. Si `INSTANCE_INVENTORY_KEY` está definida se usa; si no, se genera una clave nueva y
-  se muestra una sola vez con la instrucción de guardarla en el gestor de secretos (misma regla de
-  terminal que la contraseña, R7). `check` sin inventario valida solo la coherencia y lo advierte
-  (`not_compared`).
+- **Creación**: solo `new` y `register` crean el inventario, con su `keyCheck`, y **solo con
+  confirmación explícita**, para que una ruta mal indicada no produzca en silencio un inventario
+  vacío que deje de comparar con las demás instancias. Con terminal se pregunta: «No existe un
+  inventario en `<ruta>`. Si ya tienes uno, revisa `INSTANCE_INVENTORY` o `--inventory`. Para
+  crear uno nuevo escribe `crear`»; sin terminal se exige `--create-inventory` y, si falta, se
+  rechaza con `inventory_missing` (código 2) sin escribir nada. Si `INSTANCE_INVENTORY_KEY` está
+  definida, la pregunta avisa de que parece existir ya un inventario en otra ruta, y se usa esa
+  clave; si no, se genera una clave nueva y se muestra una sola vez con la instrucción de
+  guardarla en el gestor de secretos (misma regla de terminal que la contraseña, R7). `check` sin
+  inventario valida solo la coherencia y lo advierte (`not_compared`, con la ruta buscada).
 - **Fechas**: alta, baja y borrado como fecha de calendario `YYYY-MM-DD` del equipo del operador;
   la verificación de copia como instante ISO 8601 con desfase. No afecta a la regla de horarios
   del negocio, que es de la configuración de cada instancia.
@@ -292,23 +316,37 @@ dependencia (Node 22 ya trae el analizador).
   3. `CREATE DATABASE <db> OWNER <u>` (no admite transacción: va aparte).
   4. `REVOKE CONNECT, TEMPORARY ON DATABASE <db> FROM PUBLIC` (FR-018).
   5. Conectarse como `<u>` a `<db>` y ejecutar `select 1` para comprobar la dirección resultante.
-  6. Escribir `DATABASE_URL` en el entorno y la identidad en el inventario.
+
+- **Orden de escritura**: la orden toma el bloqueo del inventario al empezar y lo mantiene hasta
+  el final (impide dos `db` a la vez de la misma instancia; otra orden espera como máximo 5 s).
+  Primero escribe `DATABASE_URL` en el entorno, **antes** de crear nada, para que la contraseña
+  nunca exista solo en memoria; después ejecuta los pasos 1–5. Si la creación falla, vuelve a
+  dejar vacía la línea `DATABASE_URL` (escritura atómica) e informa; si también falla esa
+  restauración, el informe lo dice y pide vaciarla a mano. Si la creación va bien, escribe la
+  identidad en el inventario; si esa escritura falla, termina con 1 y `inventory_not_updated`:
+  «Base de datos creada y DATABASE_URL escrita, pero el inventario no se ha actualizado. Ejecuta
+  `pnpm instance:sync <id> <fichero>`» (`sync` rellena `database` desde el entorno, R9).
 
   En PostgreSQL 15+ el esquema `public` es de `pg_database_owner`, es decir, del usuario nuevo, y
   `PUBLIC` ya no tiene `CREATE` en él: no hace falta más.
 - **Fallos a mitad** (FR-023): si falla el paso 3, se hace `DROP ROLE` del usuario creado en el
   paso 2 (no hay base de datos que lo use). Si falla el 4 o el 5, **no se borra la base de datos**
   (las herramientas nunca borran bases de datos, clarificación y FR-019): se informa de qué existe
-  exactamente (base de datos vacía y usuario) y de las órdenes para terminar o retirarlo a mano, y
-  no se escribe nada en el entorno ni en el inventario.
+  exactamente (base de datos vacía y usuario) y de las órdenes para terminar o retirarlo a mano.
+  En los dos casos la línea `DATABASE_URL` del entorno vuelve a quedar vacía y el inventario no se
+  modifica (ver "Orden de escritura").
 - **Dirección resultante**: servidor y puerto de la URL de administración salvo `--host` /
   `--port` (el nombre con el que la instancia ve el servidor puede ser distinto, p. ej. en una red
   Docker); se conserva `sslmode` si la URL de administración lo lleva.
 - **Modo "solo instrucciones"** (`--print-sql`, FR-022): exige `--host` y `--port`, no se
   conecta a nada, imprime las órdenes SQL de los pasos 1–4 (con el verificador, no la contraseña)
   para ejecutarlas con `psql` o la consola del proveedor, y escribe la `DATABASE_URL` en el
-  entorno y la identidad en el inventario. La dirección con contraseña no se imprime: va solo al
+  entorno y la identidad en el inventario, con el mismo orden de escritura y la misma
+  recuperación (`inventory_not_updated`). La dirección con contraseña no se imprime: va solo al
   fichero de entorno, que es secreto.
+- **Fichero de entorno**: `--env <fichero>`; por defecto `<directorio del inventario>/envs/<id>.env`,
+  la misma ruta por defecto que `instance:new`. Si no existe, se rechaza con `env_unreadable`
+  (código 2) y la indicación de usar `--env`.
 - **Modificación del entorno** (FR-021): solo se reemplaza la línea `DATABASE_URL=` (y su
   comentario `# PENDIENTE` si lo hay), con escritura atómica (temporal + `rename`) conservando el
   modo. Si `DATABASE_URL` ya tiene valor, se rechaza (`database_url_set`).
@@ -333,7 +371,9 @@ datos a medio crear (lo prohíbe la clarificación).
   muestran como avisos y la instancia se registra igualmente (US4-1): una instancia ya desplegada
   tiene que contar para las comparaciones aunque haya que corregirla después.
 - **`sync`** (rotación, FR-032): recalcula huellas e identidades desde el entorno; las que
-  cambian pasan a `current: false` y se añaden las nuevas; ninguna se borra. Rechaza si el
+  cambian pasan a `current: false` y se añaden las nuevas; ninguna se borra. Actualiza también
+  `database`, `publicUrl` y `backupDir` desde el entorno (así completa `database` tras un
+  `inventory_not_updated` de `instance:db`, R8). Rechaza si el
   `INSTANCE_ID` del entorno no es el indicado, y avisa si algún valor nuevo coincide con otra
   instancia.
 - **`update`**: datos descriptivos (`--client`, `--image`, `--llm-workspace`,

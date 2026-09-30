@@ -233,8 +233,12 @@ de los entornos usados).
   llevan el identificador de instancia y no se mezclan, pero borrar el volumen de una afectaría a
   la otra).
 - **El operador pierde el fichero de entorno generado**: los secretos no se pueden recuperar del
-  inventario; se regeneran con una nueva generación para esa instancia, y la clave de copias
-  antigua se conserva solo si estaba guardada en el gestor de secretos.
+  inventario ni se vuelve a generar la instancia (la generación rechaza un identificador ya
+  usado). El operador rehace el fichero a partir de la plantilla con secretos nuevos, siguiendo la
+  guía de operación, y actualiza sus huellas en el inventario (FR-032): los valores perdidos pasan
+  a anteriores y siguen contando como usados. La clave de copias antigua solo se conserva si
+  estaba guardada en el gestor de secretos, y entonces pasa a la lista de claves anteriores; si
+  no, las copias cifradas con ella no se pueden restaurar.
 - **Instancia de desarrollo o de pruebas del operador**: se puede registrar en el inventario para
   que sus secretos cuenten, marcada como tal; la validación de modo producción no se le exige.
 

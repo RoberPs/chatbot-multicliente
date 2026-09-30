@@ -33,6 +33,13 @@ son necesarias para que una instancia arranque (FR-034). Ninguna carga el `.env`
 | `inventory_in_repo` | El inventario no puede estar dentro del repositorio del núcleo: contiene nombres de clientes. |
 | `unknown_instance` | No hay ninguna instancia `<id>` en el inventario. |
 | `not_interactive` | Esta orden muestra un secreto una sola vez y necesita una terminal; no redirijas su salida. |
+| `inventory_missing` | No existe un inventario en `<ruta>`. Si ya tienes uno, revisa `INSTANCE_INVENTORY` o `--inventory`. Si es la primera alta, confirma su creación en la terminal o repite con `--create-inventory`. (Código 2; solo `new` y `register` pueden crearlo.) |
+
+**Creación del inventario** (`new` y `register`): si no existe, con terminal se pregunta «No existe
+un inventario en `<ruta>`. Si ya tienes uno, revisa `INSTANCE_INVENTORY` o `--inventory`. Para crear
+uno nuevo escribe `crear`»; cualquier otra respuesta cancela sin escribir nada. Sin terminal hace
+falta `--create-inventory`. Si `INSTANCE_INVENTORY_KEY` está definida, la pregunta avisa de que
+parece existir ya un inventario en otra ruta.
 
 ---
 
@@ -49,6 +56,7 @@ catálogo de códigos: [check-result.md](check-result.md).
 pnpm instance:new --id <id> --client <nombre> --url https://… --timezone <IANA>
                   --region <XX> --currency <XXX> --emergency-phone <tel>
                   [--whatsapp] [--backup-dir <ruta>] [--out <ruta>] [--inventory <ruta>]
+                  [--create-inventory]
 ```
 
 Los datos que falten se preguntan si hay terminal. Exige terminal en la salida estándar.
@@ -72,6 +80,9 @@ Siguientes pasos:
   4. Valida: pnpm instance:check <fichero>
 ```
 
+En el paso 2 se añade `--env <fichero>` solo si se usó `--out` (sin él, `instance:db` usa la misma
+ruta por defecto).
+
 Si el inventario no existía y no había `INSTANCE_INVENTORY_KEY`, antes de los pasos se muestra
 también, una sola vez, la clave nueva del inventario con la instrucción de guardarla y exportarla.
 
@@ -86,12 +97,20 @@ está excluida del control de versiones"). Cada mensaje nombra el dato erróneo.
 ## `pnpm instance:db <id> …` (US3)
 
 ```text
-pnpm instance:db <id> --env <fichero> [--host <servidor>] [--port <puerto>] [--inventory <ruta>]
-pnpm instance:db <id> --env <fichero> --print-sql --host <servidor> --port <puerto>
+pnpm instance:db <id> [--env <fichero>] [--host <servidor>] [--port <puerto>] [--inventory <ruta>]
+pnpm instance:db <id> [--env <fichero>] --print-sql --host <servidor> --port <puerto>
 ```
+
+`--env` por defecto es `<directorio del inventario>/envs/<id>.env` (la ruta por defecto de `new`);
+si no existe, se rechaza con `env_unreadable` (2) y la indicación de usar `--env`.
 
 Requisitos: `<id>` en el inventario, no `retired`, sin `database`; el `INSTANCE_ID` del fichero es
 `<id>`; su `DATABASE_URL` está vacía.
+
+**Orden**: toma el bloqueo del inventario y lo mantiene hasta el final; escribe `DATABASE_URL` en
+el fichero **antes** de crear nada (la contraseña nunca existe solo en memoria); crea la base de
+datos; si falla, vuelve a dejar vacía `DATABASE_URL`; si va bien, escribe la identidad en el
+inventario.
 
 **Salida correcta** (0):
 
@@ -129,7 +148,8 @@ crear bases de datos o usuarios: usa `--print-sql`), `step_failed` con informe e
 ```text
 Fallo al crear la base de datos (paso: database).
   Deshecho: usuario chatbot_demo_02 retirado.
-  No queda nada creado en el servidor. El entorno y el inventario no se han modificado.
+  No queda nada creado en el servidor. DATABASE_URL ha vuelto a quedar vacía y el inventario no
+  se ha modificado.
 ```
 
 ```text
@@ -138,7 +158,17 @@ Fallo al retirar el acceso general (paso: revoke).
   No se ha borrado nada. Para terminar a mano:
     REVOKE CONNECT, TEMPORARY ON DATABASE "chatbot_demo_02" FROM PUBLIC;
   o para retirarlo: DROP DATABASE "chatbot_demo_02"; DROP ROLE "chatbot_demo_02";
-  El entorno y el inventario no se han modificado.
+  DATABASE_URL ha vuelto a quedar vacía y el inventario no se ha modificado.
+```
+
+Si la restauración de `DATABASE_URL` también falla, el informe lo dice y pide vaciarla a mano.
+
+`inventory_not_updated` (1): la base de datos se creó y `DATABASE_URL` está escrita, pero falló la
+escritura del inventario:
+
+```text
+Base de datos creada y DATABASE_URL escrita en <fichero>, pero el inventario no se ha actualizado.
+Ejecuta: pnpm instance:sync demo-02 <fichero>
 ```
 
 ---
@@ -162,7 +192,7 @@ inventario **sin** `fingerprints` y con `verificationOverdue: boolean`. `list` n
 
 ---
 
-## `pnpm instance:register <entorno> --client <nombre> [--status active|testing]` (US4)
+## `pnpm instance:register <entorno> --client <nombre> [--status active|testing] [--create-inventory]` (US4)
 
 Registra una instancia existente. Lee `INSTANCE_ID`, `PUBLIC_BASE_URL`, `BACKUP_DIR`, la identidad
 de `DATABASE_URL` y las huellas. Rechaza (1) `duplicate_instance_id` o un entorno sin
@@ -173,7 +203,9 @@ hacer `instance:sync`.
 ## `pnpm instance:sync <id> <entorno>` (FR-032)
 
 Tras rotar secretos o cambiar la BD, la URL o el directorio: las huellas que cambian pasan a
-anteriores y se añaden las nuevas. Rechaza (1) si el `INSTANCE_ID` del entorno no es `<id>`.
+anteriores y se añaden las nuevas. Actualiza también `database`, `publicUrl` y `backupDir` desde el
+entorno (completa `database` tras un `inventory_not_updated` de `instance:db`). Rechaza (1) si el
+`INSTANCE_ID` del entorno no es `<id>`.
 Informa de qué variables han cambiado (por nombre) y avisa si un valor nuevo coincide con otra
 instancia.
 
