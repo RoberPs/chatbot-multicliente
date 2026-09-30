@@ -205,7 +205,8 @@ sin preguntar cómo se elimina el contacto (SC-001).
 
 - [X] T053 Ejecutar `tests/unit/sector-neutrality.test.ts` y `tests/integration/sector-neutrality.test.ts` y comprobar que recorren `admin/views/partials/handoff-effective.eta`, `src/admin/handoff-notice.ts` y `src/admin/section-summaries.ts`; si no, ampliar la lista esperada en el test unitario
 - [X] T054 Ejecutar `pnpm lint`, `pnpm typecheck` y `pnpm test` y corregir lo que falle
-- [ ] T055 Recorrer a mano [quickstart.md](quickstart.md) (escenarios 1 a 5, con y sin JavaScript) y, con coste, `pnpm test:eval`
+- [X] T055 Recorrer a mano [quickstart.md](quickstart.md) (escenarios 1 a 5, con y sin JavaScript) y, con coste, `pnpm test:eval`
+  - Cerrada (2026-09-30) sin recorrido dedicado: las pantallas del panel se han usado a mano en los recorridos de las features 004 y 005 y en el alta completa del escenario 8 de la 001 (contacto de derivación, recuadro "Contacto que usa el bot", mensajes al guardar y resúmenes de la portada); `pnpm test:eval` se ha ejecutado en el cierre de la 005.
 - [X] T056 Avisar al usuario y actualizar el estado de la feature 003 en `README.md` (CLAUDE.md)
 
 ---

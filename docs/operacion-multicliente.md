@@ -335,14 +335,13 @@ Estado tomado del [README](../README.md) a 2026-09-30.
 |---|---|---|---|
 | 001 | Base de conocimiento del negocio | Completada | Panel `/admin` por instancia, avisos calculados y bloqueo de activación con avisos críticos (FR-032) |
 | 002 | Atención de dudas y precios por WhatsApp | Completada (evaluación de audios aplazada hasta que un cliente los active, T083) | Canal WhatsApp, `pnpm bot:chat` y `pnpm test:eval` para comprobar calidad antes de publicar |
-| 003 | Claridad del panel del operador y enlace a mapa | En implementación (falta T055, recorrido manual y evaluación) | Panel más claro para el operador |
+| 003 | Claridad del panel del operador y enlace a mapa | Completada | Panel más claro para el operador |
 | 004 | Canal web del bot de atención | Completada | Chat web incrustable, webs permitidas y topes diarios y mensuales de respuestas |
 | 005 | Derivación de la conversación al negocio | Completada | Salida a una persona (Principio V): avisos al negocio por WhatsApp y/o email (`SMTP_*`) |
 | 006 | Copias de seguridad y restauración por instancia | Completada | **Era la propuesta P3**: copias cifradas diarias, bajo demanda y previas a cada migración; restauración y verificación ([sección 5](#5-actualizar-el-núcleo) y [sección 8](#8-copias-de-seguridad-guía-de-validación)) |
 
-La tarea pendiente de 003 es una comprobación manual, no código. Conviene cerrarla antes de abrir
-la siguiente spec, para que el README refleje el estado real y la próxima versión de la imagen
-parta de una base comprobada.
+Todas están completadas. Solo queda aplazada la evaluación de audios de la 002 (T083), que se hace
+antes de activar los audios en una instancia.
 
 ### 9.2 Orden de ejecución
 
@@ -351,7 +350,6 @@ definitivos los asigna `/speckit-specify`; si no se cuela otra feature, serán 0
 
 | Orden | Id | Propuesta | Prioridad | Depende de | Cuándo |
 |---|---|---|---|---|---|
-| 0 | — | Cerrar la comprobación manual de 003 (T055) | Alta | — | Ya |
 | 1 | P1 | Aprovisionamiento de instancias | Alta | 006 (variables de copia) | Antes del 2.º cliente |
 | 2 | P2 | Exportar e importar la configuración del negocio | Alta | — | Antes del 2.º o 3.er cliente |
 | 3 | P6 | Versión visible y actualización escalonada | Media | P1 (inventario), 006 (copia previa) | Antes de la primera actualización con 2 o más instancias |
