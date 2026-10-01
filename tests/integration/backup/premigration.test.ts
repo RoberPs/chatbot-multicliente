@@ -92,13 +92,16 @@ describe('copia previa a las migraciones', () => {
       (e: unknown) => e,
     );
     expect(error).toBeInstanceOf(MigrationBlockedError);
-    expect(error).toMatchObject({ failure: 'backup_not_configured', pending: ['0004_handoff'] });
+    expect(error).toMatchObject({
+      failure: 'backup_not_configured',
+      pending: ['0004_handoff', '0005_config_transfer'],
+    });
     expect(await tableSnapshot(old.url)).toEqual(before);
     expect(logger.events('migration_blocked')).toEqual([
       {
         channel: 'backup',
         event: 'migration_blocked',
-        pending: ['0004_handoff'],
+        pending: ['0004_handoff', '0005_config_transfer'],
         failure: 'backup_not_configured',
       },
     ]);
@@ -115,7 +118,7 @@ describe('copia previa a las migraciones', () => {
     expect(error).toBeInstanceOf(MigrationBlockedError);
     expect((error as MigrationBlockedError).failure).toBe('dir_missing');
     expect((error as Error).message).toBe(
-      'No se aplican las migraciones pendientes (0004_handoff): no se pudo hacer la copia previa (dir_missing). El esquema no ha cambiado.',
+      'No se aplican las migraciones pendientes (0004_handoff, 0005_config_transfer): no se pudo hacer la copia previa (dir_missing). El esquema no ha cambiado.',
     );
     expect(await tableSnapshot(old.url)).toEqual(before);
   });
@@ -127,16 +130,16 @@ describe('copia previa a las migraciones', () => {
     const folder = await mkdtemp(join(tmpdir(), 'migrations-'));
     try {
       await cp(defaultMigrationsFolder, folder, { recursive: true });
-      await writeFile(join(folder, '0005_rota.sql'), 'SELECT * FROM "tabla_que_no_existe";');
+      await writeFile(join(folder, '0006_rota.sql'), 'SELECT * FROM "tabla_que_no_existe";');
       const journalPath = join(folder, 'meta', '_journal.json');
       const journal = JSON.parse(await readFile(journalPath, 'utf8')) as {
         entries: Array<Record<string, unknown>>;
       };
       journal.entries.push({
-        idx: 5,
+        idx: 6,
         version: '7',
         when: Number(journal.entries.at(-1)?.when) + 1000,
-        tag: '0005_rota',
+        tag: '0006_rota',
         breakpoints: true,
       });
       await writeFile(journalPath, JSON.stringify(journal));
@@ -153,13 +156,13 @@ describe('copia previa a las migraciones', () => {
       );
       expect(error).toBeInstanceOf(MigrationFailedError);
       const [file = ''] = await files('rota-01__');
-      expect(file).toMatch(/^rota-01__0004_handoff__\d{8}T\d{6}Z__premigration\.cbak$/);
+      expect(file).toMatch(/^rota-01__0005_config_transfer__\d{8}T\d{6}Z__premigration\.cbak$/);
       expect((error as Error).message).toContain(`Copia previa: ${file}.`);
       expect(logger.events('migration_failed')).toEqual([
         {
           channel: 'backup',
           event: 'migration_failed',
-          pending: ['0005_rota'],
+          pending: ['0006_rota'],
           premigrationFile: file,
         },
       ]);
@@ -185,7 +188,7 @@ describe('copia previa a las migraciones', () => {
       file: join(dir.path, premigration),
       config,
     });
-    expect(report.pendingMigrations).toEqual(['0004_handoff']);
+    expect(report.pendingMigrations).toEqual(['0004_handoff', '0005_config_transfer']);
     expect(await tableSnapshot(previousCore.url)).toEqual(before);
 
     // US2-3: al arrancar con el núcleo actual se hace su copia previa y se migra.

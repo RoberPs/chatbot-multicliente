@@ -1,0 +1,38 @@
+{
+  "format": "business-config",
+  "formatVersion": 1,
+  "exportedAt": "2026-09-30T09:00:00.000Z",
+  "source": {
+    "instanceId": null,
+    "schema": "0005_config_transfer"
+  },
+  "includesAlertDestinations": false,
+  "info": {
+    "businessStatus": "draft",
+    "webChatEnabled": false
+  },
+  "business": {
+    "name": "",
+    "address": null,
+    "directions": null,
+    "mapUrl": null,
+    "phone": null,
+    "email": null,
+    "timezone": "Europe/Madrid",
+    "currency": "EUR"
+  },
+  "openingHours": [],
+  "closures": [],
+  "services": [],
+  "resources": [],
+  "faqs": [],
+  "policies": null,
+  "tone": null,
+  "handoff": null,
+  "webChat": {
+    "allowedOrigins": [],
+    "privacyUrl": null,
+    "dailyCap": 200,
+    "monthlyCap": 3000
+  }
+}

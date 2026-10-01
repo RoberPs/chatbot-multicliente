@@ -1,0 +1,6 @@
+<% layout('/layout') %>
+<div class="card">
+  <p>La importación ha caducado; vuelve a subir el fichero.</p>
+  <p class="hint">Los ficheros subidos se guardan 30 minutos y solo para la sesión con la que se subieron.</p>
+  <p><a href="/admin/config">Volver a Exportar e importar</a></p>
+</div>

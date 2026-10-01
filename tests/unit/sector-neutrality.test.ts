@@ -66,6 +66,14 @@ describe('neutralidad sectorial del código', () => {
     expect(paths).toContain('provisioning/check.ts');
     expect(paths).toContain('provisioning/messages.ts');
     expect(paths).toContain('cli/instance.ts');
+    // 008: exportar e importar la configuración (formato, validación, diff y vistas del panel).
+    expect(paths).toContain('config-transfer/format.ts');
+    expect(paths).toContain('config-transfer/schema.ts');
+    expect(paths).toContain('config-transfer/diff.ts');
+    expect(paths).toContain('admin/routes/config.ts');
+    expect(paths).toContain('admin/views/config/index.eta');
+    expect(paths).toContain('admin/views/config/preview.eta');
+    expect(paths).toContain('admin/views/partials/config-diff.eta');
   });
 
   it('ningún fichero de src/ contiene nombres de sector o cliente', () => {

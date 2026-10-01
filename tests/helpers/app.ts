@@ -21,6 +21,8 @@ export async function buildTestApp(
   bot: BotHttp | null = null,
   /** Variables de entorno añadidas o cambiadas para este caso (p. ej. PUBLIC_BASE_URL). */
   extraEnv: Record<string, string> = {},
+  /** Registros de la app en líneas JSON (sin él, la app no registra nada). */
+  logLines?: string[],
 ): Promise<FastifyInstance> {
   passwordHash ??= argon2.hash(OPERATOR_PASSWORD, { type: argon2.argon2id });
   const env = loadEnv({
@@ -35,7 +37,13 @@ export async function buildTestApp(
     NODE_ENV: 'test',
     ...extraEnv,
   });
-  const app = await buildApp({ env, db, logger: false, bot });
+  const app = await buildApp({
+    env,
+    db,
+    logger: logLines !== undefined,
+    ...(logLines ? { logStream: { write: (line: string) => void logLines.push(line) } } : {}),
+    bot,
+  });
   await app.ready();
   return app;
 }
@@ -156,3 +164,9 @@ export const hasFieldError = (html: string, message: string): boolean =>
 /** Campos con error según el resumen de errores de la página. */
 export const fieldErrorsIn = (html: string): string[] =>
   [...html.matchAll(/data-field="([^"]+)"/g)].map((m) => m[1] ?? '');
+
+/** Eventos de un canal en las líneas de registro capturadas por `buildTestApp`. */
+export const loggedEvents = (lines: string[], channel: string): Array<Record<string, unknown>> =>
+  lines
+    .map((line) => JSON.parse(line) as Record<string, unknown>)
+    .filter((entry) => entry.channel === channel);

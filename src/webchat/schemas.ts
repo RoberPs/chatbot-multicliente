@@ -12,11 +12,23 @@ import type { WebChatSettings } from './settings.js';
 const LOCAL_HOSTS = new Set(['localhost', '127.0.0.1']);
 
 export const MAX_ALLOWED_ORIGINS = 10;
+export const MAX_ORIGINS_MESSAGE = `Indica como máximo ${MAX_ALLOWED_ORIGINS} webs`;
+export const REPEATED_ORIGIN_MESSAGE = 'esa web está repetida';
+export const CAP_MESSAGE = 'Indica un número entero de 1 o más respuestas';
+export const MONTHLY_BELOW_DAILY_MESSAGE = 'El tope mensual no puede ser menor que el diario';
+export const ORIGINS_REQUIRED_MESSAGE = 'Indica al menos una web donde se mostrará el chat';
+export const PRIVACY_REQUIRED_MESSAGE = 'Indica el enlace a la política de privacidad del negocio';
+export const PRIVACY_HTTPS_MESSAGE =
+  'El enlace a la política de privacidad debe empezar por https://';
 
 /** Motivo por el que una línea no vale, o el origen normalizado. */
-type OriginResult = { origin: string } | { error: string };
+export type OriginResult = { origin: string } | { error: string };
 
-function parseOrigin(value: string): OriginResult {
+/**
+ * Normaliza una web permitida a `https://host[:puerto]` en minúsculas (formulario y fichero,
+ * 008). `http` solo para `localhost` y `127.0.0.1`.
+ */
+export function parseOrigin(value: string): OriginResult {
   let url: URL;
   try {
     url = new URL(value);
@@ -35,6 +47,18 @@ function parseOrigin(value: string): OriginResult {
   return { origin: url.origin.toLowerCase() };
 }
 
+/** Enlace a la política de privacidad normalizado, o el motivo por el que no vale. */
+export function parsePrivacyUrl(value: string): { url: string } | { error: string } {
+  let url: URL;
+  try {
+    url = new URL(value);
+  } catch {
+    return { error: PRIVACY_HTTPS_MESSAGE };
+  }
+  if (url.protocol !== 'https:') return { error: PRIVACY_HTTPS_MESSAGE };
+  return { url: url.toString() };
+}
+
 /** Texto del textarea → líneas con su número original (para el mensaje de error). */
 const numberedLines = (text: string): Array<{ line: number; value: string }> =>
   text
@@ -45,7 +69,7 @@ const numberedLines = (text: string): Array<{ line: number; value: string }> =>
 const originsSchema = z.string().default('').transform((text, ctx) => {
   const lines = numberedLines(text);
   if (lines.length > MAX_ALLOWED_ORIGINS) {
-    ctx.addIssue({ code: 'custom', message: `Indica como máximo ${MAX_ALLOWED_ORIGINS} webs` });
+    ctx.addIssue({ code: 'custom', message: MAX_ORIGINS_MESSAGE });
     return z.NEVER;
   }
   const origins: string[] = [];
@@ -56,7 +80,7 @@ const originsSchema = z.string().default('').transform((text, ctx) => {
       return z.NEVER;
     }
     if (origins.includes(result.origin)) {
-      ctx.addIssue({ code: 'custom', message: `Línea ${line}: esa web está repetida` });
+      ctx.addIssue({ code: 'custom', message: `Línea ${line}: ${REPEATED_ORIGIN_MESSAGE}` });
       return z.NEVER;
     }
     origins.push(result.origin);
@@ -67,20 +91,12 @@ const originsSchema = z.string().default('').transform((text, ctx) => {
 const privacyUrlSchema = z.string().default('').transform((raw, ctx) => {
   const value = raw.trim();
   if (value === '') return null;
-  let url: URL;
-  try {
-    url = new URL(value);
-  } catch {
-    url = new URL('http://invalida.invalid');
-  }
-  if (url.protocol !== 'https:') {
-    ctx.addIssue({
-      code: 'custom',
-      message: 'El enlace a la política de privacidad debe empezar por https://',
-    });
+  const result = parsePrivacyUrl(value);
+  if ('error' in result) {
+    ctx.addIssue({ code: 'custom', message: result.error });
     return z.NEVER;
   }
-  return url.toString();
+  return result.url;
 });
 
 /** Tope: entero de 1 o más, escrito como texto en el formulario. */
@@ -92,10 +108,7 @@ const capSchema = (fallback: number) =>
       if (raw === undefined || (typeof raw === 'string' && raw.trim() === '')) return fallback;
       const value = typeof raw === 'number' ? raw : Number(raw.trim());
       if (!Number.isInteger(value) || value < 1) {
-        ctx.addIssue({
-          code: 'custom',
-          message: 'Indica un número entero de 1 o más respuestas',
-        });
+        ctx.addIssue({ code: 'custom', message: CAP_MESSAGE });
         return z.NEVER;
       }
       return value;
@@ -128,22 +141,14 @@ export const webChatSettingsSchema = z
       ctx.addIssue({
         code: 'custom',
         path: ['monthly_cap'],
-        message: 'El tope mensual no puede ser menor que el diario',
+        message: MONTHLY_BELOW_DAILY_MESSAGE,
       });
     }
     if (!settings.enabled) return;
     if (settings.allowedOrigins.length === 0) {
-      ctx.addIssue({
-        code: 'custom',
-        path: ['allowed_origins'],
-        message: 'Indica al menos una web donde se mostrará el chat',
-      });
+      ctx.addIssue({ code: 'custom', path: ['allowed_origins'], message: ORIGINS_REQUIRED_MESSAGE });
     }
     if (settings.privacyUrl === null) {
-      ctx.addIssue({
-        code: 'custom',
-        path: ['privacy_url'],
-        message: 'Indica el enlace a la política de privacidad del negocio',
-      });
+      ctx.addIssue({ code: 'custom', path: ['privacy_url'], message: PRIVACY_REQUIRED_MESSAGE });
     }
   });

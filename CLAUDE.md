@@ -41,6 +41,7 @@ pnpm lint && pnpm typecheck
 - Horarios en hora local (`time` + día ISO, donde 1 = lunes) y zona horaria IANA; nada se pasa a UTC.
 - Importes en céntimos; duraciones y antelaciones en minutos.
 - Migraciones de solo añadir; las ya publicadas no se editan nunca (la restauración de copias las reaplica y compara su hash).
+- Toda migración que añada o cambie configuración del negocio sube `formatVersion` en `src/config-transfer/format.ts` y añade su actualizador (lo vigila el test de cobertura de columnas).
 - Specs, comentarios y mensajes, en español.
 - Actualiza `README.md` cada vez que una feature cambie de estado, y avisa antes al usuario.
 - Al terminar una spec, actualiza también `docs/operacion-multicliente.md`: la tabla de specs realizadas (9.1, con su fecha), el orden de las propuestas pendientes (9.2), la propuesta que cubre (marcarla como hecha) y las secciones de operación que cambien.

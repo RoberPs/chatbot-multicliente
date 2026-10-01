@@ -481,6 +481,22 @@ export const handoffAlerts = pgTable(
   (t) => [check('handoff_alerts_singleton', sql`${t.id} = 1`)],
 );
 
+/**
+ * Configuración que tenía la instancia justo antes de la última importación aplicada (008,
+ * FR-022): una sola fila con el fichero exportado tal cual (con destinos de avisos). No es
+ * configuración del negocio: no entra en el snapshot, en los avisos ni en la exportación.
+ */
+export const configPreImport = pgTable(
+  'config_pre_import',
+  {
+    id: smallint('id').primaryKey().default(1),
+    content: text('content').notNull(),
+    importedAt: instant('imported_at').notNull(),
+    sourceInstance: text('source_instance'),
+  },
+  (t) => [check('config_pre_import_singleton', sql`${t.id} = 1`)],
+);
+
 /** Tablas de conversaciones del bot (sin `updated_at`: no forman parte del snapshot). */
 export const conversationTableNames = [
   'handoff_notice',

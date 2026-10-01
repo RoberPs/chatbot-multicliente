@@ -1,0 +1,53 @@
+<% layout('/layout') %>
+<p class="hint">Lleva la configuración del negocio de una instancia a otra con un fichero: exporta en la instancia de pruebas, revisa la vista previa en la de destino y confirma. La importación reemplaza toda la configuración, nunca cambia el estado del negocio ni la activación del chat web y guarda antes la configuración anterior para poder deshacerla.</p>
+
+<% if (it.uploadError) { %>
+  <p class="notice critical" role="alert"><%= it.uploadError %></p>
+<% } %>
+<%~ include('/partials/import-issues', { issues: it.issues }) %>
+
+<section class="card">
+  <h2>Exportar</h2>
+  <form class="stack" method="post" action="/admin/config/export" hx-boost="false">
+    <%~ include('/partials/csrf', { token: it.layout.csrf }) %>
+    <div>
+      <label for="include_alerts" class="inline">
+        <input id="include_alerts" name="include_alerts" type="checkbox">
+        Incluir los destinos de los avisos de derivación
+      </label>
+      <span class="hint">Son el WhatsApp y el email internos del negocio a los que llegan los avisos. Márcalo solo si la instancia de destino debe enviarlos a los mismos sitios.</span>
+    </div>
+    <p class="meta">El fichero no incluye conversaciones, clientes ni secretos de la instancia.</p>
+    <div class="actions">
+      <button type="submit">Descargar la configuración</button>
+    </div>
+  </form>
+</section>
+
+<section class="card">
+  <h2>Importar</h2>
+  <form class="stack" method="post" action="/admin/config/import" enctype="multipart/form-data" hx-boost="false">
+    <%~ include('/partials/csrf', { token: it.layout.csrf }) %>
+    <div>
+      <label for="file">Fichero exportado desde el panel (.json, máximo <%= it.maxSizeLabel %>)</label>
+      <input id="file" name="file" type="file" accept=".json,application/json" required>
+      <span class="hint">Antes de cambiar nada verás qué se añade, qué cambia y qué se elimina, y los avisos que tendrá el negocio.</span>
+    </div>
+    <div class="actions">
+      <button type="submit">Ver la vista previa</button>
+    </div>
+  </form>
+</section>
+
+<section class="card">
+  <h2>Configuración anterior a la última importación</h2>
+  <% if (it.preImport) { %>
+    <p>Importación aplicada el <%= it.preImport.importedAt %><% if (it.preImport.sourceInstance) { %> con un fichero de la instancia <code><%= it.preImport.sourceInstance %></code><% } %>.</p>
+    <p class="hint">Para deshacerla, descarga esta configuración e impórtala marcando los destinos de los avisos.</p>
+    <div class="actions">
+      <a class="button secondary" href="/admin/config/pre-import" hx-boost="false">Descargar la configuración anterior</a>
+    </div>
+  <% } else { %>
+    <p class="meta">Todavía no se ha aplicado ninguna importación.</p>
+  <% } %>
+</section>

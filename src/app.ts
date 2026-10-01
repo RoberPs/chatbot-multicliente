@@ -71,6 +71,8 @@ export interface BuildAppOptions {
   env: Env;
   db: Db;
   logger?: boolean;
+  /** Destino de los registros en lugar de la salida estándar (tests de los registros). */
+  logStream?: { write(line: string): void };
   /**
    * Bot; sin él, la instancia solo sirve el panel y el chat web "no disponible". Puede ser una
    * función que recibe el logger de la app (el bot registra sus eventos con él).
@@ -89,12 +91,14 @@ export async function buildApp({
   env,
   db,
   logger = true,
+  logStream,
   bot = null,
 }: BuildAppOptions): Promise<FastifyInstance> {
   const app = Fastify({
     logger: logger
       ? {
           level: env.NODE_ENV === 'production' ? 'info' : 'debug',
+          ...(logStream ? { stream: logStream } : {}),
           // Nunca se registran cookies, cabeceras de autorización ni cuerpos.
           redact: ['req.headers.cookie', 'req.headers.authorization', 'res.headers["set-cookie"]'],
           // Sin IP ni puerto del cliente en ningún registro (004, R10, SC-008).

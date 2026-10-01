@@ -408,3 +408,58 @@ code {
 .notice.critical {
   border-left-color: var(--danger);
 }
+
+/* Exportar e importar la configuración (008). */
+a.button {
+  display: inline-block;
+  padding: 0.45rem 0.9rem;
+  border-radius: 6px;
+  border: 1px solid var(--accent);
+  background: var(--accent);
+  color: #fff;
+  text-decoration: none;
+}
+a.button.secondary {
+  background: #fff;
+  color: var(--accent);
+}
+button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+.import-issues h3,
+.config-diff h3 {
+  font-size: 1rem;
+  margin: 1rem 0 0.4rem;
+}
+.issues,
+.config-diff ul {
+  margin: 0;
+  padding-left: 1.2rem;
+}
+.issues li,
+.config-diff li {
+  margin: 0.2rem 0;
+}
+.issues strong,
+.issues code {
+  margin-right: 0.4rem;
+}
+.config-diff .added {
+  color: var(--ok);
+}
+.config-diff .removed {
+  color: var(--danger);
+}
+.config-diff .change {
+  color: var(--muted);
+}
+.outcome {
+  font-weight: 600;
+}
+.outcome.ok {
+  color: var(--ok);
+}
+.outcome.blocked {
+  color: var(--danger);
+}

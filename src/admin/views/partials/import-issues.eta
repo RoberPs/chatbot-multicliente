@@ -1,0 +1,24 @@
+<% /* Errores de un fichero rechazado, agrupados por sección (008, FR-008). */ %>
+<% if (it.issues && it.issues.length > 0) { %>
+<section class="card import-issues" role="alert">
+  <h2><%= it.issues.length === 1 ? 'El fichero no se puede importar' : 'El fichero no se puede importar: ' + it.issues.length + ' errores' %></h2>
+  <p class="hint">No se ha cambiado nada. Corrige el fichero (o la configuración en el panel de origen y vuelve a exportarla) e inténtalo de nuevo.</p>
+  <% const groups = []; it.issues.forEach(function (issue) {
+       let group = groups.find(function (g) { return g.label === issue.sectionLabel; });
+       if (!group) { group = { label: issue.sectionLabel, issues: [] }; groups.push(group); }
+       group.issues.push(issue);
+     }); %>
+  <% groups.forEach(function (group) { %>
+  <h3><%= group.label %></h3>
+  <ul class="issues">
+    <% group.issues.forEach(function (issue) { %>
+    <li data-section="<%= issue.section %>">
+      <% if (issue.item) { %><strong><%= issue.item %></strong><% } %>
+      <% if (issue.field) { %><code><%= issue.field %></code><% } %>
+      <span><%= issue.message %></span>
+    </li>
+    <% }) %>
+  </ul>
+  <% }) %>
+</section>
+<% } %>

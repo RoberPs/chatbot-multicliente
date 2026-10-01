@@ -36,6 +36,13 @@
       "when": 1790606203354,
       "tag": "0004_handoff",
       "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1790768534855,
+      "tag": "0005_config_transfer",
+      "breakpoints": true
     }
   ]
 }

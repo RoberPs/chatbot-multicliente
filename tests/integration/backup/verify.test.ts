@@ -59,7 +59,7 @@ describe('comprobación de una copia', () => {
       file: backup.file,
       restorable: true,
       sourceInstance: 'test-01',
-      schema: '0004_handoff',
+      schema: '0005_config_transfer',
       createdAt: header.createdAt,
       tables: header.tables.map((t) => ({ name: t.name, rows: t.rows })),
     });
@@ -71,7 +71,7 @@ describe('comprobación de una copia', () => {
         event: 'verify_completed',
         file: backup.file,
         restorable: true,
-        schema: '0004_handoff',
+        schema: '0005_config_transfer',
         durationMs: report.durationMs,
       },
     ]);
@@ -129,7 +129,7 @@ describe('comprobación de una copia', () => {
     expect(await main([backup.file], ok)).toBe(0);
     expect(ok.stdout[0]).toBe(`Comprobación: ${backup.file}`);
     expect(ok.stdout[1]).toMatch(
-      /^ {2}RESTAURABLE · instancia test-01 · esquema 0004_handoff · núcleo /,
+      /^ {2}RESTAURABLE · instancia test-01 · esquema 0005_config_transfer · núcleo /,
     );
     expect(ok.stdout[2]).toMatch(/tablas; recuentos iguales a la copia\)$/);
     expect(ok.stdout[3]).toBe('  Base de datos temporal eliminada.');

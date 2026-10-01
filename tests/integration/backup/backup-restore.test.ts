@@ -10,6 +10,7 @@ import { createRetention } from '../../../src/conversation/retention.js';
 import { silentActivityLog } from '../../../src/conversation/activity-log.js';
 import {
   business,
+  configPreImport,
   conversation,
   customer,
   service,
@@ -48,6 +49,12 @@ describe.each(allFixtures.map((f) => [f.sector, f] as const))(
       opened.push(test);
       const clock = testClock('2026-09-29T10:15:00.000Z');
       const seeded = await seedInstance(test.db, fixture, clock.now());
+      // La configuración anterior a la última importación (008) entra en la copia y se restaura.
+      await test.db.insert(configPreImport).values({
+        content: '{"format":"business-config"}',
+        importedAt: clock.now(),
+        sourceInstance: 'origen-prueba',
+      });
       const reader = createKnowledgeReader(test.db);
       const before = await tableSnapshot(test.url);
       const snapshotBefore = await reader.getSnapshot();
@@ -77,6 +84,7 @@ describe.each(allFixtures.map((f) => [f.sector, f] as const))(
         .from(webChatSettings);
       const enabled = settings?.enabled ?? false;
       await test.db.update(webChatSettings).set({ enabled: !enabled });
+      await test.db.update(configPreImport).set({ content: '{}' });
       expect(await tableSnapshot(test.url)).not.toEqual(before);
 
       const logger = captureLogger();
@@ -95,14 +103,17 @@ describe.each(allFixtures.map((f) => [f.sector, f] as const))(
         .select({ status: business.status, name: business.name })
         .from(business);
       expect(restored?.name).toBe(seeded.businessName);
+      expect((await test.db.select().from(configPreImport))[0]?.content).toBe(
+        '{"format":"business-config"}',
+      );
       expect((await test.db.select().from(webChatSettings))[0]?.enabled).toBe(enabled);
 
       expect(report).toMatchObject({
         file: backup.file,
         sourceInstance: config.instanceId,
         crossInstance: false,
-        schema: '0004_handoff',
-        installedSchema: '0004_handoff',
+        schema: '0005_config_transfer',
+        installedSchema: '0005_config_transfer',
         pendingMigrations: [],
         expiredConversations: seeded.expiredConversations,
       });

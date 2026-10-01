@@ -4,7 +4,19 @@ import type { HandoffChannelType } from '../types.js';
 import { checkbox, email, phone } from './common.js';
 import { weeklySlotsSchema } from './weekly-slots.js';
 
-const channelType = z.enum(['phone', 'whatsapp', 'email'], { error: 'Elige el tipo de medio' });
+/** Tipo de medio de contacto de derivación. */
+export const channelTypeSchema = z.enum(['phone', 'whatsapp', 'email'], {
+  error: 'Elige el tipo de medio',
+});
+
+/** Valor de un medio: email o teléfono (E.164) según su tipo (formulario y fichero, 008). */
+export const channelValueSchema = (type: HandoffChannelType, region: CountryCode) =>
+  type === 'email' ? email : phone(region);
+
+export const REPEATED_CHANNEL_MESSAGE = 'Este medio está repetido';
+
+/** Clave para detectar medios repetidos: tipo y valor normalizado. */
+export const channelKey = (type: HandoffChannelType, value: string): string => `${type}:${value}`;
 
 /**
  * Contacto de derivación (FR-018): medios con su valor normalizado y horario opcional.
@@ -18,7 +30,7 @@ export const handoffSchema = (region: CountryCode) =>
         (v) => (v === undefined || v === null || v === '' ? [] : v),
         z.array(
           z.object({
-            type: channelType,
+            type: channelTypeSchema,
             value: z.string({ error: 'Obligatorio' }),
             remove: checkbox,
           }),
@@ -31,8 +43,7 @@ export const handoffSchema = (region: CountryCode) =>
       const seen = new Set<string>();
       v.channels.forEach((channel, i) => {
         if (channel.remove) return;
-        const valueSchema = channel.type === 'email' ? email : phone(region);
-        const parsed = valueSchema.safeParse(channel.value);
+        const parsed = channelValueSchema(channel.type, region).safeParse(channel.value);
         if (!parsed.success) {
           ctx.addIssue({
             code: 'custom',
@@ -41,12 +52,12 @@ export const handoffSchema = (region: CountryCode) =>
           });
           return;
         }
-        const key = `${channel.type}:${parsed.data}`;
+        const key = channelKey(channel.type, parsed.data);
         if (seen.has(key)) {
           ctx.addIssue({
             code: 'custom',
             path: ['channels', i, 'value'],
-            message: 'Este medio está repetido',
+            message: REPEATED_CHANNEL_MESSAGE,
           });
           return;
         }

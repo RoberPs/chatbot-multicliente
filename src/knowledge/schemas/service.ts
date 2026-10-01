@@ -2,27 +2,33 @@ import { z } from 'zod';
 import { parseAmountToCents } from '../money.js';
 import { blankToNull, checkbox, formNumber, optionalText, trimmedText } from './common.js';
 
-const DURATION_MESSAGE = 'La duración debe ser un número entero de minutos entre 1 y 1440';
+export const DURATION_MESSAGE = 'La duración debe ser un número entero de minutos entre 1 y 1440';
+
+/** Duración en minutos: entero entre 1 y 1440. */
+export const durationMinutesSchema = z
+  .number({ error: DURATION_MESSAGE })
+  .int(DURATION_MESSAGE)
+  .min(1, DURATION_MESSAGE)
+  .max(1440, DURATION_MESSAGE);
+
+/** Reglas de cada campo de un servicio en la forma del dominio (formulario y fichero, 008). */
+export const serviceFields = {
+  name: trimmedText(1, 200),
+  description: optionalText(4000),
+  priceType: z.enum(['fixed', 'from', 'on_request'], { error: 'Elige un tipo de precio' }),
+};
 
 /** Servicio (FR-007 – FR-009, FR-011b). `price` es un decimal en la moneda del negocio. */
 export const serviceSchema = z
   .object({
-    name: trimmedText(1, 200),
-    description: optionalText(4000),
-    price_type: z.enum(['fixed', 'from', 'on_request'], { error: 'Elige un tipo de precio' }),
+    name: serviceFields.name,
+    description: serviceFields.description,
+    price_type: serviceFields.priceType,
     price: z.preprocess(
       (v) => (typeof v === 'number' ? String(v) : blankToNull(v)),
       z.string().nullable(),
     ),
-    duration: z.preprocess(
-      formNumber,
-      z
-        .number({ error: DURATION_MESSAGE })
-        .int(DURATION_MESSAGE)
-        .min(1, DURATION_MESSAGE)
-        .max(1440, DURATION_MESSAGE)
-        .nullable(),
-    ),
+    duration: z.preprocess(formNumber, durationMinutesSchema.nullable()),
     bookable: checkbox,
     active: checkbox,
   })

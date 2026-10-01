@@ -35,6 +35,7 @@
       ['/admin/handoffs', 'Derivaciones'],
       ['/admin/playground', 'Probar el bot'],
       ['/admin/web-chat', 'Chat web'],
+      ['/admin/config', 'Exportar e importar'],
     ].forEach(function (item) {
       const path = it.layout.path.split('?')[0]; const current = item[0] === '/admin' ? path === '/admin' || path === '/admin/' : path === item[0] || path.startsWith(item[0] + '/'); %>
       <a href="<%= item[0] %>"<% if (current) { %> aria-current="page"<% } %>><%= item[1] %></a>

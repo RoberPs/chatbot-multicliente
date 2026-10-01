@@ -64,7 +64,7 @@ describe('copia bajo demanda (US1)', () => {
     const files = await readdir(dir.path);
     expect(files).toEqual([report.file]);
     expect(report.file).toMatch(BACKUP_NAME_PATTERN);
-    expect(report.file).toBe('test-01__0004_handoff__20260929T101500Z__manual.cbak');
+    expect(report.file).toBe('test-01__0005_config_transfer__20260929T101500Z__manual.cbak');
 
     const path = join(dir.path, report.file);
     const { header } = await readHeader(path);
@@ -101,7 +101,7 @@ describe('copia bajo demanda (US1)', () => {
     expect(report).toMatchObject({
       file: report.file,
       sizeBytes: bytes.length,
-      schema: '0004_handoff',
+      schema: '0005_config_transfer',
       reason: 'manual',
       createdAt: '2026-09-29T10:15:00.000Z',
     });
@@ -120,7 +120,7 @@ describe('copia bajo demanda (US1)', () => {
         file: report.file,
         reason: 'manual',
         sizeBytes: report.sizeBytes,
-        schema: '0004_handoff',
+        schema: '0005_config_transfer',
         durationMs: report.durationMs,
         tables: report.tables,
       },
@@ -247,9 +247,9 @@ describe('copia bajo demanda (US1)', () => {
   });
 
   it('borra los .partial propios de más de 1 h, no los recientes ni los de otra instancia', async () => {
-    const old = '.test-01__0004_handoff__20260101T000000Z__manual.cbak.partial';
-    const recent = '.test-01__0004_handoff__20260102T000000Z__manual.cbak.partial';
-    const foreign = '.otra-02__0004_handoff__20260101T000000Z__manual.cbak.partial';
+    const old = '.test-01__0005_config_transfer__20260101T000000Z__manual.cbak.partial';
+    const recent = '.test-01__0005_config_transfer__20260102T000000Z__manual.cbak.partial';
+    const foreign = '.otra-02__0005_config_transfer__20260101T000000Z__manual.cbak.partial';
     for (const name of [old, recent, foreign]) await writeFile(join(dir.path, name), 'x');
     const twoHoursAgo = new Date(Date.now() - 2 * 60 * 60 * 1000);
     await utimes(join(dir.path, old), twoHoursAgo, twoHoursAgo);

@@ -49,8 +49,10 @@ datos de su instancia y se registra en el panel `/admin` de esa instancia, ya en
 - Desarrollar y probar el núcleo con los negocios de ejemplo de `tests/fixtures/` (los únicos
   sitios donde puede haber nombres de sector).
 - `pnpm bot:chat`, "Probar el bot" y `pnpm test:eval` para comprobar calidad antes de publicar.
-- **No** se usa para preparar datos reales de clientes: hoy no existe forma de trasladar la
-  configuración de una BD a otra (ver la propuesta de spec [P2](#p2-exportar-e-importar-la-configuración-del-negocio)).
+- Preparar y probar la configuración de un negocio (servicios, precios, horarios, preguntas) y
+  llevarla a producción con el fichero de **Exportar e importar** (`/admin/config`, feature 008;
+  ver [2.6](#26-configuración-del-negocio-en-el-panel-de-producción)). Nunca se llevan
+  conversaciones ni datos de clientes finales: el fichero solo contiene configuración.
 
 ---
 
@@ -214,7 +216,8 @@ cumple las reglas de calidad o coincide con otra instancia, `instance:check` lo 
 
 ### 2.6 Configuración del negocio (en el panel de producción)
 
-1. Rellena datos del negocio, horarios, servicios, precios y preguntas frecuentes.
+1. Rellena datos del negocio, horarios, servicios, precios y preguntas frecuentes. Si ya los
+   preparaste en una instancia de pruebas, llévalos con el fichero (ver abajo) en vez de teclearlos.
 2. Resuelve los avisos críticos: el sistema no deja activar un negocio que los tenga (FR-032).
 3. Prueba en "Probar el bot" las preguntas típicas del sector y alguna trampa (precio no
    registrado, "quiero hablar con una persona").
@@ -223,6 +226,31 @@ cumple las reglas de calidad o coincide con otra instancia, `instance:check` lo 
    contratado, y activar. Entrega al cliente el fragmento `<script>`.
 6. WhatsApp: registra en Meta el webhook `https://…/webhooks/whatsapp` con el `WHATSAPP_VERIFY_TOKEN`
    y envía un mensaje de prueba.
+
+#### Llevar la configuración de pruebas a producción (008)
+
+1. En el panel de la instancia de pruebas, **Exportar e importar** → **Exportar**. Se descarga
+   `configuracion-<INSTANCE_ID>-<AAAAMMDD-HHMM>.json`. Marca "Incluir destinos de avisos" solo si
+   quieres llevarlos: importarlos en pruebas haría escribir al negocio real, y en producción solo
+   conviene si son los definitivos. Por defecto no se incluyen.
+2. En el panel de producción, **Importar** → elige el fichero. Si no es válido (ilegible, de otra
+   herramienta, de una versión futura, con reglas incumplidas o de más de 5 MB) se rechaza con la
+   lista completa de errores y no cambia nada.
+3. Revisa la **vista previa**: qué se añade, cambia y elimina por sección, los avisos resultantes y
+   si se aplicará. Si el negocio está activo y el resultado dejaría un aviso crítico, o el chat web
+   activado perdería webs permitidas o enlace de privacidad, la importación se bloquea.
+4. Si el fichero trae destinos de avisos, marca la casilla y pulsa "Actualizar vista previa"
+   para incluirlos; sin marcarla se conservan los de producción.
+5. **Confirma.** Se reemplaza toda la configuración en una transacción. La importación **nunca**
+   cambia el estado del negocio (preparación/activo) ni activa o desactiva el chat web: eso lo
+   decides tú. Si la configuración cambió desde la vista previa, se rechaza y hay que revisar de nuevo.
+6. **Deshacer**: antes de aplicar se guarda la configuración anterior (con sus destinos de avisos).
+   Descárgala en "Configuración anterior a la última importación" e impórtala como cualquier
+   otro fichero. Solo se conserva la de la última importación; entra en las copias de seguridad.
+
+Regla para el desarrollo: **toda spec que añada o cambie configuración del negocio sube
+`formatVersion` en `src/config-transfer/format.ts` y añade su actualizador** (lo vigila el test de
+cobertura de columnas). Así los ficheros antiguos siguen importándose en núcleos nuevos.
 
 ### 2.7 Cierre del alta
 
@@ -422,7 +450,7 @@ Todas son de **núcleo**: genéricas, sin nombres de cliente ni de sector.
 
 ### 9.1 Specs ya realizadas
 
-Estado tomado del [README](../README.md) a 2026-09-30.
+Estado tomado del [README](../README.md) a 2026-10-01.
 
 | Nº | Feature | Estado | Qué aporta a la operación multicliente |
 |---|---|---|---|
@@ -433,6 +461,7 @@ Estado tomado del [README](../README.md) a 2026-09-30.
 | 005 | Derivación de la conversación al negocio | Completada | Salida a una persona (Principio V): avisos al negocio por WhatsApp y/o email (`SMTP_*`) |
 | 006 | Copias de seguridad y restauración por instancia | Completada | **Era la propuesta P3**: copias cifradas diarias, bajo demanda y previas a cada migración; restauración y verificación ([sección 5](#5-actualizar-el-núcleo) y [sección 8](#8-copias-de-seguridad-guía-de-validación)) |
 | 007 | Aprovisionamiento de instancias | Completada | **Era la propuesta P1**: `pnpm instance:new`, `instance:db`, `instance:check` e inventario sin secretos ([sección 2](#2-alta-de-un-cliente-nuevo) y [sección 7](#7-baja-de-un-cliente)) |
+| 008 | Exportar e importar la configuración del negocio | Completada (2026-10-01) | **Era la propuesta P2**: fichero JSON versionado, importación con vista previa y confirmación transaccional, deshacer con la configuración anterior ([sección 2.6](#26-configuración-del-negocio-en-el-panel-de-producción)) |
 
 Todas están completadas. Solo queda aplazada la evaluación de audios de la 002 (T083), que se hace
 antes de activar los audios en una instancia.
@@ -447,11 +476,11 @@ orden de las pendientes).
 
 | Orden | Id | Propuesta | Prioridad | Depende de | Cuándo |
 |---|---|---|---|---|---|
-| 1 | P2 | Exportar e importar la configuración del negocio | Alta | — | **En especificación** (feature 008). Antes del 2.º o 3.er cliente |
-| 2 | P6 | Versión visible y actualización escalonada | Media | P1 (inventario), 006 (copia previa) | Antes de la primera actualización con 2 o más instancias |
-| 3 | P4 | Consumo y coste por instancia | Media | — | Antes de facturar el consumo o de activar WhatsApp en un cliente con tráfico abierto |
-| 4 | P5 | Puntos de extensión del núcleo | Baja | — | Solo cuando llegue la primera petición que no quepa en la configuración |
+| 1 | P6 | Versión visible y actualización escalonada | Media | P1 (inventario), 006 (copia previa) | Antes de la primera actualización con 2 o más instancias |
+| 2 | P4 | Consumo y coste por instancia | Media | — | Antes de facturar el consumo o de activar WhatsApp en un cliente con tráfico abierto |
+| 3 | P5 | Puntos de extensión del núcleo | Baja | — | Solo cuando llegue la primera petición que no quepa en la configuración |
 | — | P1 | Aprovisionamiento de instancias | — | — | **Hecha** (feature 007) |
+| — | P2 | Exportar e importar la configuración del negocio | — | — | **Hecha** (feature 008) |
 | — | P3 | Copias de seguridad y restauración por instancia | — | — | **Hecha** (feature 006) |
 
 Por qué este orden:
@@ -460,9 +489,9 @@ Por qué este orden:
    ([sección 3](#3-aislamiento-entre-clientes)). Desde la 006 el alta tiene todavía más piezas
    manuales (`INSTANCE_ID`, `BACKUP_DIR`, `BACKUP_KEY`) y un error ahí no se nota hasta que hace
    falta restaurar.
-2. **P2 después** porque ahorra trabajo en cada alta y permite revisar la configuración en la
-   instancia de pruebas antes de llevarla a producción, pero su ausencia no pone datos en riesgo.
-3. **P6** en cuanto haya dos instancias en producción: saber qué versión corre cada una es lo
+2. **P2** (hecha) ahorra trabajo en cada alta y permite revisar la configuración en la
+   instancia de pruebas antes de llevarla a producción.
+3. **P6 ahora** en cuanto haya dos instancias en producción: saber qué versión corre cada una es lo
    que hace seguras las actualizaciones por tandas. Usa el inventario de P1.
 4. **P4** cuando el consumo se facture o el riesgo de gasto crezca. Mientras tanto, el límite de
    gasto del workspace de Anthropic de cada cliente ([sección 4](#4-coste-de-la-api)) es la red de
@@ -501,6 +530,9 @@ Por qué este orden:
   > inventario de instancias sin secretos en claro. Ámbito: núcleo.
 
 ### P2. Exportar e importar la configuración del negocio
+
+> **Hecha** en la feature 008 ([spec](../specs/008-config-export-import/spec.md)). Se conserva
+> la propuesta original como referencia.
 
 - **Ámbito**: núcleo.
 - **Problema**: la configuración solo se puede preparar en el panel de producción. No hay forma de

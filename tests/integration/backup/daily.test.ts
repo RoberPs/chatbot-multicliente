@@ -68,7 +68,9 @@ describe('copia diaria', () => {
 
     clock.set('2026-09-29T01:05:00Z'); // 03:05 local
     await s.tick();
-    expect(await dailies()).toEqual(['test-01__0004_handoff__20260929T010500Z__daily.cbak']);
+    expect(await dailies()).toEqual([
+      'test-01__0005_config_transfer__20260929T010500Z__daily.cbak',
+    ]);
 
     clock.advance(60_000);
     await s.tick();

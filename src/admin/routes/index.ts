@@ -1,5 +1,6 @@
 import type { FastifyInstance } from 'fastify';
 import { businessRoutes } from './business.js';
+import { configRoutes } from './config.js';
 import { dashboardRoutes } from './dashboard.js';
 import { faqRoutes } from './faqs.js';
 import { handoffRoutes } from './handoff.js';
@@ -27,5 +28,6 @@ export async function adminRoutes(app: FastifyInstance): Promise<void> {
   await app.register(handoffsRoutes);
   await app.register(playgroundRoutes);
   await app.register(webChatPageRoutes);
+  await app.register(configRoutes);
   await app.register(partialRoutes);
 }

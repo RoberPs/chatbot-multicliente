@@ -35,7 +35,7 @@ afterAll(async () => {
 });
 
 describe('copia de un esquema anterior', () => {
-  it('se restaura con su esquema y deja la 0004 pendiente', async () => {
+  it('se restaura con su esquema y deja la 0004 y la 0005 pendientes', async () => {
     const config = testBackupConfig({ dir: dir.path });
     const backup = await createBackup({ databaseUrl: old.url, config, reason: 'manual' });
     expect(backup.file).toContain('__0003_map_url__');
@@ -48,14 +48,17 @@ describe('copia de un esquema anterior', () => {
     });
     expect(report).toMatchObject({
       schema: '0003_map_url',
-      installedSchema: '0004_handoff',
-      pendingMigrations: ['0004_handoff'],
+      installedSchema: '0005_config_transfer',
+      pendingMigrations: ['0004_handoff', '0005_config_transfer'],
       expiredConversations: 0,
     });
 
     await withClient(current.url, async (client) => {
       expect(await databaseSchema(client)).toMatchObject({ tag: '0003_map_url' });
-      expect((await pendingMigrations(client)).map((m) => m.tag)).toEqual(['0004_handoff']);
+      expect((await pendingMigrations(client)).map((m) => m.tag)).toEqual([
+        '0004_handoff',
+        '0005_config_transfer',
+      ]);
       for (const table of ['handoff', 'handoff_notice', 'handoff_alerts']) {
         const r = await client.query<{ t: string | null }>(`select to_regclass($1)::text as t`, [
           `public.${table}`,

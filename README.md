@@ -11,6 +11,7 @@ Estados: especificada → planificada → en implementación → completada (o a
 | 005 | Derivación de la conversación al negocio | Núcleo | Completada | `005-handoff-to-business` | [spec](specs/005-handoff-to-business/spec.md) · [plan](specs/005-handoff-to-business/plan.md) · [tareas](specs/005-handoff-to-business/tasks.md) | 2026-09-30  |
 | 006 | Copias de seguridad y restauración por instancia | Núcleo | Completada | `006-instance-backup-restore` | [spec](specs/006-instance-backup-restore/spec.md) · [plan](specs/006-instance-backup-restore/plan.md) · [tareas](specs/006-instance-backup-restore/tasks.md) | 2026-09-29  |
 | 007 | Aprovisionamiento de instancias | Núcleo (operación) | Completada | `007-instance-provisioning` | [spec](specs/007-instance-provisioning/spec.md) · [plan](specs/007-instance-provisioning/plan.md) · [tareas](specs/007-instance-provisioning/tasks.md) | 2026-09-30  |
+| 008 | Exportar e importar la configuración del negocio | Núcleo | Completada | `008-config-export-import` | [spec](specs/008-config-export-import/spec.md) · [plan](specs/008-config-export-import/plan.md) · [tareas](specs/008-config-export-import/tasks.md) | 2026-10-01  |
 
 ---
 
@@ -139,6 +140,22 @@ no llega por ninguna vía, la conversación no se deriva: el bot dice que no ha 
 negocio y da el contacto de derivación, sin prometer que le contactarán. La guía de
 validación manual está en
 [specs/005-handoff-to-business/quickstart.md](specs/005-handoff-to-business/quickstart.md).
+
+## Exportar e importar la configuración
+
+La página **Exportar e importar** del panel (`/admin/config`, feature 008) lleva la configuración del
+negocio de una instancia a otra (por ejemplo, de pruebas a producción):
+
+- **Exportar**: descarga un JSON versionado con datos del negocio, horarios, servicios, recursos,
+  preguntas, políticas, tono, derivación y chat web. Nunca incluye conversaciones, clientes ni
+  secretos; los destinos de avisos solo van si se marca la casilla.
+- **Importar**: valida el fichero (se rechaza entero, con la lista de errores, si algo falla), muestra
+  una vista previa por sección y se aplica al confirmar, en una transacción. No cambia el estado del
+  negocio ni activa el chat web, y respeta los avisos críticos.
+- **Deshacer**: se guarda la configuración anterior a la última importación, descargable desde la
+  misma página y entra en las copias de seguridad.
+
+Guía de uso: [docs/operacion-multicliente.md](docs/operacion-multicliente.md#26-configuración-del-negocio-en-el-panel-de-producción).
 
 ## Copias de seguridad
 

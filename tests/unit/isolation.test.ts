@@ -76,3 +76,29 @@ describe('aislamiento: herramientas de aprovisionamiento (007, FR-034)', () => {
     }
   });
 });
+
+describe('aislamiento: exportar e importar la configuración (008)', () => {
+  const imports = (file: string) =>
+    [...readFileSync(file, 'utf8').matchAll(/^import[^'"]*['"]([^'"]+)['"]/gm)].map(
+      (m) => m[1] ?? '',
+    );
+
+  it('src/config-transfer no importa Fastify, el panel ni los canales', () => {
+    const module = files(join(SRC, 'config-transfer'));
+    const forbidden = /^fastify$|^@fastify\/|\/(admin|channels)\//;
+    const bad = module.flatMap((file) =>
+      imports(file)
+        .filter((spec) => forbidden.test(spec))
+        .map((spec) => `${relative(SRC, file)}: ${spec}`),
+    );
+    expect(module.length).toBeGreaterThan(5);
+    expect(bad).toEqual([]);
+  });
+
+  it('@fastify/multipart solo se importa desde la ruta de importación del panel', () => {
+    const users = files(SRC)
+      .filter((file) => imports(file).includes('@fastify/multipart'))
+      .map((file) => relative(SRC, file).replaceAll('\\', '/'));
+    expect(users).toEqual(['admin/routes/config.ts']);
+  });
+});

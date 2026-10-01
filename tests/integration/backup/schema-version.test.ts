@@ -21,13 +21,13 @@ afterAll(async () => {
 });
 
 describe('versión del esquema', () => {
-  it('el núcleo instalado llega a 0004_handoff con el hash que calcula Drizzle', () => {
+  it('el núcleo instalado llega a 0005_config_transfer con el hash que calcula Drizzle', () => {
     const files = readMigrationFiles({ migrationsFolder: defaultMigrationsFolder });
     const installed = installedSchema();
-    expect(installed.tag).toBe('0004_handoff');
-    expect(installed.index).toBe(4);
+    expect(installed.tag).toBe('0005_config_transfer');
+    expect(installed.index).toBe(5);
     expect(installed.hash).toBe(files.at(-1)?.hash);
-    expect(readdirSync(defaultMigrationsFolder).filter((f) => f.endsWith('.sql'))).toHaveLength(5);
+    expect(readdirSync(defaultMigrationsFolder).filter((f) => f.endsWith('.sql'))).toHaveLength(6);
   });
 
   it('BD recién creada vacía → empty y todas pendientes', async () => {
@@ -41,6 +41,7 @@ describe('versión del esquema', () => {
         '0002_channels',
         '0003_map_url',
         '0004_handoff',
+        '0005_config_transfer',
       ]);
     });
   });
@@ -54,12 +55,15 @@ describe('versión del esquema', () => {
     });
   });
 
-  it('applyMigrationsUpTo(3) deja 0003 y el migrador de Drizzle aplica después solo la 0004', async () => {
+  it('applyMigrationsUpTo(3) deja 0003 y el migrador de Drizzle aplica después la 0004 y la 0005', async () => {
     const scratch = await createDatabaseMigratedUpTo(3);
     opened.push(scratch);
     await withClient(scratch.url, async (client) => {
       expect(await databaseSchema(client)).toMatchObject({ index: 3, tag: '0003_map_url' });
-      expect((await pendingMigrations(client)).map((m) => m.tag)).toEqual(['0004_handoff']);
+      expect((await pendingMigrations(client)).map((m) => m.tag)).toEqual([
+        '0004_handoff',
+        '0005_config_transfer',
+      ]);
       const handoff = await client.query<{ t: string | null }>(
         `select to_regclass('public.handoff')::text as t`,
       );
@@ -71,7 +75,7 @@ describe('versión del esquema', () => {
       const count = await client.query<{ n: string }>(
         'select count(*)::text as n from drizzle.__drizzle_migrations',
       );
-      expect(count.rows[0]?.n).toBe('5');
+      expect(count.rows[0]?.n).toBe('6');
     });
   });
 });
