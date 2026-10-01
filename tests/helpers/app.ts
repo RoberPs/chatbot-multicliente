@@ -3,6 +3,9 @@ import type { FastifyInstance, LightMyRequestResponse } from 'fastify';
 import { buildApp, type BotHttp } from '../../src/app.js';
 import { loadEnv } from '../../src/config/env.js';
 import type { Db } from '../../src/db/client.js';
+import { createLifecycle } from '../../src/health/lifecycle.js';
+import { createInstanceHealth, type InstanceHealth } from '../../src/health/report.js';
+import { readCoreVersion } from '../../src/health/version.js';
 
 export const OPERATOR_USER = 'operador';
 export const OPERATOR_PASSWORD = 'contraseña-de-prueba';
@@ -23,6 +26,8 @@ export async function buildTestApp(
   extraEnv: Record<string, string> = {},
   /** Registros de la app en líneas JSON (sin él, la app no registra nada). */
   logLines?: string[],
+  /** Salud de la instancia (009); por defecto, el sondeo real contra la BD del test y lista. */
+  options: { health?: InstanceHealth } = {},
 ): Promise<FastifyInstance> {
   passwordHash ??= argon2.hash(OPERATOR_PASSWORD, { type: argon2.argon2id });
   const env = loadEnv({
@@ -37,12 +42,25 @@ export async function buildTestApp(
     NODE_ENV: 'test',
     ...extraEnv,
   });
+  const health =
+    options.health ??
+    (() => {
+      // El sondeo va a la BD que usa el test (DATABASE_URL puede ser un valor de relleno).
+      const lifecycle = createLifecycle();
+      lifecycle.markReady();
+      return createInstanceHealth({
+        databaseUrl: db.$client.options.connectionString ?? databaseUrl,
+        coreVersion: readCoreVersion(),
+        lifecycle,
+      });
+    })();
   const app = await buildApp({
     env,
     db,
     logger: logLines !== undefined,
     ...(logLines ? { logStream: { write: (line: string) => void logLines.push(line) } } : {}),
     bot,
+    health,
   });
   await app.ready();
   return app;

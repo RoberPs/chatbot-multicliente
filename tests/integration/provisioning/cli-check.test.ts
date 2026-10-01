@@ -50,6 +50,30 @@ describe('pnpm instance:check (US1)', () => {
     expect(containsAny(io.all(), secrets())).toBe(false);
   });
 
+  it('009: sin HEALTH_SECRET no es apto; copiado de otra instancia → secreto repetido', async () => {
+    const { HEALTH_SECRET: _h, ...without } = productionEnv('demo-09');
+    const missing = instanceIO(env());
+    expect(await main(['check', await ws.writeEnv('sin.env', without)], missing, testDeps())).toBe(
+      1,
+    );
+    expect(missing.stdout.join('\n')).toContain('HEALTH_SECRET: falta.');
+
+    const copied = productionEnv('demo-09', { HEALTH_SECRET: sample.envs[0]?.HEALTH_SECRET ?? '' });
+    const io = instanceIO(env());
+    const path = await ws.writeEnv('copiado.env', copied);
+    expect(await main(['check', path, '--json'], io, testDeps())).toBe(1);
+    const result = JSON.parse(io.stdout.join('')) as CheckResult;
+    expect(result.errors).toContainEqual(
+      expect.objectContaining({
+        code: 'duplicate_secret',
+        variable: 'HEALTH_SECRET',
+        otherInstance: 'demo-01',
+        otherVariable: 'HEALTH_SECRET',
+      }),
+    );
+    expect(containsAny(io.all(), secrets())).toBe(false);
+  });
+
   it('no apto → 1 con la salida para personas, sin ningún secreto', async () => {
     const bad = productionEnv('demo-09', {
       SESSION_SECRET: sample.envs[0]?.SESSION_SECRET ?? '',

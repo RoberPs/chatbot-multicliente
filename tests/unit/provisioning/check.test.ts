@@ -166,6 +166,23 @@ describe('validate: tabla SC-002 (cada incoherencia y cada repetición → no ap
       'missing:OPERATOR_PASSWORD_HASH',
     ],
     ['sin SESSION_SECRET', fresh({ SESSION_SECRET: '' }), 'missing:SESSION_SECRET'],
+    // 009: secreto de salud
+    ['sin HEALTH_SECRET', fresh({ HEALTH_SECRET: '' }), 'missing:HEALTH_SECRET'],
+    [
+      'secreto de salud débil',
+      fresh({ HEALTH_SECRET: 'ab'.repeat(32) }),
+      'core_rule:HEALTH_SECRET',
+    ],
+    [
+      'secreto de salud igual a la sesión',
+      ((e) => ({ ...e, HEALTH_SECRET: e.SESSION_SECRET ?? '' }))(fresh()),
+      'health_secret_equals_session:HEALTH_SECRET',
+    ],
+    [
+      'secreto de salud igual a la clave de copias',
+      ((e) => ({ ...e, HEALTH_SECRET: (e.BACKUP_KEY ?? '').toUpperCase() }))(fresh()),
+      'health_secret_equals_backup_key:HEALTH_SECRET',
+    ],
     ['sin PUBLIC_BASE_URL', fresh({ PUBLIC_BASE_URL: '' }), 'missing:PUBLIC_BASE_URL'],
     [
       'bot sin teléfono de emergencia',
@@ -252,9 +269,32 @@ describe('validate: tabla SC-002 (cada incoherencia y cada repetición → no ap
     expectSecretFree(result, env, demo01);
   });
 
+  it('sin HEALTH_SECRET tampoco es apto en el perfil testing', () => {
+    const { HEALTH_SECRET: _h, ...rest } = demo03;
+    expect(errorKeys(run(rest))).toContain('missing:HEALTH_SECRET');
+  });
+
+  it('HEALTH_SECRET débil por calidad (no hex aleatorio) → weak_secret o regla del núcleo', () => {
+    const result = run(fresh({ HEALTH_SECRET: 'changeme' }));
+    expect(result.ok).toBe(false);
+    expect(result.errors.filter((e) => e.variable === 'HEALTH_SECRET').length).toBeGreaterThan(0);
+  });
+
+  it('HEALTH_SECRET igual a SESSION_SECRET: un solo error, sin secret_reused_within', () => {
+    const env = ((e) => ({ ...e, HEALTH_SECRET: e.SESSION_SECRET ?? '' }))(fresh());
+    const keys = errorKeys(run(env));
+    expect(keys.filter((k) => k.includes('HEALTH_SECRET'))).toEqual([
+      'health_secret_equals_session:HEALTH_SECRET',
+    ]);
+    expect(keys.some((k) => k.startsWith('secret_reused_within'))).toBe(false);
+    const finding = run(env).errors.find((e) => e.code === 'health_secret_equals_session');
+    expect(finding?.action).toContain('openssl rand -hex 32');
+  });
+
   const secretVariables = [
     'SESSION_SECRET',
     'BACKUP_KEY',
+    'HEALTH_SECRET',
     'OPERATOR_PASSWORD_HASH',
     'ANTHROPIC_API_KEY',
     'WHATSAPP_ACCESS_TOKEN',

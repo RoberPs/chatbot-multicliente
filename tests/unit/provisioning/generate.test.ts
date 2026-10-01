@@ -121,6 +121,12 @@ describe('buildInstanceEnv', () => {
     });
     expect(result.values.SESSION_SECRET).toMatch(/^[0-9a-f]{64}$/);
     expect(result.values.BACKUP_KEY).toMatch(/^[0-9a-f]{64}$/);
+    // 009: secreto de salud propio, distinto de los otros dos.
+    expect(result.values.HEALTH_SECRET).toMatch(/^[0-9a-f]{64}$/);
+    expect(result.values.HEALTH_SECRET).not.toBe(result.values.SESSION_SECRET);
+    expect(result.values.HEALTH_SECRET).not.toBe(result.values.BACKUP_KEY);
+    expect(result.instance.fingerprints.map((f) => f.variable)).toContain('HEALTH_SECRET');
+    expect(JSON.stringify(result.instance)).not.toContain(result.values.HEALTH_SECRET);
     expect(result.values.WHATSAPP_VERIFY_TOKEN).toMatch(/^[0-9a-f]{48}$/);
     expect(result.values.OPERATOR_PASSWORD_HASH).toMatch(/^\$argon2id\$/);
     expect(Object.keys(result.pending).sort()).toEqual(
@@ -219,6 +225,7 @@ describe('buildInstanceEnv', () => {
       for (const value of [
         result.values.SESSION_SECRET,
         result.values.BACKUP_KEY,
+        result.values.HEALTH_SECRET,
         result.values.WHATSAPP_VERIFY_TOKEN,
         result.values.OPERATOR_PASSWORD_HASH,
         result.password,

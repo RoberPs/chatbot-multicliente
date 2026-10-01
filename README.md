@@ -12,6 +12,7 @@ Estados: especificada → planificada → en implementación → completada (o a
 | 006 | Copias de seguridad y restauración por instancia | Núcleo | Completada | `006-instance-backup-restore` | [spec](specs/006-instance-backup-restore/spec.md) · [plan](specs/006-instance-backup-restore/plan.md) · [tareas](specs/006-instance-backup-restore/tasks.md) | 2026-09-29  |
 | 007 | Aprovisionamiento de instancias | Núcleo (operación) | Completada | `007-instance-provisioning` | [spec](specs/007-instance-provisioning/spec.md) · [plan](specs/007-instance-provisioning/plan.md) · [tareas](specs/007-instance-provisioning/tasks.md) | 2026-09-30  |
 | 008 | Exportar e importar la configuración del negocio | Núcleo | Completada | `008-config-export-import` | [spec](specs/008-config-export-import/spec.md) · [plan](specs/008-config-export-import/plan.md) · [tareas](specs/008-config-export-import/tasks.md) | 2026-10-01  |
+| 009 | Versión visible y actualización escalonada | Núcleo (operación) | Completada (ensayo de la guía con operador externo pendiente, SC-006) | `009-version-health-rollout` | [spec](specs/009-version-health-rollout/spec.md) · [plan](specs/009-version-health-rollout/plan.md) · [tareas](specs/009-version-health-rollout/tasks.md) | 2026-10-01  |
 
 ---
 
@@ -46,6 +47,11 @@ Las instancias se dan de alta con las **herramientas de aprovisionamiento** (fea
 operador ejecuta en su equipo: generan el entorno con secretos nuevos, crean la base de datos con
 un usuario propio, validan el entorno antes de desplegar comparándolo con el resto de instancias y
 llevan un inventario sin secretos en claro. No intervienen en el arranque de una instancia.
+
+Cada instancia **declara su versión** (feature 009): `GET /health` responde su estado y, con su
+secreto de salud, la versión del núcleo y del esquema; el panel la muestra al pie de cada pantalla;
+`pnpm instance:versions` la consulta en todo el parque, y la guía de operación describe la
+publicación por tandas con comprobación y vuelta atrás.
 
 ## Requisitos
 
@@ -197,9 +203,11 @@ pnpm instance:db <id>                       # BD y usuario propios (INSTANCE_DB_
 pnpm instance:db <id> --print-sql --host <servidor> --port <puerto>  # solo el SQL, sin conectarse
 pnpm instance:check <entorno> [--json]      # APTO / NO APTO antes de desplegar (0 / 1)
 pnpm instance:list [--json]                 # instancias, estado, versión y verificaciones vencidas
+pnpm instance:versions [--only <id>] [--json] [--annotate]  # versión real de cada instancia (0 / 1)
+pnpm instance:health-secret <id> [--rotate] # secreto de salud de una instancia anterior a la 009
 ```
 
-- `instance:new` parte de `.env.example`, genera `SESSION_SECRET`, `BACKUP_KEY`, la contraseña del
+- `instance:new` parte de `.env.example`, genera `SESSION_SECRET`, `BACKUP_KEY`, `HEALTH_SECRET`, la contraseña del
   operador (se muestra **una sola vez**; el entorno solo lleva su hash) y el token del webhook, y
   deja marcados con `# PENDIENTE:` los valores de terceros. Nunca sobrescribe un fichero.
 - `instance:db` crea `chatbot_<id>` con un usuario sin privilegios de administración, retira
@@ -211,6 +219,11 @@ pnpm instance:list [--json]                 # instancias, estado, versión y ver
 - Mantenimiento: `instance:register` (instancia anterior a la 007), `instance:sync` (tras rotar
   secretos), `instance:update`, `instance:verified <id> <informe de db:verify --json>` e
   `instance:retire` (solo el inventario; los pasos manuales se muestran al terminar).
+- `instance:versions` consulta `GET /health` de cada instancia no retirada con el `HEALTH_SECRET`
+  de su entorno (`<dir. del inventario>/envs/<id>.env`, solo en memoria), comprueba que responde
+  la instancia esperada y compara con la versión anotada (`imageVersion`). Solo `https`
+  (`--allow-insecure` para `localhost`). No escribe nada salvo `--annotate`, que pide confirmación
+  (`--yes` sin terminal). `instance:health-secret` escribe el secreto en el entorno sin mostrarlo.
 
 Guía completa del alta y la baja: [docs/operacion-multicliente.md §2 y §7](docs/operacion-multicliente.md#2-alta-de-un-cliente-nuevo).
 Contrato de las órdenes: [specs/007-instance-provisioning/contracts/instance-commands.md](specs/007-instance-provisioning/contracts/instance-commands.md).
@@ -248,6 +261,7 @@ Contrato de las órdenes: [specs/007-instance-provisioning/contracts/instance-co
 | `BACKUP_RETENTION_DAYS` | No (`7`) | Días que se conservan las copias, de 1 a 30 |
 | `BACKUP_DAILY_TIME` | No (`03:00`) | Hora local del negocio (`HH:MM`) de la copia diaria |
 | `BACKUP_VERIFY_URL` | No (`DATABASE_URL`) | Servidor PostgreSQL donde `pnpm db:verify` crea la BD temporal (usuario con `CREATEDB`) |
+| `HEALTH_SECRET` | No para arrancar; `instance:check` la exige | Secreto de salud: 32 bytes aleatorios en hex (`openssl rand -hex 32`), distinto de `SESSION_SECRET`, `BACKUP_KEY` y del de otras instancias. Enviado como `Authorization: Bearer`, `GET /health` añade la versión del núcleo y del esquema; sin él solo responde el estado |
 
 ## Comandos
 
@@ -275,13 +289,19 @@ Contrato de las órdenes: [specs/007-instance-provisioning/contracts/instance-co
 | `pnpm instance:check <entorno>` | Valida un entorno antes de desplegar y lo compara con el inventario (`--json`; 0 apto, 1 no apto) |
 | `pnpm instance:list` | Inventario de instancias con estado, versión y verificaciones de copia vencidas (`--json`) |
 | `pnpm instance:register` · `sync` · `update` · `verified` · `retire` | Mantenimiento del inventario (registrar una instancia existente, rotación, datos, verificación de copia, baja) |
+| `pnpm instance:versions` | Versión del núcleo y del esquema que corre cada instancia del inventario, comparada con la anotada (`--only`, `--json`, `--annotate`; 0 todo correcto, 1 algo que revisar) |
+| `pnpm instance:health-secret <id>` | Añade el secreto de salud al entorno de una instancia sin mostrarlo (`--rotate` para cambiarlo) |
 | `pnpm kb:snapshot` | Imprime el `KnowledgeSnapshot` actual |
 | `pnpm operator:hash-password` | Pide una contraseña sin mostrarla y devuelve su hash Argon2id |
 | `pnpm handoff:templates` | Imprime la definición JSON de las tres plantillas de WhatsApp de los avisos de derivación, para darlas de alta en Meta |
 
 ## Despliegue
 
-`Dockerfile` construye una imagen única del núcleo, igual para todos los clientes. Cada
+`Dockerfile` construye una imagen única del núcleo, igual para todos los clientes, con la versión
+de `package.json` (`docker build --build-arg CORE_VERSION=X.Y.Z -t chatbot:X.Y.Z .`; con otra
+versión la construcción falla; nunca `latest`). `GET /health` (sin sesión, 30 peticiones por
+minuto e IP) responde `200 {"status":"ok"}` o `503` con `degraded`/`not_ready` para un monitor o
+balanceador, y la versión solo con `HEALTH_SECRET`. Cada
 instancia es un contenedor con sus variables de entorno, su base de datos y un **volumen
 persistente para las copias** (la imagen declara `/var/lib/chatbot/backups`, escribible por el
 usuario `node`); al arrancar aplica las migraciones pendientes, con copia previa si hay datos.
@@ -309,14 +329,15 @@ src/
 ├── backup/        copias de la instancia sin HTTP: formato cifrado, volcado, restauración,
 │                  comprobación, retención, copia diaria y bloqueos
 ├── channels/      adaptadores de canal: WhatsApp (webhook y Graph API), web (iframe y API JSON)
-│                  y los enlaces públicos de derivación (`/handoff/*`)
+│                  los enlaces públicos de derivación (`/handoff/*`) y `GET /health`
+├── health/        salud y versión sin HTTP: versión del núcleo, informe, secreto, ciclo de vida
 ├── webchat/       dominio del chat web sin HTTP: configuración, disponibilidad, topes, sesión
 ├── mail/          adaptador de email (avisos de derivación por SMTP)
 ├── llm/           adaptador de Claude, construcción del prompt y resumen de derivaciones
 ├── speech/        adaptador de transcripción (solo con audios activados)
 ├── admin/         panel del operador: sesión, rutas, plantillas Eta + htmx, probar el bot
 ├── provisioning/  herramientas de alta sin HTTP: plantilla de entorno, secretos, huellas,
-│                  inventario, validación y creación de la BD
+│                  inventario, validación, creación de la BD y versiones del parque
 ├── cli/           kb:snapshot, operator:hash-password, bot:chat, handoff:templates,
 │                  db:backup, db:restore, db:verify, db:backups e instance:*
 ├── bot.ts         composición del bot

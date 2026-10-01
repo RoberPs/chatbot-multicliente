@@ -118,6 +118,8 @@ function translateCoreIssue(issue: EnvIssue, profile: Profile, out: Findings): v
     case 'smtp_incomplete':
     case 'llm_key_required':
     case 'backup_key_equals_session':
+    case 'health_secret_equals_session':
+    case 'health_secret_equals_backup_key':
     case 'trust_proxy_all':
       out.error(issue.rule, { variable });
       return;
@@ -142,6 +144,8 @@ const REQUIRED = [
   'INSTANCE_ID',
   'BACKUP_DIR',
   'BACKUP_KEY',
+  // 009: sin él no se puede comprobar la versión de la instancia desde el inventario.
+  'HEALTH_SECRET',
 ];
 
 function coherence(env: EnvMap, profile: Profile, out: Findings): void {
@@ -208,6 +212,7 @@ function secretEntries(env: EnvMap): Array<[string, string]> {
   for (const variable of [
     'SESSION_SECRET',
     'BACKUP_KEY',
+    'HEALTH_SECRET',
     'OPERATOR_PASSWORD_HASH',
     'ANTHROPIC_API_KEY',
     'WHATSAPP_ACCESS_TOKEN',
@@ -249,8 +254,11 @@ function reusedWithin(env: EnvMap, out: Findings): void {
       continue;
     }
     const pair = new Set([first, v.variable]);
-    // BACKUP_KEY = SESSION_SECRET ya lo detecta la regla del núcleo.
+    // BACKUP_KEY = SESSION_SECRET y HEALTH_SECRET = cualquiera de los dos ya los detecta el núcleo.
     if (pair.has('BACKUP_KEY') && pair.has('SESSION_SECRET')) continue;
+    if (pair.has('HEALTH_SECRET') && (pair.has('SESSION_SECRET') || pair.has('BACKUP_KEY'))) {
+      continue;
+    }
     if (first === v.variable) continue;
     out.error('secret_reused_within', { variable: envVariable(v.variable), otherVariable: first });
   }

@@ -1,3 +1,5 @@
+import { readFileSync } from 'node:fs';
+import { parseEnv } from 'node:util';
 import { describe, expect, it } from 'vitest';
 import { checkEnv, loadEnv } from '../../src/config/env.js';
 
@@ -327,6 +329,52 @@ describe('variables de la instancia', () => {
           .BACKUP_VERIFY_URL,
       ).toBe('postgres://verificador@otra/postgres');
     });
+  });
+});
+
+describe('secreto de salud (009, R2)', () => {
+  const HEALTH = '5b8e2d4f6a1c3087e2a4c6f8093b5d7e9a1c3e5f7294b6d8f0a2c4e6b8d0f1a3';
+
+  it('es opcional: sin él la instancia arranca', () => {
+    expect(loadEnv(base).HEALTH_SECRET).toBeUndefined();
+    expect(loadEnv({ ...base, HEALTH_SECRET: ' ' }).HEALTH_SECRET).toBeUndefined();
+  });
+
+  it('válida: 64 hex aleatorios, normalizada a minúsculas', () => {
+    expect(loadEnv({ ...base, HEALTH_SECRET: ` ${HEALTH.toUpperCase()} ` }).HEALTH_SECRET).toBe(
+      HEALTH,
+    );
+  });
+
+  it.each([
+    ['corta', 'abcdef0123456789'],
+    ['no hex', 'z'.repeat(64)],
+    ['repetitiva', 'ab'.repeat(32)],
+  ])('%s → error', (_name, value) => {
+    expect(() => loadEnv({ ...base, HEALTH_SECRET: value })).toThrow(/HEALTH_SECRET/);
+  });
+
+  it('igual a SESSION_SECRET o a BACKUP_KEY → regla propia', () => {
+    expect(
+      checkEnv({ ...base, HEALTH_SECRET: base.SESSION_SECRET.toUpperCase() }).map(
+        (i) => `${i.rule}:${i.variable ?? '-'}`,
+      ),
+    ).toEqual(['health_secret_equals_session:HEALTH_SECRET']);
+    expect(
+      checkEnv({ ...base, HEALTH_SECRET: base.BACKUP_KEY }).map(
+        (i) => `${i.rule}:${i.variable ?? '-'}`,
+      ),
+    ).toEqual(['health_secret_equals_backup_key:HEALTH_SECRET']);
+    expect(() => loadEnv({ ...base, HEALTH_SECRET: base.BACKUP_KEY })).toThrow(
+      /HEALTH_SECRET debe ser distinta de BACKUP_KEY/,
+    );
+  });
+
+  it('.env.example documenta HEALTH_SECRET y loadEnv la lee', () => {
+    const example = parseEnv(readFileSync('.env.example', 'utf8'));
+    expect(Object.keys(example)).toContain('HEALTH_SECRET');
+    expect(example.HEALTH_SECRET).toBe('');
+    expect(Object.keys(loadEnv({ ...base, HEALTH_SECRET: HEALTH }))).toContain('HEALTH_SECRET');
   });
 });
 

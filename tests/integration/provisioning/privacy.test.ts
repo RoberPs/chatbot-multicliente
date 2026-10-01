@@ -112,6 +112,12 @@ describe('privacidad de todas las salidas (SC-005)', () => {
     expect(await run(['verified', a, report])).toBe(0);
     expect(await run(['list'])).toBe(0);
     expect(await run(['list', '--json'])).toBe(0);
+    // 009: secreto de salud (rotación) y versiones del parque (sin servidores: no responden).
+    expect(await run(['health-secret', a])).toBe(0);
+    expect(await run(['health-secret', a, '--rotate'])).toBe(0);
+    expect(await run(['health-secret', 'no-existe'])).toBe(2);
+    await run(['versions', '--timeout', '1']);
+    await run(['versions', '--timeout', '1', '--json']);
     expect(await run(['retire', 'px-anterior', '--yes'])).toBe(0);
 
     // Rechazos principales.

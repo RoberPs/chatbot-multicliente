@@ -111,12 +111,18 @@ export function databasePassword(databaseUrl: string | undefined): string | null
 // Normalización y huellas de un entorno
 // ---------------------------------------------------------------------------
 
-const HEX_VARIABLES = new Set(['SESSION_SECRET', 'BACKUP_KEY', 'BACKUP_KEYS_PREVIOUS']);
+const HEX_VARIABLES = new Set([
+  'SESSION_SECRET',
+  'BACKUP_KEY',
+  'BACKUP_KEYS_PREVIOUS',
+  'HEALTH_SECRET',
+]);
 
 /** Variables secretas que se huellan tal cual (recortadas). */
 export const SECRET_VARIABLES = [
   'SESSION_SECRET',
   'BACKUP_KEY',
+  'HEALTH_SECRET',
   'OPERATOR_PASSWORD_HASH',
   'ANTHROPIC_API_KEY',
   'WHATSAPP_ACCESS_TOKEN',

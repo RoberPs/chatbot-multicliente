@@ -1,5 +1,7 @@
 import type { BotHttp } from '../app.js';
 import type { Env } from '../config/env.js';
+import type { Lifecycle } from '../health/lifecycle.js';
+import type { InstanceHealth } from '../health/report.js';
 import type { KnowledgeDeps } from '../knowledge/services/deps.js';
 
 declare module 'fastify' {
@@ -10,6 +12,10 @@ declare module 'fastify' {
     sessionEpoch: { value: string };
     /** Bot de la instancia; `null` sin ANTHROPIC_API_KEY (004, R11). */
     bot: BotHttp | null;
+    /** Salud de la instancia (009): informe de `/health` y del pie del panel. */
+    health: InstanceHealth;
+    /** Ciclo de vida: `starting` → `ready` → `stopping` (lo fija el arranque). */
+    lifecycle: Lifecycle;
   }
 }
 

@@ -88,6 +88,15 @@ describe('pnpm instance:new (US2)', () => {
     expect(await ws.inventoryText()).not.toContain(password);
     expect(await ws.otherFilesText()).not.toContain(password);
     expect(await ws.inventoryText()).not.toContain(values.SESSION_SECRET);
+    // 009: el entorno nace con su secreto de salud, que no se imprime ni va al inventario.
+    expect(values.HEALTH_SECRET).toMatch(/^[0-9a-f]{64}$/);
+    expect(io.all()).not.toContain(values.HEALTH_SECRET);
+    expect(await ws.inventoryText()).not.toContain(values.HEALTH_SECRET);
+    expect(
+      inventory.instances
+        .find((i) => i.id === 'demo-09')
+        ?.fingerprints.some((f) => f.variable === 'HEALTH_SECRET'),
+    ).toBe(true);
 
     const out = io.stdout.join('\n');
     expect(out).toContain('Instancia demo-09 dada de alta en el inventario (estado: en alta).');

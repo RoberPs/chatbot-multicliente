@@ -38,7 +38,9 @@
     "instance:sync": "tsx src/cli/instance.ts sync",
     "instance:update": "tsx src/cli/instance.ts update",
     "instance:verified": "tsx src/cli/instance.ts verified",
-    "instance:retire": "tsx src/cli/instance.ts retire"
+    "instance:retire": "tsx src/cli/instance.ts retire",
+    "instance:versions": "tsx src/cli/instance.ts versions",
+    "instance:health-secret": "tsx src/cli/instance.ts health-secret"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.128.0",

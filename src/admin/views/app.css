@@ -88,6 +88,21 @@ main {
 .badge-draft {
   color: var(--warn);
 }
+.badge-warn {
+  color: var(--danger);
+}
+
+/* Versión de la instancia (009): línea fija al pie de todas las páginas. */
+.version {
+  max-width: 60rem;
+  margin: 0 auto;
+  padding: 0.75rem 1.25rem 1.5rem;
+  font-size: 0.8rem;
+  color: var(--muted);
+}
+.version .badge {
+  margin-left: 0.5rem;
+}
 .warnings-count {
   font-size: 0.85rem;
   text-decoration: none;

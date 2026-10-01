@@ -6,6 +6,7 @@ import {
   keyCheck,
   normalize,
   parseInventoryKey,
+  SECRET_VARIABLES,
   verifyKey,
 } from '../../../src/provisioning/fingerprint.js';
 import {
@@ -45,6 +46,8 @@ describe('huellas (research R4)', () => {
   it('normalización por variable', () => {
     expect(normalize('SESSION_SECRET', ' ABCDEF ')).toBe('abcdef');
     expect(normalize('BACKUP_KEYS_PREVIOUS', 'ABC')).toBe('abc');
+    expect(normalize('HEALTH_SECRET', ' ABCDEF ')).toBe('abcdef');
+    expect(SECRET_VARIABLES).toContain('HEALTH_SECRET');
     expect(normalize('PUBLIC_BASE_URL', 'https://Chat.Ejemplo.com/')).toBe(
       'https://chat.ejemplo.com',
     );
@@ -93,6 +96,7 @@ describe('huellas (research R4)', () => {
       [
         'SESSION_SECRET:secret:true',
         'BACKUP_KEY:secret:true',
+        'HEALTH_SECRET:secret:true',
         'BACKUP_KEYS_PREVIOUS:secret:false',
         'OPERATOR_PASSWORD_HASH:secret:true',
         'ANTHROPIC_API_KEY:secret:true',

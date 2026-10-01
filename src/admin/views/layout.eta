@@ -46,5 +46,13 @@
     <h1><%= it.layout.title %></h1>
     <%~ it.body %>
   </main>
+  <footer class="version" aria-label="Versión de la instancia">
+    <% if (it.layout.version) { %>
+      Núcleo <%= it.layout.version.coreVersion %> · Esquema <%= it.layout.version.schemaTag || '—' %>
+      <% if (!it.layout.version.matches) { %><span class="badge badge-warn">Esquema distinto del esperado</span><% } %>
+    <% } else { %>
+      Versión no disponible
+    <% } %>
+  </footer>
 </body>
 </html>

@@ -17,6 +17,8 @@ import { systemClock, type Clock } from './conversation/ports.js';
 import { createRetention } from './conversation/retention.js';
 import { closeDb, createDb } from './db/client.js';
 import { runMigrations } from './db/migrate.js';
+import { createInstanceHealth } from './health/report.js';
+import { readCoreVersion } from './health/version.js';
 
 export interface StartInstanceOptions {
   env: Env;
@@ -43,6 +45,9 @@ export async function startInstance(options: StartInstanceOptions): Promise<Runn
   const listen =
     options.listen ?? ((app: FastifyInstance) => app.listen({ port: env.PORT, host: '0.0.0.0' }));
 
+  // Sin versión del núcleo no se arranca: nunca se declara una versión desconocida (009, R4).
+  const coreVersion = readCoreVersion();
+
   // Antes que nada: una restauración en curso o una segunda copia del servidor no arrancan (R7).
   const lock: AdvisoryLock | null = await tryAdvisoryLock(env.DATABASE_URL, INSTANCE_RUNNING);
   if (!lock) throw new InstanceBusyError();
@@ -55,6 +60,7 @@ export async function startInstance(options: StartInstanceOptions): Promise<Runn
       env,
       db,
       bot: (log) => (started.bot = createBot({ env, db, logger: log, clock })),
+      health: createInstanceHealth({ databaseUrl: env.DATABASE_URL, coreVersion }),
     });
     const logger = options.logger ?? app.log;
 
@@ -109,9 +115,13 @@ export async function startInstance(options: StartInstanceOptions): Promise<Runn
   scheduler?.start();
 
   const running = app;
+  // Servidor, bot y tareas en marcha: /health deja de responder `not_ready` (009, R3).
+  running.lifecycle.markReady();
   return {
     app: running,
     async stop() {
+      // Desde aquí /health responde `not_ready`.
+      running.lifecycle.markStopping();
       // Primero deja de recibir; después espera a lo que está en curso; por último, la BD.
       await running.close();
       await bot?.transcriber?.stop();

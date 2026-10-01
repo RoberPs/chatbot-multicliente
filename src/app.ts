@@ -13,6 +13,7 @@ import './admin/fastify-types.js';
 import { renderNotFound } from './admin/render.js';
 import { adminRoutes } from './admin/routes/index.js';
 import { handoffLinkRoutes } from './channels/handoff-links/routes.js';
+import { healthRoutes } from './channels/health/routes.js';
 import { CHAT_FRAME_PATH, FRAME_FALLBACK_CSP, webChatRoutes } from './channels/web/routes.js';
 import { whatsappWebhook } from './channels/whatsapp/webhook.js';
 import type { Env, WhatsAppEnv } from './config/env.js';
@@ -21,6 +22,8 @@ import type { Intake } from './conversation/intake.js';
 import type { Clock } from './conversation/ports.js';
 import type { Db } from './db/client.js';
 import type { HandoffService } from './handoff/service.js';
+import { createInstanceHealth, type InstanceHealth } from './health/report.js';
+import { readCoreVersion } from './health/version.js';
 import type { KnowledgeReader } from './knowledge/types.js';
 
 const viewsDir = fileURLToPath(new URL('./admin/views', import.meta.url));
@@ -78,6 +81,11 @@ export interface BuildAppOptions {
    * función que recibe el logger de la app (el bot registra sus eventos con él).
    */
   bot?: BotHttp | ((log: FastifyBaseLogger) => BotHttp | null) | null;
+  /**
+   * Salud de la instancia (009): ciclo de vida e informe de `/health` y del pie del panel. Por
+   * defecto, el sondeo real contra `DATABASE_URL` con la versión de `package.json`.
+   */
+  health?: InstanceHealth;
 }
 
 /**
@@ -93,6 +101,10 @@ export async function buildApp({
   logger = true,
   logStream,
   bot = null,
+  health = createInstanceHealth({
+    databaseUrl: env.DATABASE_URL,
+    coreVersion: readCoreVersion(),
+  }),
 }: BuildAppOptions): Promise<FastifyInstance> {
   const app = Fastify({
     logger: logger
@@ -137,6 +149,12 @@ export async function buildApp({
   });
   const channel = (typeof bot === 'function' ? bot(app.log) : bot) ?? null;
   app.decorate('bot', channel);
+  app.decorate('health', health);
+  app.decorate('lifecycle', health.lifecycle);
+  // El pool propio del sondeo se cierra con la app.
+  app.addHook('onClose', async () => {
+    await health.close?.();
+  });
 
   await app.register(formbody);
   await app.register(rateLimit, { global: false });
@@ -210,6 +228,13 @@ export async function buildApp({
       .send(cssSource),
   );
   app.get('/', async (_request, reply) => reply.redirect('/admin', 302));
+
+  // Salud de la instancia (009): fuera de /admin, sin sesión ni CSRF, con límite propio.
+  await app.register(healthRoutes, {
+    report: () => health.report(),
+    secret: env.HEALTH_SECRET,
+    instanceId: env.INSTANCE_ID ?? null,
+  });
 
   await app.register(
     async (admin) => {

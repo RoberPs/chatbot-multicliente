@@ -200,6 +200,7 @@ export function productionEnv(id: string, overrides: Record<string, string> = {}
     INSTANCE_ID: id,
     BACKUP_DIR: `/var/lib/chatbot/${id}/backups`,
     BACKUP_KEY: hex(),
+    HEALTH_SECRET: hex(),
     BACKUP_RETENTION_DAYS: '7',
     BACKUP_DAILY_TIME: '03:00',
     ...overrides,
@@ -267,6 +268,7 @@ export function collectSecrets(env: EnvMap): string[] {
   const names = [
     'SESSION_SECRET',
     'BACKUP_KEY',
+    'HEALTH_SECRET',
     'OPERATOR_PASSWORD_HASH',
     'ANTHROPIC_API_KEY',
     'WHATSAPP_ACCESS_TOKEN',

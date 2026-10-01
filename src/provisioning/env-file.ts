@@ -82,10 +82,15 @@ function fileMode(path: string): number {
 /**
  * Da valor a una variable vacía de un entorno existente: reemplaza solo su línea (y el
  * `# PENDIENTE` justo encima), conserva el resto byte a byte y el modo, y escribe de forma
- * atómica. Si ya tiene valor, `database_url_set`. Devuelve el contenido anterior para poder
- * restaurarlo si lo que sigue falla.
+ * atómica. Si ya tiene valor, `database_url_set` salvo con `overwrite` (rotación del secreto de
+ * salud, 009). Devuelve el contenido anterior para poder restaurarlo si lo que sigue falla.
  */
-export async function setVariable(path: string, variable: string, value: string): Promise<string> {
+export async function setVariable(
+  path: string,
+  variable: string,
+  value: string,
+  options: { overwrite?: boolean } = {},
+): Promise<string> {
   let original: string;
   try {
     original = readFileSync(path, 'utf8');
@@ -95,7 +100,11 @@ export async function setVariable(path: string, variable: string, value: string)
   const eol = original.includes('\r\n') ? '\r\n' : '\n';
   const lines = original.split(/\r?\n/);
   const index = lines.findIndex((line) => lineVariable(line) === variable);
-  if (index >= 0 && (parseEnvText(lines[index] ?? '')[variable] ?? '').trim() !== '') {
+  if (
+    index >= 0 &&
+    options.overwrite !== true &&
+    (parseEnvText(lines[index] ?? '')[variable] ?? '').trim() !== ''
+  ) {
     throw new ProvisioningError('database_url_set', { path });
   }
   const line = `${variable}=${formatValue(value)}`;

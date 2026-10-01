@@ -23,6 +23,14 @@ export interface Migration extends SchemaVersion {
   sql: string[];
 }
 
+/** La BD tiene una migración aplicada que no está en el journal de este núcleo. */
+export class UnknownMigrationError extends Error {
+  constructor() {
+    super('La BD tiene una migración que este núcleo no conoce');
+    this.name = 'UnknownMigrationError';
+  }
+}
+
 /** Lo que se necesita de una conexión: `pg.Client` o `pg.PoolClient`. */
 export type Queryable = Pick<pg.ClientBase, 'query'>;
 
@@ -78,7 +86,7 @@ export async function databaseSchema(
   const last = await lastApplied(client);
   if (!last) return 'empty';
   const migration = journal(folder).find((m) => m.folderMillis === last.createdAt);
-  if (!migration) throw new Error('La BD tiene una migración que este núcleo no conoce');
+  if (!migration) throw new UnknownMigrationError();
   return { index: migration.index, tag: migration.tag, hash: last.hash };
 }
 

@@ -31,6 +31,8 @@ pnpm instance:new --id <id> …      # entorno con secretos nuevos + alta en el 
 pnpm instance:db <id>              # BD y usuario propios (INSTANCE_DB_ADMIN_URL o --print-sql)
 pnpm instance:check <entorno>      # apto/no apto antes de desplegar [--json]
 pnpm instance:list                 # inventario; también register, sync, update, verified, retire
+pnpm instance:versions             # versión real de cada instancia vía /health [--only, --json, --annotate]
+pnpm instance:health-secret <id>   # HEALTH_SECRET en el entorno de una instancia anterior a la 009
 pnpm lint && pnpm typecheck
 ```
 

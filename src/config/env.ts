@@ -236,6 +236,23 @@ const envSchema = z.object({
   ),
   /** Servidor donde `db:verify` crea la BD temporal; por defecto, el de DATABASE_URL. */
   BACKUP_VERIFY_URL: optionalText,
+
+  // --- Salud y versión (feature 009) ---
+  /**
+   * Secreto de salud propio de la instancia: 32 bytes aleatorios en hexadecimal. Da acceso al
+   * informe completo de `GET /health`; sin él, solo se responde el estado (research R2).
+   */
+  HEALTH_SECRET: optionalText.pipe(
+    z
+      .string()
+      .regex(
+        HEX_KEY,
+        'HEALTH_SECRET debe ser 32 bytes aleatorios en hexadecimal (openssl rand -hex 32)',
+      )
+      .refine(looksRandom, 'HEALTH_SECRET no parece aleatoria')
+      .transform((v) => v.toLowerCase())
+      .optional(),
+  ),
 });
 
 function looksRandom(hex: string): boolean {
@@ -393,6 +410,24 @@ const botSchema = envSchema.transform((raw, ctx) => {
       message: `INSTANCE_ID, BACKUP_DIR y BACKUP_KEY van juntas; faltan: ${backupMissing.join(', ')}`,
       params: { rule: 'backup_incomplete', variables: backupMissing },
     });
+  }
+
+  // Secreto de salud (009, R2): distinto de cualquier otro secreto de la instancia.
+  if (raw.HEALTH_SECRET !== undefined) {
+    if (raw.HEALTH_SECRET === raw.SESSION_SECRET.toLowerCase()) {
+      ctx.addIssue({
+        code: 'custom',
+        message: 'HEALTH_SECRET debe ser distinta de SESSION_SECRET',
+        params: { rule: 'health_secret_equals_session', variables: ['HEALTH_SECRET'] },
+      });
+    }
+    if (raw.BACKUP_KEY !== undefined && raw.HEALTH_SECRET === raw.BACKUP_KEY) {
+      ctx.addIssue({
+        code: 'custom',
+        message: 'HEALTH_SECRET debe ser distinta de BACKUP_KEY',
+        params: { rule: 'health_secret_equals_backup_key', variables: ['HEALTH_SECRET'] },
+      });
+    }
   }
 
   return {

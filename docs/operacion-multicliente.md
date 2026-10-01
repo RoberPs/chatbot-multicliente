@@ -102,6 +102,7 @@ pnpm instance:new --id cliente-x --client "Nombre del cliente" --url https://cli
 ```
 
 - Parte siempre de `.env.example` y genera **secretos nuevos**: `SESSION_SECRET`, `BACKUP_KEY`,
+  `HEALTH_SECRET` (secreto de salud de la 009, distinto de los otros dos; no se muestra),
   la contraseña del operador (24 caracteres, se muestra **una sola vez**; el entorno solo lleva su
   hash Argon2id) y, con `--whatsapp`, `WHATSAPP_VERIFY_TOKEN`. No acepta contraseñas tecleadas.
 - Escribe el entorno en `<dir. del inventario>/envs/<id>.env` (o `--out`), legible solo por tu
@@ -155,7 +156,9 @@ cada base de datos.
    sin mostrar nunca un valor. Aplica las mismas reglas que el arranque más las del alta
    (production, `https`, calidad de cada secreto) y compara con **todas** las instancias del
    inventario, también las dadas de baja: `INSTANCE_ID`, BD, usuario de BD, URL, número de
-   WhatsApp y cualquier secreto (vigente o anterior) repetidos son error; `SMTP_URL` o
+   WhatsApp y cualquier secreto (vigente o anterior, `HEALTH_SECRET` incluido) repetidos son error;
+   desde la 009 también es error que falte `HEALTH_SECRET`, que sea débil o que sea igual a
+   `SESSION_SECRET` o a `BACKUP_KEY`; `SMTP_URL` o
    `BACKUP_DIR` compartidos, advertencia. No escribe nada. Código de salida 0 apto, 1 no apto: se
    puede usar como paso de despliegue.
 
@@ -181,6 +184,7 @@ Referencia de variables del entorno:
 | `BACKUP_DIR` | Ruta absoluta del volumen persistente de copias, p. ej. `/var/lib/chatbot/backups` |
 | `BACKUP_KEY` | `openssl rand -hex 32`, **distinta** de `SESSION_SECRET` y de la de otras instancias; guárdala también **fuera** de `BACKUP_DIR` |
 | `BACKUP_RETENTION_DAYS` · `BACKUP_DAILY_TIME` | `7` y `03:00` (hora local del negocio) salvo acuerdo distinto; retención de 1 a 30 días |
+| `HEALTH_SECRET` | Lo genera `instance:new` (o `instance:health-secret <id>` en instancias anteriores a la 009): 32 bytes en hex, **distinto** de `SESSION_SECRET`, `BACKUP_KEY` y del de otras instancias. Da acceso a la versión en `GET /health` ([sección 5](#5-actualizar-el-núcleo)); el inventario guarda solo su huella |
 
 En `production` la instancia **no arranca** sin `INSTANCE_ID`, `BACKUP_DIR` y `BACKUP_KEY`. El
 contenedor necesita un **volumen persistente** montado en `BACKUP_DIR` y escribible por el usuario
@@ -202,6 +206,10 @@ si conservas la `BACKUP_KEY` antigua en el gestor de secretos, ponla en `BACKUP_
 para poder restaurar las copias anteriores (sin ella no se pueden restaurar). Después,
 `instance:check` y `instance:sync`.
 
+**Instancia existente antes de la 009** (sin secreto de salud): `pnpm instance:health-secret <id>`
+lo añade a su entorno sin mostrarlo (`--rotate` para cambiarlo); despliega el entorno y ejecuta
+`pnpm instance:sync <id> <fichero>` para guardar su huella.
+
 **Instancia existente antes de la 007**: regístrala con
 `pnpm instance:register <entorno> --client "<nombre>" [--status testing]`. Si algún secreto no
 cumple las reglas de calidad o coincide con otra instancia, `instance:check` lo dirá: rótalo y haz
@@ -213,6 +221,8 @@ cumple las reglas de calidad o coincide con otra instancia, `instance:check` lo 
    entorno del cliente. Al arrancar aplica las migraciones y crea el negocio vacío en
    "En preparación".
 2. Comprueba que `https://nombrecliente.tudominio.com/admin` pide login y que la cookie es `Secure`.
+3. Comprueba la versión: `pnpm instance:versions --only <id>` da `Correcto` con la versión
+   desplegada, y anótala con `--annotate` ([sección 5](#5-actualizar-el-núcleo)).
 
 ### 2.6 Configuración del negocio (en el panel de producción)
 
@@ -309,31 +319,138 @@ En los dos casos:
 ## 5. Actualizar el núcleo
 
 Una versión nueva de la imagen llega a **todos** los clientes y las migraciones se aplican solas al
-arrancar. Por eso:
+arrancar. Desde la feature 009 cada instancia declara qué versión corre y en qué estado está, y la
+publicación es un procedimiento por etapas: cada paso tiene una comprobación (orden o pantalla), el
+resultado esperado y cuándo **parar**. Contrato completo:
+[specs/009-version-health-rollout/contracts/release-procedure.md](../specs/009-version-health-rollout/contracts/release-procedure.md).
 
-1. `pnpm lint && pnpm typecheck && pnpm test` en verde.
-2. `pnpm test:eval` (y `EVAL_CHANNEL=web pnpm test:eval`) sin regresiones en los criterios.
-3. Construye y etiqueta la imagen con versión semántica: `chatbot:1.4.0`. Nunca desplegar `latest`.
-4. Despliega primero en **tu instancia de pruebas** (datos ficticios, mismo tipo de entorno que
-   producción) y repasa el panel y "Probar el bot".
-5. **Copia de seguridad**: la hace la propia instancia al arrancar si tiene migraciones pendientes
-   y datos (`…__premigration.cbak`). Si no puede hacerla (falta la configuración, el directorio no
-   existe o no se puede escribir, disco lleno), **no migra ni arranca** y lo registra como
-   `migration_blocked`; el esquema queda sin cambios. Arregla la causa y vuelve a arrancar.
-6. Actualiza los clientes de uno en uno o por tandas pequeñas, comprobando cada instancia.
-7. Si algo falla: vuelve a la etiqueta anterior. Si la migración ya se aplicó y no es compatible
-   hacia atrás, para la instancia y restaura con la **imagen anterior** la copia `premigration`
-   que nombra el error (`node dist/src/cli/restore.js <fichero>`). Después de verificar la
-   actualización, repite la [guía de validación de copias](#8-copias-de-seguridad-guía-de-validación)
-   con esa copia.
+Herramientas que usa:
 
-Reglas de las migraciones a partir de la 006 (la restauración de copias antiguas reaplica las
-migraciones y comprueba su hash):
+- **`GET /health`** en cada instancia. Sin credencial responde solo el estado (`200 {"status":"ok"}`,
+  o `503` con `degraded` / `not_ready`): sirve a un monitor o balanceador. Con
+  `Authorization: Bearer <HEALTH_SECRET>` añade `instanceId`, `coreVersion` y el esquema aplicado y
+  esperado. Nunca muestra datos del negocio, conversaciones, secretos ni la causa de un fallo.
+  Límite: 30 peticiones por minuto y por IP; un monitor debe sondear **cada 10 s o más** (con
+  intervalos de 2 s o menos recibe `429` y da la instancia por caída).
+- **Pie del panel**: tras iniciar sesión, todas las pantallas muestran «Núcleo X.Y.Z · Esquema
+  000N_…», con el distintivo «Esquema distinto del esperado» si no coincide.
+- **`pnpm instance:versions`**: consulta `/health` de todas las instancias del inventario que no
+  están de baja (en paralelo, 5 s por instancia) con el `HEALTH_SECRET` de su entorno
+  (`<dir. del inventario>/envs/<id>.env` o `--envs-dir`), solo en memoria. Muestra estado, núcleo,
+  esquema, versión anotada y si coincide; `--only <id>[,<id>]`, `--json`, `--timeout <s>`;
+  `--allow-insecure` solo para `http://localhost` en pruebas. Código 0 si todo está `Correcto` y
+  coincide con lo anotado, 1 si hay algo que revisar, 2 por argumentos, inventario o clave. No
+  escribe nada salvo con `--annotate` (pide confirmación; `--yes` sin terminal), que anota en
+  `imageVersion` la versión observada de las filas `Correcto`. Contrato:
+  [instance-versions-command.md](../specs/009-version-health-rollout/contracts/instance-versions-command.md).
+
+| Resultado en `instance:versions` | Significado |
+|---|---|
+| `Correcto` | Responde, identidad comprobada y esquema = el esperado |
+| `Degradado` | La BD no responde o el esquema no es el que espera el núcleo |
+| `No lista` | Arrancando o parándose |
+| `No responde` | Red, DNS, TLS, tiempo agotado; también **mientras migra** (no escucha hasta terminar) |
+| `Respuesta no válida` | No cumple el contrato (o redirige: el secreto nunca se envía a otra dirección) |
+| `Sin información de versión` | `404`: imagen anterior a la 009 |
+| `Secreto rechazado` | `401`: el `HEALTH_SECRET` del entorno no es el de la instancia, **o la instancia aún no tiene desplegado su `HEALTH_SECRET`** |
+| `Límite de peticiones` | `429`: algo está sondeando demasiado |
+| `Solo estado` | No hay `HEALTH_SECRET` en el entorno de tu equipo: solo se ve el estado |
+| `Identidad distinta` | La URL del inventario lleva a **otra** instancia: no se le atribuye versión |
+| `No consultada` | Sin URL o URL no `https` |
+
+### 5.0 Antes de la primera vez (una vez por instancia)
+
+| Comprobación | Esperado | Si no |
+|---|---|---|
+| `pnpm instance:health-secret <id>` (instancias anteriores a la 009) y despliegue del entorno | La instancia responde `/health` completo | No publicar a esa instancia hasta tenerlo: no se podrá comprobar su versión |
+| `pnpm instance:sync <id> <entorno>` y `pnpm instance:check <entorno>` | `APTO`, con `HEALTH_SECRET` presente y no repetido | Corregir lo que indique |
+| `pnpm instance:versions` | Todas las instancias en `Correcto` y «Coincide: sí» (si falta la anotación, `--annotate`) | Resolver antes de empezar: una instancia ya degradada no es un buen punto de partida |
+| Si un monitor o balanceador consulta `/health`, revisar su intervalo | Cada 10 s o más (límite: 30 por minuto y por IP) | Ampliar el intervalo: con menos recibe `429` y da la instancia por caída |
+
+`instance:health-secret` genera el secreto, lo escribe en el entorno sin tocar el resto del
+fichero y **no lo muestra**; con `--rotate` lo cambia. Las instancias nuevas ya nacen con él
+(`instance:new`).
+
+### 5.1 Comprobaciones previas (en tu equipo)
+
+| Comprobación | Esperado | Criterio |
+|---|---|---|
+| Subir `version` en `package.json` (semántica, `X.Y.Z`) y commit | Un solo número nuevo; nunca se reutiliza uno ya desplegado | — |
+| `pnpm lint && pnpm typecheck && pnpm test` | Verde | **Parar** si falla |
+| `pnpm test:eval` y `EVAL_CHANNEL=web pnpm test:eval` | Sin regresiones en los criterios | **Parar** si hay regresión |
+| Revisar las migraciones nuevas | Solo añadir; ficheros ya publicados intactos (reglas al final de esta sección) | **Parar** si se editó una migración publicada |
+| Etiqueta Git `vX.Y.Z` y `docker build --build-arg CORE_VERSION=X.Y.Z -t chatbot:X.Y.Z .` | La construcción termina; si `CORE_VERSION` falta o ≠ `package.json`, falla | **Parar** si falla. **Nunca `latest`** |
+| `docker inspect -f '{{ index .Config.Labels "org.opencontainers.image.version" }}' chatbot:X.Y.Z` | Imprime `X.Y.Z`, igual que la etiqueta `-t` | **Parar** si difiere: la etiqueta `-t` la eliges tú, el `Dockerfile` no la controla |
+
+### 5.2 Instancia de pruebas
+
+| Comprobación | Esperado | Criterio |
+|---|---|---|
+| Desplegar `chatbot:X.Y.Z` en la instancia de pruebas (datos ficticios, entorno como producción) | Arranca; si había migraciones, hizo la copia `…__premigration.cbak` | **Parar** si los registros muestran `migration_blocked` o `migration_failed` (ver 5.4) |
+| `pnpm instance:versions --only <pruebas>` | `Correcto`, núcleo `X.Y.Z`, esquema el esperado | **Parar** en cualquier otra fila |
+| Panel: pie «Núcleo X.Y.Z · Esquema …» y «Probar el bot» con 3 preguntas conocidas | Versión correcta; respuestas coherentes con la configuración | **Parar** si no |
+| Si hubo migraciones: [guía de validación de copias](#8-copias-de-seguridad-guía-de-validación) con la copia `premigration` | Verificación correcta | **Parar** si falla |
+
+Si la instancia no puede hacer la copia previa (falta la configuración, el directorio no existe o
+no se puede escribir, disco lleno) **no migra ni arranca** y lo registra como `migration_blocked`;
+el esquema queda sin cambios.
+
+### 5.3 Tandas de clientes
+
+Tandas pequeñas (una o dos instancias), de menos a más crítica. Para cada instancia de la tanda:
+
+1. Desplegar `chatbot:X.Y.Z` en esa instancia (un solo cambio: la etiqueta).
+2. **Comprobación tras actualizar** (menos de 2 minutos):
+   - `pnpm instance:versions --only <id>`
+   - Panel de la instancia: pie con la versión y el esquema esperados, y sin avisos nuevos.
+
+| Resultado de `instance:versions` | Significado | Criterio |
+|---|---|---|
+| `Correcto`, núcleo `X.Y.Z`, «Coincide: NO» (anotación vieja) | Actualizada bien; falta anotar | Continuar; se anota en el cierre |
+| `Correcto` con otra versión | Se desplegó otra etiqueta | **Parar la tanda**; corregir el despliegue |
+| `Degradado` | BD caída o esquema distinto del esperado | **Parar la tanda**; ver 5.4 |
+| `No lista` | Arrancando o parándose | Esperar 1 minuto y repetir; si persiste, **parar la tanda** |
+| `No responde` | Aún migrando (mientras migra no escucha), no arrancó (p. ej. `migration_blocked`) o red | Esperar a que termine la migración y repetir; si persiste o los registros muestran `migration_blocked` / `migration_failed`, **parar la tanda** |
+| `Identidad distinta` | La URL del inventario apunta a otra instancia | **Parar la tanda**; corregir la URL (`instance:update` / `instance:sync`) antes de seguir |
+| `Secreto rechazado` / `Solo estado` / `Sin información de versión` | No se puede verificar («Secreto rechazado» también sale si la instancia aún no tiene desplegado su `HEALTH_SECRET`) | **Parar la tanda**: sin verificación no se continúa |
+
+La tanda siguiente solo empieza cuando todas las instancias de la actual están `Correcto` con la
+versión nueva.
+
+**Limitación conocida**: la instancia migra **antes** de escuchar, así que mientras migra
+`instance:versions` la muestra como `No responde` (nunca como correcta). Distingue "migrando" de
+"caída" mirando sus registros: `migration_blocked` / `migration_failed` indican fallo; si no hay
+ninguno, espera y repite.
+
+### 5.4 Vuelta atrás
+
+| Situación | Acción | Comprobación posterior |
+|---|---|---|
+| La migración **no se aplicó** (`migration_blocked`, o falló antes de cambiar el esquema: el error dice «esquema sin cambios») | Arreglar la causa (p. ej. `BACKUP_DIR`, disco) y reiniciar; o volver a desplegar `chatbot:<anterior>` | `instance:versions --only <id>`: `Correcto` y versión anterior |
+| La migración **se aplicó**, la versión nueva falla y la anterior es compatible (migración de solo añadir) | Volver a desplegar `chatbot:<anterior>` | `instance:versions`: puede salir `Degradado` por esquema por delante; el pie del panel muestra núcleo anterior y esquema nuevo. Si el negocio sigue atendido, mantener y programar la corrección |
+| La migración **se aplicó** y **no es compatible** (`migration_failed`, o `Degradado` por esquema por delante con la instancia sin atender) | **Parar** la instancia; con la **imagen anterior**, restaurar la copia `premigration` que nombra el error: `node dist/src/cli/restore.js <fichero>` | `instance:versions`: `Correcto`, versión y esquema anteriores; repetir la [validación de copias](#8-copias-de-seguridad-guía-de-validación) |
+
+Tras volver atrás **no** se continúa con las tandas siguientes: se detiene la publicación hasta
+publicar una versión corregida, con un número de versión nuevo.
+
+### 5.5 Cierre
+
+| Comprobación | Esperado |
+|---|---|
+| `pnpm instance:versions` con todas las instancias | Todas `Correcto` en `X.Y.Z` |
+| `pnpm instance:versions --annotate` (revisa la lista y confirma) | El inventario recoge `X.Y.Z`; una segunda ejecución da «Coincide: sí» y código 0 |
+| Si hubo migraciones: [guía de validación de copias](#8-copias-de-seguridad-guía-de-validación) con una copia posterior a la actualización de cada instancia | Verificación correcta, anotada con `instance:verified` |
+| Anotar en el registro de la publicación: fecha, versión, tandas e incidencias | — |
+
+### Reglas de las migraciones
+
+A partir de la 006 la restauración de copias antiguas reaplica las migraciones y comprueba su hash:
 
 - Las migraciones son **de solo añadir** (columnas o tablas nuevas antes de dejar de usar las
   viejas).
 - Los ficheros de migraciones ya publicados **no se editan nunca**: una copia hecha con ellos
-  dejaría de poder restaurarse (`schema_mismatch`).
+  dejaría de poder restaurarse (`schema_mismatch`), y `/health` lo mostraría como esquema distinto
+  del esperado (compara también el hash).
 
 ---
 
@@ -390,7 +507,9 @@ minutos.
 
 - Al dar de alta una instancia ([cierre del alta](#26-cierre-del-alta)).
 - **Una vez al mes** por instancia, con la copia diaria más reciente.
-- Tras cada actualización del núcleo con migraciones, con la copia `premigration`.
+- Tras cada actualización del núcleo con migraciones, con la copia `premigration` en la instancia
+  de pruebas y, al cerrar la publicación, con una copia posterior a la actualización de cada
+  instancia ([sección 5.5](#55-cierre)).
 - Tras cambiar `BACKUP_KEY`.
 
 Anota en el inventario la fecha, el fichero y el resultado de `db:verify --json` con
@@ -462,9 +581,11 @@ Estado tomado del [README](../README.md) a 2026-10-01.
 | 006 | Copias de seguridad y restauración por instancia | Completada | **Era la propuesta P3**: copias cifradas diarias, bajo demanda y previas a cada migración; restauración y verificación ([sección 5](#5-actualizar-el-núcleo) y [sección 8](#8-copias-de-seguridad-guía-de-validación)) |
 | 007 | Aprovisionamiento de instancias | Completada | **Era la propuesta P1**: `pnpm instance:new`, `instance:db`, `instance:check` e inventario sin secretos ([sección 2](#2-alta-de-un-cliente-nuevo) y [sección 7](#7-baja-de-un-cliente)) |
 | 008 | Exportar e importar la configuración del negocio | Completada (2026-10-01) | **Era la propuesta P2**: fichero JSON versionado, importación con vista previa y confirmación transaccional, deshacer con la configuración anterior ([sección 2.6](#26-configuración-del-negocio-en-el-panel-de-producción)) |
+| 009 | Versión visible y actualización escalonada | Completada (2026-10-01; ensayo con operador externo, SC-006, pendiente) | **Era la propuesta P6**: `GET /health` con dos niveles (`HEALTH_SECRET`), versión en el pie del panel, `pnpm instance:versions` e `instance:health-secret`, y procedimiento de publicación por tandas con vuelta atrás ([sección 5](#5-actualizar-el-núcleo)) |
 
-Todas están completadas. Solo queda aplazada la evaluación de audios de la 002 (T083), que se hace
-antes de activar los audios en una instancia.
+Todas están completadas. Quedan aplazadas la evaluación de audios de la 002 (T083), que se hace
+antes de activar los audios en una instancia, y el ensayo de la guía de publicación de la 009 con
+una persona que no haya participado (SC-006).
 
 ### 9.2 Orden de ejecución
 
@@ -476,9 +597,9 @@ orden de las pendientes).
 
 | Orden | Id | Propuesta | Prioridad | Depende de | Cuándo |
 |---|---|---|---|---|---|
-| 1 | P6 | Versión visible y actualización escalonada | Media | P1 (inventario), 006 (copia previa) | Antes de la primera actualización con 2 o más instancias |
-| 2 | P4 | Consumo y coste por instancia | Media | — | Antes de facturar el consumo o de activar WhatsApp en un cliente con tráfico abierto |
-| 3 | P5 | Puntos de extensión del núcleo | Baja | — | Solo cuando llegue la primera petición que no quepa en la configuración |
+| 1 | P4 | Consumo y coste por instancia | Media | — | Antes de facturar el consumo o de activar WhatsApp en un cliente con tráfico abierto |
+| 2 | P5 | Puntos de extensión del núcleo | Baja | — | Solo cuando llegue la primera petición que no quepa en la configuración |
+| — | P6 | Versión visible y actualización escalonada | — | — | **Hecha** (feature 009) |
 | — | P1 | Aprovisionamiento de instancias | — | — | **Hecha** (feature 007) |
 | — | P2 | Exportar e importar la configuración del negocio | — | — | **Hecha** (feature 008) |
 | — | P3 | Copias de seguridad y restauración por instancia | — | — | **Hecha** (feature 006) |
@@ -491,9 +612,9 @@ Por qué este orden:
    falta restaurar.
 2. **P2** (hecha) ahorra trabajo en cada alta y permite revisar la configuración en la
    instancia de pruebas antes de llevarla a producción.
-3. **P6 ahora** en cuanto haya dos instancias en producción: saber qué versión corre cada una es lo
-   que hace seguras las actualizaciones por tandas. Usa el inventario de P1.
-4. **P4** cuando el consumo se facture o el riesgo de gasto crezca. Mientras tanto, el límite de
+3. **P6** (hecha) en cuanto hubo dos instancias en producción: saber qué versión corre cada una
+   es lo que hace seguras las actualizaciones por tandas. Usa el inventario de P1.
+4. **P4** ahora, cuando el consumo se facture o el riesgo de gasto crezca. Mientras tanto, el límite de
    gasto del workspace de Anthropic de cada cliente ([sección 4](#4-coste-de-la-api)) es la red de
    seguridad.
 5. **P5** no se adelanta: se diseña a partir de un caso real.
@@ -560,6 +681,9 @@ Por qué este orden:
   > negocio ni los canales. Ámbito: núcleo.
 
 ### P6. Versión visible y actualización escalonada
+
+> **Hecha** en la feature 009 ([spec](../specs/009-version-health-rollout/spec.md)). Se conserva
+> la propuesta original como referencia.
 
 - **Ámbito**: núcleo (operación).
 - **Problema**: con varias instancias no es fácil saber qué versión corre cada una ni comprobar
@@ -629,6 +753,9 @@ Por qué este orden:
 4. Nada específico de un cliente o sector en `src/`.
 5. Antes de actualizar: tests, evaluación e instancia de pruebas; la copia previa la hace la
    instancia y, sin ella, no migra. Migraciones de solo añadir; las publicadas no se editan.
+   Imagen etiquetada con la versión de `package.json` (nunca `latest`), publicación por tandas y
+   cada instancia comprobada con `pnpm instance:versions` antes de seguir; cada una con su propio
+   `HEALTH_SECRET`.
 6. Cada instancia con su `INSTANCE_ID`, su `BACKUP_KEY` (guardada fuera de las copias) y un
    volumen persistente para `BACKUP_DIR`; una copia se comprueba restaurándola, cada mes.
 7. Lo que no cabe en la configuración se resuelve con una spec, primero de núcleo si es genérico y

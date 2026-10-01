@@ -79,6 +79,8 @@ export const CHECK_ERROR_CODES = [
   'llm_key_required',
   'trust_proxy_all',
   'backup_key_equals_session',
+  'health_secret_equals_session',
+  'health_secret_equals_backup_key',
   'weak_secret',
   'example_database',
   'secret_reused_within',
@@ -117,6 +119,8 @@ const MISSING_ACTIONS: Record<string, string> = {
   BACKUP_KEY:
     'Genérala con openssl rand -hex 32 y guárdala en el gestor de secretos, fuera de BACKUP_DIR.',
   SESSION_SECRET: 'Genéralo con openssl rand -hex 32.',
+  HEALTH_SECRET:
+    'Añádelo con pnpm instance:health-secret <id> (o genera uno con openssl rand -hex 32), despliega el entorno y ejecuta pnpm instance:sync.',
   OPERATOR_PASSWORD_HASH: 'Calcula el hash con pnpm operator:hash-password.',
   DATABASE_URL: 'Crea la base de datos con pnpm instance:db <id>.',
   PUBLIC_BASE_URL: 'Indica la URL pública https de la instancia, sin ruta.',
@@ -187,13 +191,24 @@ export const CHECK_CATALOG: Record<CheckCode, CatalogEntry> = {
     detail: () => 'es igual a SESSION_SECRET.',
     action: () => 'Genera una BACKUP_KEY nueva con openssl rand -hex 32.',
   },
+  health_secret_equals_session: {
+    message: () => 'HEALTH_SECRET es igual a SESSION_SECRET.',
+    detail: () => 'es igual a SESSION_SECRET.',
+    action: () => 'Genera un HEALTH_SECRET nuevo con openssl rand -hex 32.',
+  },
+  health_secret_equals_backup_key: {
+    message: () => 'HEALTH_SECRET es igual a BACKUP_KEY.',
+    detail: () => 'es igual a BACKUP_KEY.',
+    action: () => 'Genera un HEALTH_SECRET nuevo con openssl rand -hex 32.',
+  },
   weak_secret: {
     message: (c) => `${v(c)} está vacío, es de relleno o es demasiado corto para su tipo.`,
     detail: () => 'está vacío, es de relleno o es demasiado corto para su tipo.',
     action: (c) =>
       c.variable === 'SESSION_SECRET' ||
       c.variable === 'BACKUP_KEY' ||
-      c.variable === 'BACKUP_KEYS_PREVIOUS'
+      c.variable === 'BACKUP_KEYS_PREVIOUS' ||
+      c.variable === 'HEALTH_SECRET'
         ? OPENSSL
         : c.variable === 'OPERATOR_PASSWORD_HASH'
           ? 'Calcula el hash con pnpm operator:hash-password.'
@@ -230,7 +245,7 @@ export const CHECK_CATALOG: Record<CheckCode, CatalogEntry> = {
     () => 'Cada instancia necesita su propio número de WhatsApp.',
   ),
   duplicate_secret: duplicate((c) =>
-    c.variable === 'SESSION_SECRET' || c.variable === 'BACKUP_KEY'
+    c.variable === 'SESSION_SECRET' || c.variable === 'BACKUP_KEY' || c.variable === 'HEALTH_SECRET'
       ? OPENSSL
       : c.variable === 'OPERATOR_PASSWORD_HASH'
         ? 'Genera una contraseña nueva y su hash con pnpm operator:hash-password.'

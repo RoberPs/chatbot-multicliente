@@ -1,13 +1,14 @@
 /**
  * `pnpm instance:*` (007, contracts/instance-commands.md): herramientas del operador para dar de
- * alta instancias. Subórdenes: check, new, db, list, register, sync, update, verified y retire.
+ * alta instancias. Subórdenes: check, new, db, list, register, sync, update, verified, retire y,
+ * desde la 009, versions (versiones del parque) y health-secret (secreto de salud).
  * Se ejecutan en el equipo del operador; ninguna carga el `.env` del repositorio ni es necesaria
  * para que una instancia arranque (FR-034). Salida: 0 correcto/apto, 1 rechazado/no apto,
  * 2 argumentos, fichero ilegible, inventario ilegible o bloqueado, clave o terminal.
  */
 import { randomBytes } from 'node:crypto';
 import { mkdirSync, readFileSync, unlinkSync } from 'node:fs';
-import { resolve } from 'node:path';
+import { dirname, join, resolve } from 'node:path';
 import { createInterface } from 'node:readline/promises';
 import {
   checkResultJson,
@@ -69,8 +70,21 @@ import {
   type PgConnect,
   type SqlPlan,
 } from '../provisioning/database.js';
-import { templatePath } from '../provisioning/repo-paths.js';
-import { argon2Hasher, type PasswordHasher, type RandomSource } from '../provisioning/secrets.js';
+import { isGitIgnored, isInsideCoreRepo, templatePath } from '../provisioning/repo-paths.js';
+import {
+  argon2Hasher,
+  generateHexSecret,
+  type PasswordHasher,
+  type RandomSource,
+} from '../provisioning/secrets.js';
+import {
+  annotationPlan,
+  applyAnnotations,
+  collectVersions,
+  exitCode,
+  renderJson,
+  renderTable,
+} from '../provisioning/versions.js';
 import {
   commandExitCode,
   commandMessage,
@@ -137,6 +151,9 @@ const USAGE = [
   '         [--status active|testing] [--data-deleted AAAA-MM-DD]',
   '  verified <id> <fichero.json | ->',
   '  retire <id> [--yes]',
+  '  versions [--json] [--only <id>[,<id>…]] [--envs-dir <carpeta>] [--timeout <s>]',
+  '           [--allow-insecure] [--annotate [--yes]]',
+  '  health-secret <id> [--rotate] [--env <fichero>]',
 ].join('\n');
 
 /** Escribe el mensaje de un código por la salida de errores y devuelve su código de salida. */
@@ -793,6 +810,169 @@ async function retireCommand(argv: string[], { io, deps }: Context): Promise<num
 }
 
 // ---------------------------------------------------------------------------
+// versions (009, US2)
+// ---------------------------------------------------------------------------
+
+const VERSIONS_USAGE =
+  'Uso: pnpm instance:versions [--json] [--only <id>[,<id>…]] [--envs-dir <carpeta>] [--timeout <s>] [--allow-insecure] [--annotate [--yes]]';
+
+/**
+ * `instance:versions`: consulta `/health` de cada instancia no retirada y compara con lo anotado.
+ * Solo lectura salvo `--annotate` con confirmación (R5, R6).
+ */
+async function versionsCommand(argv: string[], { io, deps }: Context): Promise<number> {
+  const args = parseArgs(argv, {
+    flags: ['--json', '--allow-insecure', '--annotate', '--yes'],
+    options: ['--only', '--envs-dir', '--timeout', '--inventory'],
+  });
+  if (!args) return usage(io, VERSIONS_USAGE);
+  const timeoutText = args.options.get('--timeout') ?? '5';
+  const timeout = /^\d+$/.test(timeoutText) ? Number(timeoutText) : NaN;
+  if (!Number.isInteger(timeout) || timeout < 1 || timeout > 30) {
+    return usage(io, 'El tiempo límite (--timeout) debe ser un número de segundos entre 1 y 30.');
+  }
+  const json = args.flags.has('--json');
+  const annotate = args.flags.has('--annotate');
+
+  const path = resolveInventoryPath(args.options.get('--inventory'), io.env);
+  // Leer no necesita el bloqueo (R5); la clave se comprueba igualmente.
+  const access = requireAccess(await loadInventoryForUse(path, inventoryKeyText(io)));
+  if (access.kind !== 'ok') throw new ProvisioningError('inventory_missing', { path });
+  const { inventory } = access;
+
+  const only = args.options
+    .get('--only')
+    ?.split(',')
+    .map((id) => id.trim())
+    .filter(Boolean);
+  const unknown = only?.find((id) => !inventory.instances.some((i) => i.id === id));
+  if (unknown !== undefined) {
+    return usage(io, commandMessage('unknown_instance', { id: unknown }));
+  }
+
+  const report = await collectVersions(inventory, {
+    envsDir: resolve(args.options.get('--envs-dir') ?? join(dirname(path), 'envs')),
+    ...(only ? { only } : {}),
+    timeoutMs: timeout * 1000,
+    allowInsecure: args.flags.has('--allow-insecure'),
+    now: () => deps.now(),
+  });
+  io.out(json ? renderJson(report) : renderTable(report));
+  if (!annotate) return exitCode(report);
+
+  // --annotate: con --json los mensajes van por la salida de errores para no romper el JSON.
+  const say = (text: string) => {
+    if (json) io.err(text);
+    else io.out(text);
+  };
+  const plan = annotationPlan(report);
+  say('');
+  if (plan.length === 0) {
+    say('No hay versiones que anotar.');
+    return exitCode(report);
+  }
+  say('Versiones observadas distintas de las anotadas:');
+  for (const change of plan) say(`  ${change.id}: ${change.from ?? 'sin anotar'} → ${change.to}`);
+  if (!args.flags.has('--yes')) {
+    if (!io.interactive) {
+      return usage(io, 'Sin terminal, confirma la anotación con --yes. No se ha anotado nada.');
+    }
+    const answer = (await io.ask('¿Anotar estas versiones? (s/N) ')).trim().toLowerCase();
+    if (answer !== 's' && answer !== 'si' && answer !== 'sí') {
+      say('No se ha anotado nada.');
+      return exitCode(report);
+    }
+  }
+  const target = await openForWrite(io, path, { allowed: false, flag: false });
+  const result = await mutateInventory(target, deps, (current) =>
+    applyAnnotations(current, plan),
+  );
+  if (result.applied.length > 0) say(`Anotado en el inventario: ${result.applied.join(', ')}.`);
+  for (const id of result.skipped) {
+    say(`  ${id}: su anotación cambió durante la consulta; no se ha anotado. Repite la orden.`);
+  }
+  return exitCode(report);
+}
+
+// ---------------------------------------------------------------------------
+// health-secret (009, US2)
+// ---------------------------------------------------------------------------
+
+const HEALTH_SECRET_USAGE = 'Uso: pnpm instance:health-secret <id> [--rotate] [--env <fichero>]';
+
+/**
+ * `instance:health-secret <id>`: añade (o con `--rotate` cambia) el secreto de salud en el entorno
+ * de una instancia, sin tocar el resto del fichero y sin mostrarlo (R2). Todos sus rechazos salen
+ * con 2 (contrato).
+ */
+async function healthSecretCommand(argv: string[], { io, deps }: Context): Promise<number> {
+  const args = parseArgs(argv, {
+    flags: ['--rotate'],
+    options: ['--env', '--inventory'],
+    positional: 1,
+  });
+  if (!args) return usage(io, HEALTH_SECRET_USAGE);
+  const id = args.positional[0] ?? '';
+  const rotate = args.flags.has('--rotate');
+  try {
+    const path = resolveInventoryPath(args.options.get('--inventory'), io.env);
+    const access = requireAccess(await loadInventoryForUse(path, inventoryKeyText(io)));
+    if (access.kind !== 'ok') throw new ProvisioningError('inventory_missing', { path });
+    if (!access.inventory.instances.some((i) => i.id === id)) {
+      throw new ProvisioningError('unknown_instance', { id });
+    }
+    const envOption = args.options.get('--env');
+    const envPath = resolve(envOption ?? join(dirname(path), 'envs', `${id}.env`));
+    if (
+      isInsideCoreRepo(envPath, deps.repoRoot) &&
+      !isGitIgnored(envPath, { root: deps.repoRoot, env: deps.gitEnv })
+    ) {
+      throw new ProvisioningError('output_in_repo', { path: envPath });
+    }
+    let env;
+    try {
+      env = parseEnvFile(envPath);
+    } catch (error) {
+      if (error instanceof ProvisioningError && envOption === undefined) {
+        throw new ProvisioningError('env_unreadable', { path: envPath, reason: 'default' });
+      }
+      throw error;
+    }
+
+    const current = env.HEALTH_SECRET?.trim().toLowerCase() ?? '';
+    if (current !== '' && !rotate) {
+      io.out(
+        `Ya tiene secreto de salud: ${envPath} no se ha cambiado (usa --rotate para cambiarlo).`,
+      );
+      return 0;
+    }
+    const others = new Set(
+      [env.SESSION_SECRET, env.BACKUP_KEY, current].map((v) => v?.trim().toLowerCase() ?? ''),
+    );
+    let secret = '';
+    for (let i = 0; i < 5 && (secret === '' || others.has(secret)); i++) {
+      secret = generateHexSecret('HEALTH_SECRET', deps.random);
+    }
+    if (others.has(secret)) throw new ProvisioningError('duplicate_value');
+    await setVariable(envPath, 'HEALTH_SECRET', secret, { overwrite: rotate });
+
+    io.out(
+      `${rotate && current !== '' ? 'Secreto de salud cambiado' : 'Secreto de salud añadido'} en ${envPath} (no se muestra).`,
+    );
+    io.out('Siguientes pasos:');
+    io.out('  1. Despliega el entorno actualizado en la instancia y reiníciala.');
+    io.out(`  2. Guarda su huella en el inventario: pnpm instance:sync ${id} ${envPath}`);
+    io.out(`  3. Comprueba: pnpm instance:versions --only ${id}`);
+    return 0;
+  } catch (error) {
+    if (!(error instanceof ProvisioningError)) throw error;
+    // El contrato fija 2 para cualquier rechazo de esta orden.
+    io.err(commandMessage(error.code, error.ctx));
+    return 2;
+  }
+}
+
+// ---------------------------------------------------------------------------
 // Despacho
 // ---------------------------------------------------------------------------
 
@@ -806,6 +986,8 @@ const commands: Record<string, Command> = {
   update: updateCommand,
   verified: verifiedCommand,
   retire: retireCommand,
+  versions: versionsCommand,
+  'health-secret': healthSecretCommand,
 };
 
 export async function main(

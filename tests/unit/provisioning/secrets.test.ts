@@ -19,7 +19,7 @@ const codes = (variable: string, value: string) =>
 const HASH = '$argon2id$v=19$m=65536,t=3,p=4$c2FsdHNhbHRzYWx0$aGFzaGhhc2hoYXNoaGFzaA';
 
 describe('secretQuality (research R3)', () => {
-  it.each(['SESSION_SECRET', 'BACKUP_KEY', 'BACKUP_KEYS_PREVIOUS'])(
+  it.each(['SESSION_SECRET', 'BACKUP_KEY', 'BACKUP_KEYS_PREVIOUS', 'HEALTH_SECRET'])(
     '%s: 64 hex con más de 8 caracteres distintos',
     (variable) => {
       expect(codes(variable, hex())).toEqual([]);
@@ -108,6 +108,12 @@ describe('generación de secretos (research R7)', () => {
   it('SESSION_SECRET y BACKUP_KEY de 64 hex; token de 48 hex; contraseña de 24 del alfabeto', () => {
     expect(generateHexSecret('SESSION_SECRET')).toMatch(/^[0-9a-f]{64}$/);
     expect(generateHexSecret('BACKUP_KEY')).toMatch(/^[0-9a-f]{64}$/);
+    expect(generateHexSecret('HEALTH_SECRET')).toMatch(/^[0-9a-f]{64}$/);
+    expect(codes('HEALTH_SECRET', generateHexSecret('HEALTH_SECRET'))).toEqual([]);
+    // Marcadores de posición de la plantilla: no son un secreto.
+    for (const placeholder of ['changeme', 'PENDIENTE', '', 'secret-de-salud']) {
+      expect(codes('HEALTH_SECRET', placeholder)).toEqual(['weak_secret']);
+    }
     expect(generateVerifyToken()).toMatch(/^[0-9a-f]{48}$/);
     expect(PASSWORD_ALPHABET).toHaveLength(56);
     expect(PASSWORD_ALPHABET).not.toMatch(/[IOlo01]/);

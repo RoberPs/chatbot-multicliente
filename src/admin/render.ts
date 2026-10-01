@@ -101,6 +101,7 @@ export async function renderPage(
   status = 200,
 ): Promise<FastifyReply> {
   const warnings = computeWarnings(data.state);
+  const version = await versionLine(request);
   const html = await reply.viewAsync(view, {
     errors: {},
     values: {},
@@ -116,9 +117,38 @@ export async function renderPage(
       csrf: reply.generateCsrf(),
       flash: takeFlash(request),
       path: request.url,
+      version,
     },
   });
   return reply.code(status).type('text/html; charset=utf-8').send(html);
+}
+
+/** Línea del pie: versión del núcleo y del esquema (009, FR-007). */
+export interface VersionLine {
+  coreVersion: string;
+  /** Etiqueta del esquema aplicado; `null` si no se ha podido leer. */
+  schemaTag: string | null;
+  /** `false` si el esquema aplicado no es el esperado (estado `degraded`). */
+  matches: boolean;
+}
+
+/**
+ * Mismo informe que `/health` (el operador ya está dentro: sin credencial), calculado en cada
+ * página como los avisos. Si falla, `null`: la página se sirve con «Versión no disponible».
+ */
+async function versionLine(request: FastifyRequest): Promise<VersionLine | null> {
+  try {
+    const report = await request.server.health.report();
+    const applied = report.schema.applied;
+    return {
+      coreVersion: report.coreVersion,
+      schemaTag:
+        applied === null ? null : (applied.tag ?? `desconocido (#${String(applied.index)})`),
+      matches: report.status !== 'degraded',
+    };
+  } catch {
+    return null;
+  }
 }
 
 /** Respuesta de guardado correcto: 303 con "Guardado", o 200 + HX-Location si es htmx. */

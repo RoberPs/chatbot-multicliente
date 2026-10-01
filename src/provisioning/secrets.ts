@@ -104,7 +104,8 @@ export function secretQuality(variable: string, value: string): QualityFinding[]
   if (
     variable === 'SESSION_SECRET' ||
     variable === 'BACKUP_KEY' ||
-    variable === 'BACKUP_KEYS_PREVIOUS'
+    variable === 'BACKUP_KEYS_PREVIOUS' ||
+    variable === 'HEALTH_SECRET'
   ) {
     if (!HEX_64.test(trimmed) || distinct(trimmed) <= 8) add('weak_secret');
     return findings;
@@ -172,9 +173,9 @@ function untilQuality(variable: string, make: () => string): string {
   throw new Error('No se ha podido generar un valor aleatorio válido');
 }
 
-/** Clave hex (`SESSION_SECRET`, `BACKUP_KEY`): `bytes` aleatorios en hex. */
+/** Clave hex (`SESSION_SECRET`, `BACKUP_KEY`, `HEALTH_SECRET`): `bytes` aleatorios en hex. */
 export function generateHexSecret(
-  variable: 'SESSION_SECRET' | 'BACKUP_KEY',
+  variable: 'SESSION_SECRET' | 'BACKUP_KEY' | 'HEALTH_SECRET',
   random: RandomSource = cryptoRandom,
   bytes = 32,
 ): string {

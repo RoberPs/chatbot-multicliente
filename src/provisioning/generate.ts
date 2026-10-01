@@ -188,10 +188,18 @@ export async function buildInstanceEnv(
       BACKUP_DIR: data.backupDir,
       SESSION_SECRET: generateHexSecret('SESSION_SECRET', random),
       BACKUP_KEY: generateHexSecret('BACKUP_KEY', random),
+      // 009: secreto de salud propio; se escribe en el entorno y nunca se imprime.
+      HEALTH_SECRET: generateHexSecret('HEALTH_SECRET', random),
       OPERATOR_PASSWORD_HASH: await hashOperatorPassword(password, deps.hasher),
     };
     if (data.whatsapp) values.WHATSAPP_VERIFY_TOKEN = generateVerifyToken(random);
     if (values.BACKUP_KEY === values.SESSION_SECRET) continue;
+    if (
+      values.HEALTH_SECRET === values.SESSION_SECRET ||
+      values.HEALTH_SECRET === values.BACKUP_KEY
+    ) {
+      continue;
+    }
 
     const env: EnvMap = { ...deps.templateDefaults, ...values };
     for (const variable of Object.keys(pending)) env[variable] = '';
