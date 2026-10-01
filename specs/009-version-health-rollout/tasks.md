@@ -255,9 +255,19 @@ Task: "src/provisioning/fingerprint.ts (HEALTH_SECRET)"
 - **T043 / T052 (validación manual)**: la tabla de casos de quickstart §3 la cubre
   `tests/integration/provisioning/cli-versions.test.ts` con servidores reales en puertos locales.
   Comprobado a mano: `docker build` falla sin `CORE_VERSION` y con `0.1.2`; la etiqueta OCI
-  `org.opencontainers.image.version` sale con el valor del argumento. La construcción completa con
-  `0.1.0` no se pudo terminar en este equipo: `corepack` no descarga pnpm dentro de Docker por un
-  certificado TLS interceptado (`UNABLE_TO_VERIFY_LEAF_SIGNATURE`), problema de red del entorno.
+  `org.opencontainers.image.version` sale con el valor del argumento. En este equipo el escudo web de
+  Avast intercepta TLS (`UNABLE_TO_VERIFY_LEAF_SIGNATURE` al descargar pnpm dentro de Docker); con
+  una copia temporal del `Dockerfile` que pasa su CA raíz solo como secreto de BuildKit a
+  `pnpm install` (sin quedar en la imagen), la imagen `chatbot:0.1.0` se construye entera y
+  `docker inspect` da `0.1.0`.
+  Sobre esa imagen, contra una BD nueva del Postgres de compose: `/health` sin credencial
+  `200 {"status":"ok"}` con `Cache-Control: no-store`; con el secreto, el informe completo
+  (`instanceId`, `coreVersion` `0.1.0`, esquema aplicado = esperado `0005_config_transfer`);
+  secreto incorrecto `401` + `WWW-Authenticate: Bearer`; secreto en la URL ignorado.
+  `instance:versions` con un inventario temporal: `Correcto` / «sin anotar» (código 1);
+  `--annotate --yes` anota `0.1.0`; segunda ejecución `--json` con `ok: true` (código 0); sin
+  `--allow-insecure`, «No consultada (no https)». La fila «No responde» con la instancia parada no
+  se repitió a mano (la cubren las pruebas de integración).
   `/health` sobre el `pnpm dev` en marcha: `503 {"status":"degraded"}` sin credencial y `401` +
   `WWW-Authenticate: Bearer` con credencial (instancia sin `HEALTH_SECRET`). El `degraded` es
   correcto: la BD local tiene aplicada una versión anterior de `0005_config_transfer` (hash
@@ -268,3 +278,6 @@ Task: "src/provisioning/fingerprint.ts (HEALTH_SECRET)"
   junto con `status.test.ts`, ambos en verde.
 - **Pendiente (SC-006)**: el ensayo de la guía de publicación con una persona que no ha participado
   (quickstart §5) queda por hacer por una persona.
+- **Pendiente para el primer despliegue en un VPS real**: construir la imagen con el `Dockerfile` tal
+  cual (sin el rodeo de la CA de Avast) y comprobar a mano la fila «No responde» de
+  `instance:versions` con la instancia parada.
