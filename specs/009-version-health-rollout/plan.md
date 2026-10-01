@@ -72,10 +72,12 @@ Sin `eval`: la cadena de respuesta no cambia (FR-008).
 operador (Windows/macOS/Linux).
 
 **Project Type**: servicio web (monolito modular): módulo nuevo `src/health`, adaptador en
-`src/channels/health`, añadidos pequeños en `src/admin` (cabecera), `src/config/env.ts`,
+`src/channels/health`, añadidos pequeños en `src/admin` (pie del panel), `src/config/env.ts`,
 `src/provisioning` y `src/cli/instance.ts`.
 
-**Performance Goals**: `/health` < 100 ms con la BD sana (dos consultas de solo lectura); tope de
+**Performance Goals**: `/health` < 100 ms con la BD sana (dos consultas de solo lectura; objetivo
+de diseño, la prueba de integración exige p95 < 250 ms para no fallar por la variabilidad de CI);
+tope de
 2 s por consulta a la BD antes de declarar "degradado". `instance:versions`: 10 instancias en < 1
 min aun con caídas (SC-002) — tiempo límite por instancia 5 s, concurrencia 8.
 

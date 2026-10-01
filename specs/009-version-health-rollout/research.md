@@ -145,9 +145,10 @@ en [contracts/instance-versions-command.md](contracts/instance-versions-command.
   10 instancias con 3 caídas tardan como mucho 2 tandas × 5 s ≈ 10 s (SC-002 con holgura).
 - **Clasificación** (primera que cumpla): `not_queried` (sin URL o no segura) → `unreachable` (red,
   DNS, TLS o tiempo) → `no_health` (404: instancia anterior a esta feature, "sin información de
-  versión") → `auth_failed` (401) → `rate_limited` (429) → `invalid_response` (no es JSON, tamaño
-  excesivo o no cumple el esquema) → `status_only` (solo estado: sin secreto, o instancia sin
-  secreto configurado) → `identity_mismatch` (`instanceId` ≠ `id` del inventario; la versión no se
+  versión") → `auth_failed` (401: secreto distinto, o la instancia aún no tiene `HEALTH_SECRET`
+  desplegado) → `rate_limited` (429) → `invalid_response` (no es JSON, tamaño excesivo o no
+  cumple el esquema) → `status_only` (solo estado: sin secreto en el equipo del operador) →
+  `identity_mismatch` (`instanceId` ≠ `id` del inventario; la versión no se
   atribuye, FR-014) → `ok` / `degraded` / `not_ready` con versiones.
 - **Coincidencia con lo anotado**: se extrae la primera versión semántica del texto de
   `imageVersion` (`chatbot:1.4.0` → `1.4.0`) y se compara con la observada; sin anotación = "sin
