@@ -77,7 +77,7 @@ curso cuando se cruza el tope terminan y se registran. El exceso queda acotado a
 
 | Evento | Nivel | Campos | Cuándo |
 |---|---|---|---|
-| `spend_cap_reached` | `warn` | `month` (`AAAA-MM`) | la primera comprobación que ve `reached` en el mes local; una vez por mes y BD (R10) |
+| `spend_cap_reached` | `warn` | `month` (`AAAA-MM`) | la primera comprobación de un canal de clientes finales (procesador, recepción web o disponibilidad del chat web) que ve `reached` en el mes local; una vez por mes y BD (R10). Si el tope lo cruza "Probar el bot", el evento sale en la siguiente comprobación de un cliente final; el panel y `/health` solo leen y no lo emiten |
 | `message_discarded` | `info` | `reason: 'spend_cap'` | recepción web con el tope alcanzado |
 | `reply_sent` | `info` | `template: 'R-CAP'` | respuesta de tope en WhatsApp |
 | `handoff_summary_fallback` | `warn` | `reason: 'spend_cap'` | aviso al negocio con el tope alcanzado |

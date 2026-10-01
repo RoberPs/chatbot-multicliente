@@ -23,7 +23,8 @@ en {moneda actual}."
 ## Contenido de `GET /admin/usage`
 
 1. **Aviso de estimación** (FR-011): "Coste estimado con los precios configurados aquí. No es la
-   factura del proveedor. Importes redondeados a 4 decimales."
+   factura del proveedor. Importes redondeados a 4 decimales. Los importes menores de 0,0001 se
+   muestran como «< 0,0001»."
 2. **Hoy** y **Este mes** (fechas en la hora local del negocio, FR-008): tabla con una fila por
    canal —WhatsApp, Chat web, Probar el bot— y las filas **Clientes finales** (WhatsApp + web) e
    **Instancia** (todo). Columnas: respuestas con modelo, resúmenes, tokens de entrada, de salida,

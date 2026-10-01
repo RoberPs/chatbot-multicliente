@@ -50,6 +50,9 @@ abierto.
 - Q: Cuando se alcanza el tope, ¿qué pasa con «Probar el bot», que consume modelo real? → A: Suma al
   gasto, no se bloquea y muestra un aviso de que los clientes finales están recibiendo solo el
   contacto.
+- Q: Con el tope alcanzado, ¿el chat web deriva las peticiones de hablar con una persona? → A: No
+  llama al modelo ni deriva: muestra el estado "no disponible" con el contacto del negocio, igual
+  que con el tope de respuestas (004, 005). La derivación con tope se mantiene en WhatsApp.
 
 ## User Scenarios & Testing *(mandatory)*
 
@@ -154,9 +157,11 @@ siguiente mensaje vuelve a responderse con el modelo.
 3. **Given** el gasto del mes igual o superior al tope, **When** un visitante abre o usa el chat web,
    **Then** ve el mismo estado "no disponible" con el contacto del negocio que ya muestra el chat web
    al alcanzar su tope de respuestas (feature 004).
-4. **Given** el tope alcanzado, **When** un cliente final pide hablar con una persona, **Then** la
-   petición se reconoce y se deriva al negocio con el mecanismo configurado (feature 005), y la
-   respuesta al cliente final se envía igual que sin tope.
+4. **Given** el tope alcanzado, **When** un cliente final pide hablar con una persona por WhatsApp,
+   **Then** la petición se reconoce y se deriva al negocio con el mecanismo configurado (feature
+   005), y la respuesta al cliente final se envía igual que sin tope. En el chat web, el cliente
+   final ve el estado "no disponible" con el contacto del negocio, que es la salida a una persona
+   de ese canal cuando está en su tope (features 004 y 005).
 5. **Given** el tope alcanzado y una conversación derivada, **When** se avisa al negocio, **Then** el
    aviso se envía sin resumen hecho con el modelo (con el resto de su contenido), y no se registra
    consumo.
@@ -227,8 +232,9 @@ siguiente mensaje vuelve a responderse con el modelo.
   personal.
 - **FR-004**: Las respuestas que no llaman al modelo MUST NOT generar registros de consumo; las
   llamadas que fallan MUST registrar solo los tokens que el proveedor haya informado.
-- **FR-005**: Registrar el consumo MUST NOT retrasar ni impedir la respuesta al cliente final: si el
-  registro falla, la respuesta se entrega y el fallo queda en el registro de actividad.
+- **FR-005**: Registrar el consumo MUST NOT impedir la respuesta al cliente final ni retrasarla más
+  de lo que permite SC-006: si el registro falla, la respuesta se entrega y el fallo queda en el
+  registro de actividad.
 - **FR-006**: El sistema MUST conservar los registros de consumo del mes en curso y de los 12 meses
   anteriores, y eliminar los más antiguos automáticamente.
 
@@ -243,7 +249,8 @@ siguiente mensaje vuelve a responderse con el modelo.
 - **FR-010**: El operador MUST poder mantener una tabla de precios por modelo: precio por millón de
   tokens de entrada, de salida, de escritura en caché y de lectura de caché, en una moneda de coste
   única para la instancia. La precisión MUST permitir que el coste de una sola respuesta no se
-  redondee a cero.
+  redondee a cero: se guarda exacto y, si un coste mayor que cero queda en cero con los decimales
+  de la pantalla, se muestra como «< 0,0001».
 - **FR-011**: El coste estimado de cada registro MUST calcularse al registrarlo, con el precio
   vigente de su modelo en ese momento, y guardarse con él; cambiar después un precio MUST NOT
   alterar el coste de registros anteriores. La pantalla MUST indicar que es una estimación y no la
@@ -268,9 +275,11 @@ siguiente mensaje vuelve a responderse con el modelo.
   negocio (o el de emergencia de la instancia si el negocio no tiene ninguno).
 - **FR-017**: En el chat web, el tope de gasto alcanzado MUST producir el mismo estado "no disponible"
   con contacto que el tope de respuestas de la feature 004, y ambos topes MUST aplicarse a la vez.
-- **FR-018**: Con el tope alcanzado, las peticiones de hablar con una persona MUST seguir
-  reconociéndose y derivándose al negocio (feature 005), y los avisos al negocio MUST enviarse sin
-  resumen hecho con el modelo.
+- **FR-018**: Con el tope alcanzado, las peticiones de hablar con una persona por WhatsApp MUST
+  seguir reconociéndose y derivándose al negocio (feature 005), y los avisos al negocio MUST
+  enviarse sin resumen hecho con el modelo. En el chat web, la salida a una persona MUST ser el
+  estado "no disponible" con el contacto del negocio (FR-017), como con el tope de respuestas de la
+  004.
 - **FR-019**: Con el tope alcanzado, "Probar el bot" MUST seguir funcionando con el modelo y MUST
   mostrar que los clientes finales están recibiendo solo el contacto.
 - **FR-020**: El panel MUST mostrar en todas sus pantallas un aviso cuando el gasto del mes alcance el
@@ -326,7 +335,8 @@ siguiente mensaje vuelve a responderse con el modelo.
   en menos de 1 minuto desde que inicia sesión.
 - **SC-004**: Con el tope alcanzado, el 100 % de los mensajes de clientes finales por WhatsApp y por
   chat web reciben el contacto del negocio sin ninguna llamada al modelo, y el 100 % de las peticiones
-  de hablar con una persona se derivan.
+  de hablar con una persona por WhatsApp se derivan; en el chat web, el 100 % de los visitantes ven
+  el contacto del negocio.
 - **SC-005**: Tras subir o desactivar el tope, o al empezar el mes siguiente, el primer mensaje de un
   cliente final se responde con el modelo.
 - **SC-006**: Medir el consumo no añade más de 100 ms a la mediana del tiempo de respuesta al cliente

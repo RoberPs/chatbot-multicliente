@@ -95,7 +95,7 @@ UsageSummary      { period, byChannel: Record<Channel, UsageRow>, customers: Usa
   gasto por encima del tope).
 - **Redondeo en pantalla**: los costes se muestran con 4 decimales, redondeo a la mitad hacia
   arriba sobre el entero exacto; los totales se suman **antes** de redondear (SC-002). La pantalla
-  lo indica.
+  lo indica. Un coste > 0 que redondea a `0,0000` se muestra «< 0,0001» (FR-010).
 
 ## 4. Validación (Zod, en el dominio; errores por campo, FR-013)
 
