@@ -31,6 +31,26 @@ Es la propuesta P4 de [docs/operacion-multicliente.md](../../docs/operacion-mult
 falta antes de facturar el consumo a un cliente o de activar WhatsApp en un cliente con tráfico
 abierto.
 
+## Clarifications
+
+### Session 2026-10-01
+
+- Q: Cuando el operador cambia el precio de un modelo, ¿el coste de lo ya consumido se recalcula o
+  conserva el precio de cuando se consumió? → A: Cada registro guarda el coste calculado con el
+  precio vigente en ese momento; los cambios de precio valen solo desde entonces y los registros sin
+  precio siguen "sin precio".
+- Q: Si el tope está activo y el modelo que usa la instancia no tiene precio, ¿qué hace el sistema?
+  → A: No se puede activar el tope si el modelo actual no tiene precio; si luego cambia el modelo y
+  queda sin precio, el panel muestra un aviso destacado en todas las pantallas (el consumo sigue sin
+  sumar).
+- Q: Además del panel y del registro de actividad, ¿por qué vía se entera el operador de que una
+  instancia se acerca al tope o lo ha alcanzado? → A: El informe completo de salud (con secreto)
+  incluye el estado del tope (normal / ≥80 % / alcanzado) y la orden que consulta las instancias del
+  inventario lo muestra en una columna.
+- Q: Cuando se alcanza el tope, ¿qué pasa con «Probar el bot», que consume modelo real? → A: Suma al
+  gasto, no se bloquea y muestra un aviso de que los clientes finales están recibiendo solo el
+  contacto.
+
 ## User Scenarios & Testing *(mandatory)*
 
 ### User Story 1 - Cada llamada al modelo queda registrada sin textos (Priority: P1)
@@ -94,11 +114,11 @@ configurados, coinciden con un cálculo a mano.
    el coste estimado de cada fila es la suma de tokens de cada tipo por su precio, con el redondeo
    indicado en la pantalla, y figura la moneda de los precios.
 3. **Given** el operador cambia el precio de un modelo, **When** vuelve a ver el consumo, **Then**
-   el coste estimado se recalcula con el precio nuevo para todo el periodo mostrado, y la pantalla
-   indica que es una estimación con los precios actuales.
+   el coste de lo consumido antes del cambio no varía y solo el consumo posterior se valora con el
+   precio nuevo.
 4. **Given** consumo de un modelo sin precio configurado, **When** el operador ve el consumo, **Then**
-   sus tokens se muestran, su coste figura como "sin precio" (no como cero) y la pantalla avisa de
-   qué modelo falta.
+   sus tokens se muestran, su coste figura como "sin precio" (no como cero), la pantalla avisa de
+   qué modelo falta, y configurar el precio después no les asigna coste.
 5. **Given** un mes anterior conservado, **When** el operador lo elige, **Then** ve su consumo y coste
    por canal y por día.
 6. **Given** el negocio en una zona horaria distinta de la del servidor, **When** se muestra "hoy" o
@@ -153,6 +173,12 @@ siguiente mensaje vuelve a responderse con el modelo.
    finales están recibiendo solo el contacto.
 10. **Given** el tope alcanzado por primera vez en el mes, **When** ocurre, **Then** queda un evento
     en el registro de actividad (sin datos personales) una sola vez por mes.
+11. **Given** varias instancias en el inventario, una de ellas al 85 % de su tope y otra con el tope
+    alcanzado, **When** el operador consulta desde su equipo las versiones de todas las instancias,
+    **Then** ve en una columna el estado del tope de cada una («normal», «≥80 %», «alcanzado» o «sin
+    tope»), sin importes.
+12. **Given** una consulta de salud sin credencial, **When** se responde, **Then** no incluye nada
+    sobre el consumo ni el tope.
 
 ---
 
@@ -164,13 +190,14 @@ siguiente mensaje vuelve a responderse con el modelo.
   real aunque supere el tope.
 - **Tope menor que el gasto ya hecho en el mes**: se acepta; el bot pasa a responder con el contacto
   desde el siguiente mensaje y el panel lo indica.
-- **Modelo sin precio configurado con el tope activo**: su consumo no tiene coste y no suma al gasto
-  del tope. Para que eso no deje la instancia sin protección, el panel muestra un aviso mientras el
-  modelo configurado en la instancia no tenga precio y el tope esté activo.
+- **Modelo sin precio configurado con el tope activo**: no se puede activar el tope sin precio para
+  el modelo actual. Si después cambia el modelo del entorno (o se borra su precio) y queda sin
+  precio, su consumo no suma al gasto del tope y el panel muestra un aviso destacado en todas las
+  pantallas hasta que se configure el precio.
 - **El modelo cambia a mitad de mes** (otro valor en el entorno): cada registro conserva su modelo y
-  se valora con su propio precio.
-- **Precio cambiado a mitad de mes**: el coste mostrado y el gasto del tope se calculan con el precio
-  vigente para todo el mes (estimación), no con el histórico. Se indica en la pantalla.
+  el coste calculado con el precio de ese modelo en su momento.
+- **Precio cambiado a mitad de mes**: lo ya consumido conserva su coste; el gasto del mes es la suma
+  de costes guardados, así que corregir un precio no activa ni libera el tope de golpe.
 - **El proveedor no informa de tokens** (error antes de procesar): no se registra consumo.
 - **Instancia sin clave del modelo** (sin bot): no hay consumo ni tope que aplicar; la pantalla lo
   muestra vacío.
@@ -217,20 +244,24 @@ siguiente mensaje vuelve a responderse con el modelo.
   tokens de entrada, de salida, de escritura en caché y de lectura de caché, en una moneda de coste
   única para la instancia. La precisión MUST permitir que el coste de una sola respuesta no se
   redondee a cero.
-- **FR-011**: El coste estimado MUST calcularse con los precios vigentes en el momento de mostrarlo;
-  la pantalla MUST indicar que es una estimación y no la factura del proveedor.
-- **FR-012**: El consumo de un modelo sin precio MUST mostrarse con sus tokens y coste "sin precio",
-  con un aviso que nombre el modelo.
+- **FR-011**: El coste estimado de cada registro MUST calcularse al registrarlo, con el precio
+  vigente de su modelo en ese momento, y guardarse con él; cambiar después un precio MUST NOT
+  alterar el coste de registros anteriores. La pantalla MUST indicar que es una estimación y no la
+  factura del proveedor.
+- **FR-012**: El consumo de un modelo sin precio en el momento de registrarlo MUST quedar "sin
+  precio" (ni cero ni recalculado después) y mostrarse con sus tokens y un aviso que nombre el
+  modelo.
 - **FR-013**: Los cambios de precios y del tope MUST validarse (valores no negativos, tope mayor que
   cero cuando está activo) y aplicarse en una transacción, con mensajes de error por campo.
 
 **Tope mensual de gasto**
 
 - **FR-014**: El operador MUST poder activar, cambiar y desactivar un tope mensual de gasto estimado
-  para la instancia. Por defecto está desactivado.
+  para la instancia. Por defecto está desactivado. Activarlo MUST rechazarse, con un error que nombre
+  el modelo, si el modelo configurado en la instancia no tiene precio.
 - **FR-015**: El gasto del mes MUST ser la suma del coste estimado de todos los registros del mes en
-  curso, incluidos "Probar el bot" y los resúmenes de derivación, con los precios vigentes. Los
-  registros de modelos sin precio no suman.
+  curso, incluidos "Probar el bot" y los resúmenes de derivación (FR-011). Los registros sin precio
+  no suman.
 - **FR-016**: Antes de llamar al modelo para responder a un cliente final, el sistema MUST comprobar
   el gasto del mes sin caché; si es igual o superior al tope activo, MUST NOT llamar al modelo y MUST
   responder con un mensaje fijo que dice que ahora no puede atender por ese canal y da el contacto del
@@ -245,12 +276,21 @@ siguiente mensaje vuelve a responderse con el modelo.
 - **FR-020**: El panel MUST mostrar en todas sus pantallas un aviso cuando el gasto del mes alcance el
   80 % del tope y otro distinto al alcanzar el 100 %. Estos avisos se calculan cada vez, no se guardan,
   y no impiden activar el negocio.
-- **FR-021**: El panel MUST mostrar un aviso, mientras el tope esté activo, si el modelo configurado en
-  la instancia no tiene precio.
+- **FR-021**: Mientras el tope esté activo y el modelo configurado en la instancia no tenga precio
+  (porque cambió el modelo o se borró su precio), el panel MUST mostrar en todas sus pantallas un
+  aviso destacado que nombre el modelo y diga que su consumo no cuenta para el tope. Como los demás
+  avisos de esta feature, se calcula cada vez y no impide activar el negocio.
 - **FR-022**: Subir o desactivar el tope MUST surtir efecto desde el siguiente mensaje, y el cambio de
   mes en la hora local del negocio MUST reanudar las respuestas con el modelo, sin intervención.
 - **FR-023**: La primera vez en cada mes que se alcance el tope, el sistema MUST registrar un evento en
   el registro de actividad, sin datos personales.
+- **FR-023a**: El informe completo de salud (el que exige el secreto de salud, feature 009) MUST
+  incluir el estado del tope de la instancia: «sin tope», «normal», «≥80 %» o «alcanzado», calculado
+  en el momento y sin importes ni precios. La respuesta de salud sin credencial MUST NOT cambiar.
+- **FR-023b**: La orden que consulta la salud de las instancias del inventario MUST mostrar ese
+  estado en una columna (y en su salida estructurada). El estado del tope MUST NOT cambiar el
+  resultado de la fila ni el código de salida de la orden: es informativo y no forma parte de la
+  verificación de versiones. Las instancias anteriores a esta feature se muestran sin dato.
 
 **Límites con otras features**
 
@@ -265,8 +305,8 @@ siguiente mensaje vuelve a responderse con el modelo.
 
 - **Registro de consumo**: una llamada (o el conjunto de llamadas de una respuesta) al modelo.
   Momento, canal, uso (respuesta o resumen de derivación), modelo y tokens de entrada, de salida, de
-  escritura en caché y de lectura de caché. Sin textos ni identificadores personales ni de
-  conversación.
+  escritura en caché y de lectura de caché, y coste estimado con el precio vigente al registrarlo
+  (o "sin precio"). Sin textos ni identificadores personales ni de conversación.
 - **Precio de modelo**: identificador del modelo y precio por millón de tokens de cada tipo, en la
   moneda de coste de la instancia.
 - **Ajustes de consumo**: moneda de coste, tope mensual de gasto (activo o no, e importe).
@@ -293,12 +333,14 @@ siguiente mensaje vuelve a responderse con el modelo.
   final.
 - **SC-007**: El gasto del mes que se pasa del tope queda limitado a las respuestas que estaban en
   curso cuando se alcanzó.
+- **SC-008**: Con una sola consulta desde su equipo, el operador identifica qué instancias del
+  inventario están al 80 % o más de su tope, sin entrar en ningún panel.
 
 ## Assumptions
 
 - El coste es una **estimación** con los precios que configura el operador; la factura real es la del
-  proveedor del modelo. Por eso los precios se aplican a todo el periodo mostrado y no se guarda un
-  histórico de precios.
+  proveedor del modelo. Cada registro guarda su coste al crearse, así que no hace falta un histórico
+  de precios: la tabla solo contiene los precios vigentes.
 - La moneda de coste es la de los precios del proveedor (por defecto, dólares estadounidenses) y es
   independiente de la moneda del negocio (`DEFAULT_CURRENCY`), que se usa para los precios de sus
   servicios.
@@ -308,8 +350,8 @@ siguiente mensaje vuelve a responderse con el modelo.
   tiene que poder comprobar el bot también con el tope alcanzado.
 - Con el tope alcanzado, el mensaje fijo se envía a cada mensaje (o lote de mensajes) del cliente
   final, como hoy hace el chat web con su tope; enviarlo no llama al modelo.
-- El aviso al 80 % es fijo; no se envían correos ni mensajes al operador por el tope (solo panel y
-  registro de actividad).
+- El aviso al 80 % es fijo; no se envían correos ni mensajes al operador por el tope: se entera por
+  el panel, el registro de actividad y la consulta de salud de sus instancias desde el inventario.
 - El tope del chat web por número de respuestas (feature 004) se mantiene sin cambios.
 - La herramienta de terminal `pnpm bot:chat` y la evaluación `pnpm test:eval` no forman parte del
   consumo de la instancia: se ejecutan en el equipo del desarrollador.

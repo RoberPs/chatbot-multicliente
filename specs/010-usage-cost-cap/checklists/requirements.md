@@ -33,7 +33,9 @@
 
 - Las únicas referencias técnicas son nombres de órdenes y variables ya existentes (`pnpm bot:chat`,
   `DEFAULT_CURRENCY`), usadas para delimitar el alcance, como en las specs anteriores.
-- Decisiones tomadas por defecto que conviene confirmar en `/speckit-clarify`: "Probar el bot" suma
-  al tope pero no se bloquea; el coste se calcula con los precios vigentes (sin histórico); tope
-  desactivado por defecto; con el tope alcanzado, el aviso de derivación va sin resumen del modelo;
-  los precios y el tope no entran en la exportación de la 008.
+- Confirmado en `/speckit-clarify` (2026-10-01): coste guardado al registrar; tope no activable sin
+  precio del modelo actual; estado del tope en el informe de salud con secreto y en la consulta del
+  inventario; "Probar el bot" suma al tope y no se bloquea.
+- Siguen por defecto (sin confirmar): tope desactivado por defecto; con el tope alcanzado, el aviso
+  de derivación va sin resumen del modelo; los precios y el tope no entran en la exportación de la
+  008.
