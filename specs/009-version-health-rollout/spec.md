@@ -152,9 +152,11 @@ fallida simulada y vuelve atrás sin ayuda, usando solo la guía.
 
 ### Edge Cases
 
-- **Arranque o migración en curso**: mientras la instancia aplica migraciones o no ha terminado de
-  arrancar, la consulta no debe dar "correcto"; debe indicar un estado no listo, distinguible de
-  una caída.
+- **Arranque o migración en curso**: la consulta nunca debe dar "correcto". Mientras la instancia
+  aplica migraciones todavía no escucha, así que no responde y la orden del inventario la muestra
+  como "no responde", igual que una caída; el procedimiento indica esperar y mirar en los registros
+  si la migración terminó o se bloqueó. Una vez que escucha y hasta terminar de arrancar (y durante
+  la parada), la instancia responde "no listo", distinguible de una caída.
 - **Migración bloqueada** (`migration_blocked`, sin copia previa): la instancia no arranca y por tanto
   no responde; la orden del inventario la muestra como "no responde" y el procedimiento indica dónde
   mirar el motivo.
@@ -188,7 +190,9 @@ fallida simulada y vuelve atrás sin ayuda, usando solo la guía.
   secreto suyo y del de otras instancias, de calidad equivalente al resto de secretos, y MUST
   validarse sin revelar información por la forma de comparar. Una credencial incorrecta MUST
   denegar el acceso sin revelar nada de la instancia. Si la instancia no tiene secreto de salud
-  configurado, MUST responder solo el nivel sin credencial.
+  configurado, MUST responder solo el nivel sin credencial a las consultas sin credencial, y MUST
+  denegar las que traigan una credencial igual que si fuera incorrecta, para no revelar si la
+  instancia tiene secreto.
 - **FR-002**: El endpoint de salud, en cualquiera de sus niveles, MUST NOT devolver ni registrar
   datos de clientes finales,
   conversaciones, configuración del negocio, nombres de negocio o cliente, secretos, variables de
@@ -248,8 +252,9 @@ fallida simulada y vuelve atrás sin ayuda, usando solo la guía.
 - **FR-019**: El procedimiento MUST cerrar cada actualización con la repetición de la comprobación de
   copias (guía de validación de copias) cuando haya habido migraciones, y con la anotación de la
   nueva versión en el inventario.
-- **FR-020**: La guía de operación, el README y el inventario MUST reflejar los cambios (nueva orden,
-  endpoint de salud y estado de la feature).
+- **FR-020**: La guía de operación (incluida su descripción del entorno de cada instancia y del
+  inventario) y el README MUST reflejar los cambios (nuevas órdenes, endpoint de salud, secreto de
+  salud y estado de la feature). El formato del inventario no cambia.
 
 ### Key Entities
 
@@ -261,8 +266,8 @@ fallida simulada y vuelve atrás sin ayuda, usando solo la guía.
   salud, versión del núcleo, versión del esquema e identificador de instancia.
 - **Secreto de salud**: credencial propia de cada instancia que da acceso al informe completo; no
   da acceso a ningún otro dato ni función.
-- **Estado de la instancia**: correcto, degradado (algo falla pero responde) o no listo (arrancando o
-  migrando). "No responde" lo atribuye la herramienta del inventario, no la instancia.
+- **Estado de la instancia**: correcto, degradado (algo falla pero responde) o no listo (terminando
+  de arrancar o parando; mientras migra no responde). "No responde" lo atribuye la herramienta del inventario, no la instancia.
 - **Registro del inventario**: ya existe (007); aquí se compara su versión anotada con la observada.
 - **Informe de versiones**: resultado de la orden: una fila por instancia con estado, versiones,
   discrepancias y errores de identidad.

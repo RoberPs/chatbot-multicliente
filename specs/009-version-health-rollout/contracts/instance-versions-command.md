@@ -40,9 +40,9 @@ pnpm instance:versions [--json] [--only <id>[,<id>…]] [--envs-dir <carpeta>] [
 | `unreachable` | No responde | Red, DNS, TLS, tiempo agotado o error de conexión | Sí |
 | `invalid_response` | Respuesta no válida | No es JSON, supera 4 KiB o no cumple el contrato | Sí |
 | `no_health` | Sin información de versión | `404`: instancia anterior a esta feature | Sí |
-| `auth_failed` | Secreto rechazado | `401`: el secreto del entorno no es el de la instancia | Sí |
+| `auth_failed` | Secreto rechazado | `401`: el secreto del entorno no es el de la instancia, o la instancia aún no tiene `HEALTH_SECRET` desplegado | Sí |
 | `rate_limited` | Límite de peticiones | `429` | Sí |
-| `status_only` | Solo estado | Sin secreto (`no_secret`: entorno o variable ausentes) o la instancia no tiene secreto (`instance_without_secret`) | Sí |
+| `status_only` | Solo estado | Sin secreto en el equipo del operador (`no_secret`: entorno o variable ausentes); se consulta solo el nivel sin credencial | Sí |
 | `identity_mismatch` | Identidad distinta | `instanceId` recibido ≠ `id` del inventario (URL cruzada) | Sí |
 | `not_queried` | No consultada | Sin URL (`no_url`) o no `https` sin `--allow-insecure` (`not_https`) | Sí |
 

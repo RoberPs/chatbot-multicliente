@@ -10,8 +10,10 @@ nunca se guardan).
 |---|---|---|
 | `coreVersion` | texto | Versión semántica `MAYOR.MENOR.PARCHE[-prerelease]` (`/^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?$/`), leída una vez de `package.json` al arrancar |
 
-- Única fuente: `package.json`. El `Dockerfile` impide construir una imagen con una etiqueta distinta
-  (R4). Si no se puede leer o no es semántica, la instancia no arranca.
+- Única fuente: `package.json`. El `Dockerfile` impide construir una imagen cuyo `CORE_VERSION` (y
+  su etiqueta OCI `org.opencontainers.image.version`) difiera de `package.json` (R4); la etiqueta
+  `-t` la elige el operador y el procedimiento la comprueba. Si la versión no se puede leer o no es
+  semántica, la instancia no arranca.
 
 ## 2. Versión del esquema
 
@@ -87,7 +89,7 @@ Una fila por instancia no retirada. Forma completa en
 |---|---|---|
 | `id` · `client` | texto | Del inventario |
 | `result` | enum | `ok`, `degraded`, `not_ready`, `unreachable`, `invalid_response`, `no_health`, `auth_failed`, `rate_limited`, `status_only`, `identity_mismatch`, `not_queried` |
-| `reason` | enum \| null | Solo en `not_queried`: `no_url`, `not_https`; solo en `status_only`: `no_secret`, `instance_without_secret` |
+| `reason` | enum \| null | Solo en `not_queried`: `no_url`, `not_https`; solo en `status_only`: `no_secret` |
 | `status` | `ok` \| `degraded` \| `not_ready` \| null | Estado informado por la instancia |
 | `coreVersion` | texto \| null | Observada; `null` si no se atribuye a la instancia |
 | `schema` | `{ applied: string \| null, expected: string } \| null` | Observada |

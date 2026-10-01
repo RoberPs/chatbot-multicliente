@@ -30,6 +30,9 @@ curl -i -H "Authorization: Bearer 0000" http://localhost:3000/health
 #   401  {"error":"unauthorized"}
 ```
 
+Con `HEALTH_SECRET` vacío en `.env`, una petición sin cabecera da el nivel público y una con
+cualquier `Authorization: Bearer …` da el mismo `401`: no se revela si la instancia tiene secreto.
+
 Esperado: `coreVersion` = `version` de `package.json`; `schema.applied` = `schema.expected` = la última
 migración de `src/db/migrations`; ningún otro campo.
 
@@ -72,6 +75,7 @@ Casos a provocar y resultado esperado en la fila:
 | Instancia sin `/health` (imagen anterior) | `Sin información de versión` |
 | Entorno sin `HEALTH_SECRET` | `Solo estado` |
 | Secreto cambiado en la instancia | `Secreto rechazado` |
+| Instancia sin `HEALTH_SECRET` y entorno con él | `Secreto rechazado` |
 
 `pnpm instance:versions --allow-insecure --annotate` muestra los cambios y pregunta antes de
 escribir; sin `--annotate` el fichero del inventario no cambia (compara su fecha de modificación).
@@ -98,7 +102,8 @@ Ensayo con una persona que no ha participado en la feature, usando solo la secci
 1. Instancia «pruebas» y instancia «cliente» de ensayo, ambas en la versión `0.1.0`.
 2. Subir `package.json` a `0.1.1` con una migración inocua (añadir columna en una rama de ensayo),
    construir `chatbot:0.1.1` con `--build-arg CORE_VERSION=0.1.1` (comprobar que con `0.1.2` la
-   construcción **falla**).
+   construcción **falla**) y comprobar con `docker inspect` que la etiqueta OCI
+   `org.opencontainers.image.version` es `0.1.1`.
 3. Publicar en «pruebas», comprobar con `instance:versions --only` y el panel, y repetir la
    validación de copias.
 4. Publicar en «cliente» provocando un fallo (p. ej. `BACKUP_DIR` inválido ⇒ `migration_blocked`):

@@ -14,7 +14,9 @@ Authorization: Bearer <HEALTH_SECRET>     # opcional
 - Sin sesión del panel ni CSRF; no pertenece a `/admin`.
 - Solo `GET` (y `HEAD` implícito). No acepta cuerpo ni parámetros de consulta; el secreto **nunca**
   va en la URL.
-- Límite: 30 peticiones por minuto y por IP (respeta `TRUST_PROXY`). Superado: `429`.
+- Límite: 30 peticiones por minuto y por IP (respeta `TRUST_PROXY`). Superado: `429`. Un monitor o
+  balanceador debe sondear cada **10 s o más**: con intervalos de 2 s o menos agota el límite y la
+  instancia parecería caída. Si varios monitores salen por la misma IP, el intervalo se reparte.
 - Es de **solo lectura**: no escribe en la BD ni cambia ningún estado.
 
 ## Respuestas
@@ -22,7 +24,7 @@ Authorization: Bearer <HEALTH_SECRET>     # opcional
 Todas con `Content-Type: application/json; charset=utf-8` y `Cache-Control: no-store`, más las
 cabeceras de seguridad que ya añade la aplicación.
 
-### Nivel sin credencial (sin cabecera, o la instancia no tiene `HEALTH_SECRET`)
+### Nivel sin credencial (sin cabecera `Authorization`)
 
 | Estado | Código | Cuerpo |
 |---|---|---|
@@ -71,12 +73,14 @@ nunca se añade la causa (escenarios 2 y 6 de la US1). Ejemplos:
 
 | Situación | Código | Cuerpo / cabeceras |
 |---|---|---|
-| Credencial incorrecta (cabecera `Bearer` con valor distinto o mal formada) | `401` | `{"error":"unauthorized"}` + `WWW-Authenticate: Bearer` |
+| Credencial incorrecta (cabecera `Bearer` con valor distinto o mal formada), o cualquier credencial enviada a una instancia sin `HEALTH_SECRET` | `401` | `{"error":"unauthorized"}` + `WWW-Authenticate: Bearer` |
 | Límite de peticiones | `429` | Cuerpo del plugin de límite; sin datos de la instancia |
 | Error interno inesperado | `503` | `{"status":"degraded"}` (nunca el detalle) |
 
-Una credencial enviada a una instancia **sin** `HEALTH_SECRET` no da `401`: se responde el nivel sin
-credencial, para no revelar si el secreto existe (FR-001b).
+Una credencial enviada a una instancia **sin** `HEALTH_SECRET` da `401`, exactamente igual que una
+incorrecta: así, quien no tiene el secreto no puede saber si la instancia lo tiene configurado
+(FR-001b). Sin cabecera, la instancia sin secreto responde el nivel sin credencial como cualquier
+otra.
 
 ## Garantías (comprobables)
 

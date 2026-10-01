@@ -20,10 +20,12 @@ cadena de respuesta.
    `databaseSchema` / `installedSchema` de `src/backup/schema-version.ts`, y adaptador
    `GET /health` en `src/channels/health` con dos niveles: sin credencial solo `{status}`; con el
    secreto de salud (`HEALTH_SECRET`, cabecera `Authorization: Bearer`) el informe completo (R1,
-   R2, R3). El mismo informe alimenta una línea fija en la cabecera del panel (R7).
+   R2, R3). El mismo informe alimenta una línea fija en el pie del panel (R7).
 2. **Versión del núcleo** — única fuente: el `version` de `package.json`, que ya viaja en la
    imagen; el `Dockerfile` exige un argumento `CORE_VERSION` igual a esa versión o la construcción
-   falla, de modo que la etiqueta de la imagen y la versión declarada no pueden divergir (R4).
+   falla, y lo graba en la etiqueta OCI `org.opencontainers.image.version`. La etiqueta `-t` la
+   elige el operador: el procedimiento comprueba con `docker inspect` que coincide antes de
+   desplegar (R4).
 3. **Consulta desde el inventario** — nueva suborden `pnpm instance:versions` (módulo
    `src/provisioning/versions.ts`): lee el inventario, abre el entorno de cada instancia solo en
    memoria para obtener su `HEALTH_SECRET`, consulta `/health` en paralelo con tiempo límite, cruza
@@ -41,7 +43,7 @@ Detalle de decisiones en [research.md](research.md).
 **Language/Version**: TypeScript 5.x (strict) sobre Node.js 22 LTS (heredado)
 
 **Primary Dependencies**: las existentes — Fastify 5, `@fastify/rate-limit` (ya registrado con
-`global: false`), Eta (cabecera del panel), `pg`, Zod, `node:crypto` (comparación en tiempo
+`global: false`), Eta (pie del panel), `pg`, Zod, `node:crypto` (comparación en tiempo
 constante), `fetch`/`AbortSignal.timeout` nativos de Node 22 para la orden. **Sin dependencias
 nuevas.**
 
@@ -59,7 +61,7 @@ repetición en el entorno; script de comprobación de versión),
 `contract` (`fastify.inject`: `/health` sin credencial, con credencial correcta, incorrecta,
 sin secreto configurado, BD caída, esquema distinto, `not_ready`/`stopping`, solo campos acordados,
 sin sesión ni CSRF, límite de peticiones, ausencia de datos prohibidos en el cuerpo y en los
-registros; cabecera del panel con versión),
+registros; pie del panel con versión),
 `integration` (Testcontainers: SC-004 con BD real parada y esquema adelantado/atrasado; orden
 `instance:versions` contra servidores Fastify reales en puertos locales con inventario temporal:
 tabla, caída, URL cruzada, instancia sin `/health`, `--annotate`; SC-002 con 10 instancias de las
@@ -101,7 +103,7 @@ límite de peticiones, formato de la versión, nombre de la orden) están en el 
 | V. Siempre hay salida a una persona | **Cumple.** Ningún flujo de conversación se toca; `/health` es de solo lectura y limitado en frecuencia, así que no retrasa la derivación (FR-006, edge case de consultas abusivas). |
 | VI. El operador registra la información | **Cumple.** El secreto de salud solo da acceso al informe; no expone al negocio ningún medio de alterar su configuración. La orden es una herramienta del operador. |
 | Aislamiento entre instancias | **Cumple.** El informe no contiene datos de conversaciones ni de configuración; el `HEALTH_SECRET` es distinto por instancia y `instance:check` rechaza repeticiones; la orden rechaza atribuir una versión si el `instanceId` no es el esperado (SC-007). |
-| Flujo de desarrollo (convenciones) | Spec de núcleo declarada. Migraciones: ninguna. Dominio sin HTTP (`src/health` puro; la ruta vive en `src/channels/health`, igual que los enlaces de derivación). Textos en español. README, guía de operación (9.1/9.2, propuesta P6 hecha, secciones 2.2/2.4/5) e inventario se actualizan al cerrar (FR-020). |
+| Flujo de desarrollo (convenciones) | Spec de núcleo declarada. Migraciones: ninguna. Dominio sin HTTP (`src/health` puro; la ruta vive en `src/channels/health`, igual que los enlaces de derivación). Textos en español. README y guía de operación (9.1/9.2, propuesta P6 hecha, secciones 2.2/2.4 —entorno e inventario— y 5) se actualizan al cerrar (FR-020); el formato del inventario no cambia. |
 | Pruebas de IV y V | La feature no afecta a la conversación (FR-008): no hay prueba nueva de IV/V; se mantiene verde la suite existente, que las cubre. |
 
 **Resultado: sin violaciones; Complexity Tracking vacío.**
@@ -162,7 +164,7 @@ package.json                         # scripts instance:versions e instance:heal
 
 tests/
 ├── unit/health/ · unit/provisioning/versions.test.ts · unit/scripts/check-version.test.ts
-├── contract/health.test.ts · contract/admin/version-header.test.ts
+├── contract/health.test.ts · contract/admin/version-footer.test.ts
 └── integration/health/ · integration/provisioning/cli-versions.test.ts · cli-health-secret.test.ts
 
 docs/operacion-multicliente.md       # sección 5 (procedimiento), 2.2/2.4, 9.1/9.2, P6 hecha

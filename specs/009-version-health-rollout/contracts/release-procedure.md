@@ -15,6 +15,7 @@ contrato. Decisiones en [research.md](../research.md) R4, R5 y R10.
 | `pnpm instance:health-secret <id>` (instancias anteriores a la 009) y despliegue del entorno | La instancia responde `/health` completo | No publicar a esa instancia hasta tenerlo: no se podrá comprobar su versión |
 | `pnpm instance:sync <id> <entorno>` y `pnpm instance:check <entorno>` | `apto`, con `HEALTH_SECRET` presente y no repetido | Corregir lo que indique |
 | `pnpm instance:versions` | Todas las instancias en `Correcto` y «Coincide: sí» | Resolver antes de empezar (una instancia ya degradada no es un buen punto de partida) |
+| Si un monitor o balanceador consulta `/health`, revisar su intervalo | Cada 10 s o más (límite: 30 por minuto y por IP) | Ampliar el intervalo: con menos, recibe `429` y da la instancia por caída |
 
 ### 1. Comprobaciones previas (en tu equipo)
 
@@ -25,6 +26,7 @@ contrato. Decisiones en [research.md](../research.md) R4, R5 y R10.
 | `pnpm test:eval` y `EVAL_CHANNEL=web pnpm test:eval` | Sin regresiones en los criterios | **Parar** si hay regresión |
 | Revisar las migraciones nuevas: solo añadir, ficheros publicados intactos | Cumple las reglas de la 006 | **Parar** si se editó una migración publicada |
 | Etiqueta Git `vX.Y.Z` y `docker build --build-arg CORE_VERSION=X.Y.Z -t chatbot:X.Y.Z .` | La construcción termina; si `CORE_VERSION` ≠ `package.json`, falla | **Parar** si falla. Nunca `latest` |
+| `docker inspect -f '{{ index .Config.Labels "org.opencontainers.image.version" }}' chatbot:X.Y.Z` | Imprime `X.Y.Z`, igual que la etiqueta `-t` | **Parar** si difiere: la etiqueta no la controla el `Dockerfile` |
 
 ### 2. Instancia de pruebas
 
@@ -51,9 +53,9 @@ tanda:
 | `Correcto` con otra versión | Se desplegó otra etiqueta | **Parar la tanda**; corregir el despliegue |
 | `Degradado` | BD o esquema distinto del esperado | **Parar la tanda**; ver «Vuelta atrás» |
 | `No lista` | Arrancando o parándose | Esperar 1 minuto y repetir; si persiste, **parar la tanda** |
-| `No responde` | No arrancó (p. ej. `migration_blocked`) o red | **Parar la tanda**; leer los registros de la instancia |
+| `No responde` | Aún migrando (mientras migra no escucha), no arrancó (p. ej. `migration_blocked`) o red | Esperar a que termine la migración y repetir; si persiste o los registros muestran `migration_blocked`/`migration_failed`, **parar la tanda** |
 | `Identidad distinta` | URL del inventario apunta a otra instancia | **Parar la tanda**; corregir la URL (`instance:update`) antes de seguir |
-| `Secreto rechazado` / `Solo estado` / `Sin información de versión` | No se puede verificar | **Parar la tanda**: sin verificación no se continúa |
+| `Secreto rechazado` / `Solo estado` / `Sin información de versión` | No se puede verificar («Secreto rechazado» también sale si la instancia aún no tiene desplegado su `HEALTH_SECRET`) | **Parar la tanda**: sin verificación no se continúa |
 
 La tanda siguiente solo empieza cuando todas las instancias de la actual están `Correcto` con la
 versión nueva.

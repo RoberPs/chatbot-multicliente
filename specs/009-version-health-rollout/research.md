@@ -16,7 +16,7 @@ Las cifras que la spec delegaba al plan (códigos, tiempos, límites, formato) s
 | Credencial correcta, degradado / no listo | 503 | informe completo |
 | Credencial incorrecta | 401 | `{"error":"unauthorized"}` + `WWW-Authenticate: Bearer` |
 | Demasiadas peticiones | 429 | el del plugin de límite |
-| Credencial enviada pero la instancia no tiene secreto | como sin credencial | solo `{status}` (FR-001b) |
+| Credencial enviada pero la instancia no tiene secreto | 401 | igual que credencial incorrecta (FR-001b) |
 
 El informe completo se define en [contracts/health-endpoint.md](contracts/health-endpoint.md). El
 estado también va en el código (FR-003): 200 solo con `ok`.
@@ -24,7 +24,10 @@ estado también va en el código (FR-003): 200 solo con `ok`.
 **Razón**: un balanceador o monitor externo basta con el código y con el nivel público; solo quien
 tiene el secreto ve versiones e identificador (clarificación 2026-10-01). El 401 distingue "secreto
 rechazado" de "caída" para la orden del inventario (escenario 4 de la US1). Un secreto enviado a una
-instancia sin secreto no debe dar 401: no se revela si el secreto existe.
+instancia sin secreto da también 401: si respondiera el nivel público, cualquiera podría averiguar
+con una credencial inventada qué instancias tienen secreto. La orden pierde la distinción
+"instancia sin secreto" frente a "secreto distinto", pero el remedio del operador es el mismo
+(desplegar el entorno con el secreto correcto).
 
 **Descartado**: `/healthz` o `/status` (el nombre `/health` es el que fija la spec y la propuesta
 P6); `200` con estado en el cuerpo (obliga a interpretar el contenido, FR-003); `403` para el
@@ -110,7 +113,10 @@ etapa de construcción, ejecuta `node scripts/check-version.mjs "$CORE_VERSION"`
 construye con `docker build --build-arg CORE_VERSION=1.4.0 -t chatbot:1.4.0 .` y lleva la etiqueta
 `org.opencontainers.image.version`. La publicación empieza con subir `version` en `package.json`
 (commit y etiqueta Git `v1.4.0`); así hay **una sola fuente** (`package.json`) y la imagen no se
-puede construir con una etiqueta distinta de la versión que declara.
+puede construir con un `CORE_VERSION` ni una etiqueta OCI distintos de la versión que declara. La
+etiqueta `-t` la elige el operador y Docker no la conoce durante la construcción: el procedimiento
+(sección 5 de la guía) comprueba con `docker inspect` que la etiqueta coincide con
+`org.opencontainers.image.version` antes de desplegar.
 
 **Razón**: `package.json` ya viaja en la imagen y es lo que el equipo ya versiona; no hace falta
 `.git` ni variables extra en tiempo de ejecución. El control está en la construcción, que es donde se
