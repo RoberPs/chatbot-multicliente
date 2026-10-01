@@ -276,8 +276,8 @@ Task: "src/provisioning/fingerprint.ts (HEALTH_SECRET)"
   El único fallo fue el mismo `read ECONNRESET` intermitente al crear la BD en el `beforeAll`
   del primer fichero de contrato (esta vez `web-chat-handoff.test.ts`); repetido por separado
   junto con `status.test.ts`, ambos en verde.
-- **Pendiente (SC-006)**: el ensayo de la guía de publicación con una persona que no ha participado
-  (quickstart §5) queda por hacer por una persona.
+- **SC-006 (aplazado)**: la feature se da por buena; el ensayo de la guía de publicación con una
+  persona que no ha participado (quickstart §5) se hará más adelante, por decisión del usuario.
 - **Pendiente para el primer despliegue en un VPS real**: construir la imagen con el `Dockerfile` tal
   cual (sin el rodeo de la CA de Avast) y comprobar a mano la fila «No responde» de
   `instance:versions` con la instancia parada.
