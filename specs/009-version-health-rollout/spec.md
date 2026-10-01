@@ -27,14 +27,27 @@ inventario) y **seguir un procedimiento** de publicación con comprobaciones y v
 Es la propuesta P6 de [docs/operacion-multicliente.md](../../docs/operacion-multicliente.md). Es de
 operación: no cambia lo que el bot responde ni lo que ven los clientes finales.
 
+## Clarifications
+
+### Session 2026-10-01
+
+- Q: ¿Debe poder consultar el endpoint de salud cualquiera que conozca la URL, o solo quien presente
+  un secreto compartido? → A: Dos niveles: sin credencial solo se responde el estado
+  (correcto/degradado/no listo), sin versiones ni identificador; con un secreto de salud propio de
+  cada instancia se responde el informe completo.
+- Q: ¿Dónde guarda el operador el secreto de salud de cada instancia para que la orden del
+  inventario pueda usarlo? → A: La orden lo lee del fichero de entorno de cada instancia (el que ya
+  genera el alta); el inventario solo guarda su huella para detectar secretos repetidos y nunca el
+  valor.
+
 ## User Scenarios & Testing *(mandatory)*
 
 ### User Story 1 - Una instancia declara su versión y su estado (Priority: P1)
 
-El operador (o una herramienta suya) consulta una instancia y obtiene, sin iniciar sesión, un
-resumen mínimo: su estado de salud, la versión del núcleo que corre y la versión del esquema de base
-de datos aplicada. El mismo dato aparece en el panel `/admin` de la instancia, para el operador que
-ya está dentro.
+El operador (o una herramienta suya) consulta una instancia. Sin credencial obtiene solo su estado
+de salud; con el secreto de salud de esa instancia obtiene además la versión del núcleo que corre,
+la versión del esquema de base de datos aplicada y el identificador de la instancia. El mismo dato
+completo aparece en el panel `/admin` de la instancia, para el operador que ya está dentro.
 
 **Why this priority**: es la base de todo lo demás. Sin que cada instancia declare qué versión corre,
 ni el comando del inventario ni la comprobación posterior a una actualización tienen de dónde leer.
@@ -46,17 +59,25 @@ parar la base de datos y comprobar que el estado pasa a "degradado" sin exponer 
 **Acceptance Scenarios**:
 
 1. **Given** una instancia arrancada con la base de datos disponible y las migraciones aplicadas,
-   **When** se consulta su endpoint de salud sin credenciales, **Then** responde "correcto" con la
-   versión del núcleo, la versión del esquema y el identificador de la instancia, y nada más.
-2. **Given** una instancia cuya base de datos no responde, **When** se consulta el endpoint de salud,
-   **Then** responde "degradado" con un código que lo distingue de "correcto", sigue indicando la
-   versión del núcleo y no revela la causa técnica, direcciones ni credenciales.
-3. **Given** el operador con sesión iniciada, **When** abre el panel, **Then** ve en un lugar fijo la
+   **When** se consulta su endpoint de salud con el secreto de salud correcto, **Then** responde
+   "correcto" con la versión del núcleo, la versión del esquema y el identificador de la instancia,
+   y nada más.
+2. **Given** una instancia cuya base de datos no responde, **When** se consulta el endpoint de salud
+   con el secreto correcto, **Then** responde "degradado" con un código que lo distingue de
+   "correcto", sigue indicando la versión del núcleo y no revela la causa técnica, direcciones ni
+   credenciales.
+3. **Given** una consulta sin credencial, **When** se consulta el endpoint de salud, **Then** responde
+   solo el estado (correcto, degradado o no listo) con su código, sin versiones, sin identificador de
+   instancia y sin ningún otro dato.
+4. **Given** una consulta con un secreto de salud incorrecto, **When** se consulta el endpoint,
+   **Then** se deniega el acceso sin revelar nada de la instancia, y la herramienta del inventario
+   puede distinguirlo de una caída.
+5. **Given** el operador con sesión iniciada, **When** abre el panel, **Then** ve en un lugar fijo la
    versión del núcleo y la del esquema de esa instancia.
-4. **Given** una instancia cuyo esquema está en una versión distinta de la que espera el núcleo que
+6. **Given** una instancia cuyo esquema está en una versión distinta de la que espera el núcleo que
    corre, **When** se consulta la salud, **Then** el estado es "degradado" y ambas versiones son
    visibles para el operador.
-5. **Given** cualquier consulta de salud, **When** se inspecta la respuesta, **Then** no contiene
+7. **Given** cualquier consulta de salud, **When** se inspecta la respuesta, **Then** no contiene
    conversaciones, teléfonos, nombres de negocio o de cliente, configuración, secretos, variables de
    entorno ni rutas del servidor.
 
@@ -139,6 +160,8 @@ fallida simulada y vuelve atrás sin ayuda, usando solo la guía.
   mirar el motivo.
 - **Esquema más nuevo que el núcleo** (tras volver atrás a una imagen anterior sin restaurar): la
   instancia se declara degradada y el operador ve ambas versiones.
+- **Entorno de una instancia no disponible** para la orden: la fila indica "sin secreto de salud" y
+  solo se informa del estado, sin versiones.
 - **Instancias sin URL o sin `https`** en el inventario: se informa y no se consulta.
 - **Inventario vacío o sin instancias activas**: mensaje claro, sin error técnico.
 - **Muchas instancias**: la consulta es concurrente y acotada en tiempo; una instancia lenta no
@@ -157,10 +180,17 @@ fallida simulada y vuelve atrás sin ayuda, usando solo la guía.
 
 **Versión y salud de cada instancia**
 
-- **FR-001**: Cada instancia MUST exponer un endpoint de salud sin autenticación que devuelva el
-  estado (correcto, degradado o no listo), la versión del núcleo, la versión del esquema de base de
-  datos y el identificador de la instancia.
-- **FR-002**: El endpoint de salud MUST NOT devolver ni registrar datos de clientes finales,
+- **FR-001**: Cada instancia MUST exponer un endpoint de salud con dos niveles de respuesta: sin
+  credencial, solo el estado (correcto, degradado o no listo); con el secreto de salud de la
+  instancia, además la versión del núcleo, la versión del esquema de base de datos y el
+  identificador de la instancia.
+- **FR-001b**: El secreto de salud MUST ser propio de cada instancia, distinto de cualquier otro
+  secreto suyo y del de otras instancias, de calidad equivalente al resto de secretos, y MUST
+  validarse sin revelar información por la forma de comparar. Una credencial incorrecta MUST
+  denegar el acceso sin revelar nada de la instancia. Si la instancia no tiene secreto de salud
+  configurado, MUST responder solo el nivel sin credencial.
+- **FR-002**: El endpoint de salud, en cualquiera de sus niveles, MUST NOT devolver ni registrar
+  datos de clientes finales,
   conversaciones, configuración del negocio, nombres de negocio o cliente, secretos, variables de
   entorno, rutas del servidor, direcciones de la base de datos ni detalles de errores internos.
 - **FR-003**: El estado MUST distinguirse también por el código de respuesta, de modo que una
@@ -184,6 +214,12 @@ fallida simulada y vuelve atrás sin ayuda, usando solo la guía.
 - **FR-009**: El sistema MUST ofrecer una orden de operación que consulte, a partir del inventario de
   instancias (feature 007), la salud de cada instancia que no esté dada de baja y muestre su estado,
   versión del núcleo, versión del esquema y la versión anotada en el inventario.
+- **FR-009b**: La orden MUST obtener el secreto de salud de cada instancia del fichero de entorno de
+  esa instancia, solo en memoria; el inventario MUST NOT guardar su valor, solo su huella, como
+  con el resto de secretos (feature 007). El alta de instancias MUST generar un secreto de salud
+  nuevo y la validación de entornos MUST exigirlo y detectar si coincide con el de otra instancia.
+  Si no se dispone del entorno de una instancia, la orden MUST mostrarla como "sin secreto de
+  salud" y consultar solo el nivel sin credencial.
 - **FR-010**: La orden MUST marcar por separado: no responde, respuesta no válida, degradada o no
   lista, discrepancia con la versión anotada, e identificador de instancia distinto del esperado;
   una instancia anterior a esta feature MUST aparecer como "sin información de versión".
@@ -221,8 +257,10 @@ fallida simulada y vuelve atrás sin ayuda, usando solo la guía.
   todas las instancias del mismo despliegue y coincidente con la etiqueta de la imagen.
 - **Versión del esquema**: la última migración realmente aplicada a la base de datos de la instancia;
   puede diferir de la que espera el núcleo (tras volver atrás o con una migración pendiente).
-- **Informe de salud**: resumen sin datos sensibles de una instancia: estado, versión del núcleo,
-  versión del esquema e identificador de instancia.
+- **Informe de salud**: resumen sin datos sensibles de una instancia: estado y, con el secreto de
+  salud, versión del núcleo, versión del esquema e identificador de instancia.
+- **Secreto de salud**: credencial propia de cada instancia que da acceso al informe completo; no
+  da acceso a ningún otro dato ni función.
 - **Estado de la instancia**: correcto, degradado (algo falla pero responde) o no listo (arrancando o
   migrando). "No responde" lo atribuye la herramienta del inventario, no la instancia.
 - **Registro del inventario**: ya existe (007); aquí se compara su versión anotada con la observada.
@@ -255,17 +293,19 @@ fallida simulada y vuelve atrás sin ayuda, usando solo la guía.
 
 - La feature 007 (inventario de instancias con URL y versión anotada) y la 006 (copia previa a la
   migración, restauración) están completadas y se reutilizan sin cambios de comportamiento.
-- El endpoint de salud es público y solo expone los campos mínimos acordados (estado, versiones e
-  identificador de instancia); si se prefiriera protegerlo con un secreto compartido, se tratará en
-  la clarificación o en el plan.
-- El identificador de instancia (no secreto) se incluye para poder detectar URLs cruzadas; no
-  identifica al cliente por sí solo.
+- El nivel sin credencial del endpoint de salud es público y solo expone el estado; versiones e
+  identificador de instancia exigen el secreto de salud (Clarifications 2026-10-01).
+- El identificador de instancia (no secreto) se incluye en el nivel con credencial para poder
+  detectar URLs cruzadas; no identifica al cliente por sí solo.
 - La versión del núcleo es semántica y se fija una sola vez al construir la imagen; coincide con la
   etiqueta que anota el operador en el inventario.
 - Las instancias anteriores a esta feature no tienen endpoint de salud; se actualizan a esta versión
   como cualquier otra y, hasta entonces, se muestran como "sin información de versión".
 - La orden de consulta se ejecuta en el equipo del operador, con el inventario y su clave igual que
-  el resto de herramientas de la 007; no requiere secretos de las instancias.
+  el resto de herramientas de la 007, y con acceso a los ficheros de entorno de las instancias de
+  las que quiera ver las versiones (Clarifications 2026-10-01).
+- Las instancias existentes antes de esta feature necesitan añadir su secreto de salud al entorno
+  (se genera y valida con las herramientas de la 007) para mostrar versiones.
 - El procedimiento de publicación es documentación comprobable; no automatiza despliegues ni elige
   proveedor de hosting o de contenedores.
 - Fuera de alcance: despliegue automático, orquestación de contenedores, alertas o monitorización
