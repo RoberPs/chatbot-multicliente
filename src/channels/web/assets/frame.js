@@ -28,6 +28,20 @@
   var handoffBar = document.getElementById('chat-handoff');
   if (!toggle || !panel) return;
 
+  /*
+   * Imágenes del diseño (011, FR-018): si una no carga se quita; el botón vuelve a su icono
+   * original y la cabecera queda sin logo.
+   */
+  function dropBroken(img) {
+    if (img.parentNode) img.parentNode.removeChild(img);
+  }
+  var designImages = document.querySelectorAll('img.design-icon, img.design-logo');
+  for (var d = 0; d < designImages.length; d++) {
+    var img = designImages[d];
+    if (img.complete && img.naturalWidth === 0) dropBroken(img);
+    else img.addEventListener('error', dropBroken.bind(null, img));
+  }
+
   var state = {
     token: null,
     cursor: null,

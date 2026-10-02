@@ -6,7 +6,17 @@ import { fileURLToPath } from 'node:url';
 import type { FastifyInstance } from 'fastify';
 import type { Db } from '../../src/db/client.js';
 import { chatDesign, chatDesignImage } from '../../src/db/schema.js';
-import { ORIGINAL_DESIGN, type ChatDesignOptions } from '../../src/webchat/design/defaults.js';
+import {
+  ORIGINAL_DESIGN,
+  type ChatDesignOptions,
+  type Slot,
+} from '../../src/webchat/design/defaults.js';
+import {
+  IMAGE_EXTENSIONS,
+  validateDesignImage,
+  type DesignImage,
+} from '../../src/webchat/design/images.js';
+import type { ValidImageChange } from '../../src/webchat/design/schemas.js';
 import { saveChatDesign } from '../../src/webchat/design/store.js';
 import type { Session } from './app.js';
 import { multipartBody } from './config-transfer.js';
@@ -110,3 +120,26 @@ export async function designImages(db: Db) {
   const rows = await db.select().from(chatDesignImage);
   return Object.fromEntries(rows.map((r) => [r.slot, r]));
 }
+
+/** Guarda un diseño con imágenes de `tests/fixtures/images/` (ya validadas y normalizadas). */
+export async function seedChatDesignWithImages(
+  db: Db,
+  files: Partial<Record<Slot, string>>,
+  partial: Partial<ChatDesignOptions> = {},
+): Promise<Record<Slot, DesignImage | undefined>> {
+  const options = { ...ORIGINAL_DESIGN, ...partial };
+  const images: Partial<Record<Slot, ValidImageChange>> = {};
+  const out = {} as Record<Slot, DesignImage | undefined>;
+  for (const [slot, name] of Object.entries(files) as Array<[Slot, string]>) {
+    const result = validateDesignImage({ bytes: loadImageFixture(name), truncated: false });
+    if (!result.ok) throw new Error(`${name}: ${result.message}`);
+    images[slot] = { kind: 'replace', image: result.image };
+    out[slot] = result.image;
+  }
+  await saveChatDesign(db, options, images);
+  return out;
+}
+
+/** URL de una imagen guardada (`/chat/design/<hueco>/<huella>.<ext>`). */
+export const imageUrl = (slot: Slot, image: DesignImage): string =>
+  `/chat/design/${slot}/${image.sha256.slice(0, 16)}.${IMAGE_EXTENSIONS[image.mimeType]}`;

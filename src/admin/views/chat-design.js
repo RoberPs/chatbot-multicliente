@@ -83,6 +83,73 @@
     welcome.textContent = text;
   }
 
+  /* --- Imágenes elegidas: se ven en la vista previa sin subirse (FR-009, FR-011). --- */
+
+  var MAX_IMAGE_BYTES = 256 * 1024;
+  var IMAGE_TYPES = ['image/png', 'image/jpeg', 'image/webp'];
+  /** URL `blob:` de la imagen elegida en cada hueco. */
+  var chosen = { logo: null, avatar: null, icon: null };
+
+  /** URL que debe verse en un hueco: la elegida, ninguna si se quita, o la guardada. */
+  function imageUrl(f, slot) {
+    var input = f.querySelector('input[type="file"][data-image-slot="' + slot + '"]');
+    if (chosen[slot]) return chosen[slot];
+    var remove = f.elements.namedItem(slot + '_remove');
+    if (remove && remove.checked) return '';
+    return input ? input.getAttribute('data-saved') || '' : '';
+  }
+
+  /** `<img>` del hueco dentro de `parent`: lo crea, lo actualiza o lo quita. */
+  function placeImage(doc, parent, className, url, before) {
+    if (!parent) return;
+    var img = parent.querySelector('img.' + className);
+    if (!url) {
+      if (img) img.remove();
+      return;
+    }
+    if (!img) {
+      img = doc.createElement('img');
+      img.className = className;
+      img.alt = '';
+      parent.insertBefore(img, before || parent.firstChild);
+    }
+    if (img.getAttribute('src') !== url) img.setAttribute('src', url);
+  }
+
+  function applyImages(f, doc) {
+    var head = doc.querySelector('.panel-head');
+    placeImage(doc, head, 'design-logo', imageUrl(f, 'logo'), head ? head.querySelector('h1') : null);
+    placeImage(doc, doc.getElementById('chat-toggle'), 'design-icon', imageUrl(f, 'icon'), null);
+    var avatar = imageUrl(f, 'avatar');
+    var root = doc.documentElement;
+    if (avatar) {
+      root.style.setProperty('--chat-avatar', 'url("' + avatar + '")');
+      root.setAttribute('data-avatar', 'on');
+    } else {
+      root.style.removeProperty('--chat-avatar');
+      root.removeAttribute('data-avatar');
+    }
+  }
+
+  /** Aviso sin bloquear: la comprobación que cuenta es la del servidor al guardar. */
+  function onImageChosen(input) {
+    var slot = input.getAttribute('data-image-slot');
+    if (chosen[slot]) URL.revokeObjectURL(chosen[slot]);
+    chosen[slot] = null;
+    var warning = document.querySelector('[data-image-warning="' + slot + '"]');
+    var file = input.files && input.files[0];
+    var message = '';
+    if (file) {
+      if (IMAGE_TYPES.indexOf(file.type) < 0) {
+        message = 'Este fichero no parece PNG, JPEG ni WebP: al guardar se rechazará.';
+      } else if (file.size > MAX_IMAGE_BYTES) {
+        message = 'La imagen supera el máximo de 256 KB: al guardar se rechazará.';
+      }
+      chosen[slot] = URL.createObjectURL(file);
+    }
+    if (warning) warning.textContent = message;
+  }
+
   function apply() {
     timer = null;
     var f = form();
@@ -96,6 +163,7 @@
       var link = doc.getElementById('chat-design-css');
       if (link && link.getAttribute('href') !== href) link.setAttribute('href', href);
       applyTexts(f, doc);
+      applyImages(f, doc);
     });
   }
 
@@ -126,6 +194,9 @@
   function onEdit(event) {
     var f = form();
     if (!f || !f.contains(event.target)) return;
+    if (event.type === 'change' && event.target.hasAttribute('data-image-slot')) {
+      onImageChosen(event.target);
+    }
     syncColor(event.target);
     schedule();
   }

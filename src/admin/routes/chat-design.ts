@@ -21,18 +21,22 @@ import {
   DEFAULT_PLACEHOLDER,
   DEFAULT_SEND_LABEL,
   defaultChatName,
+  SLOTS,
   type ChatDesignOptions,
   type ResolvedChatDesign,
+  type Slot,
 } from '../../webchat/design/defaults.js';
-import { chatDesignSaved } from '../../webchat/design/log.js';
+import type { ImageChange, ImageUpload } from '../../webchat/design/images.js';
+import { chatDesignSaved, type ImageOutcome } from '../../webchat/design/log.js';
 import {
   COLOR_MESSAGE,
   contrastIssues,
   FORM_FIELD_OF,
   hexColor,
   previewOptions,
-  validateChatDesign,
+  validateChatDesignWithImages,
   type DesignIssue,
+  type ValidImageChange,
 } from '../../webchat/design/schemas.js';
 import { readChatDesign, saveChatDesign } from '../../webchat/design/store.js';
 import { computeTheme, designVersion } from '../../webchat/design/theme.js';
@@ -106,6 +110,41 @@ const formValues = (o: ChatDesignOptions): Record<string, string> => ({
 const echo = (value: unknown): string =>
   typeof value === 'string' ? value : Array.isArray(value) ? echo(value[value.length - 1]) : '';
 
+/** Nombre de cada hueco de imagen en el formulario. */
+const IMAGE_LABELS: Record<Slot, { label: string; hint: string }> = {
+  logo: { label: 'Logo', hint: 'A la izquierda del nombre, en la cabecera del chat.' },
+  avatar: { label: 'Avatar', hint: 'Junto a los mensajes del asistente.' },
+  icon: { label: 'Icono del botón', hint: 'En el botón flotante, en lugar del icono de mensaje.' },
+};
+
+const isUpload = (value: unknown): value is ImageUpload =>
+  typeof value === 'object' &&
+  value !== null &&
+  Buffer.isBuffer((value as ImageUpload).bytes) &&
+  typeof (value as ImageUpload).truncated === 'boolean';
+
+/**
+ * Cambio de cada hueco (R8): un fichero nuevo sustituye; si no hay fichero, la casilla
+ * "Quitar" lo quita; si no, se conserva.
+ */
+function imageChanges(body: Record<string, unknown>): Record<Slot, ImageChange> {
+  const changes = {} as Record<Slot, ImageChange>;
+  for (const slot of SLOTS) {
+    const upload = body[slot];
+    if (isUpload(upload)) changes[slot] = { kind: 'replace', upload };
+    else if (echo(body[`${slot}_remove`]) !== '') changes[slot] = { kind: 'remove' };
+    else changes[slot] = { kind: 'keep' };
+  }
+  return changes;
+}
+
+/** Qué ha pasado con cada hueco, para el registro (R12). */
+function imageOutcome(change: ValidImageChange, existed: boolean): ImageOutcome {
+  if (change.kind === 'replace') return existed ? 'replaced' : 'added';
+  if (change.kind === 'remove') return existed ? 'removed' : 'none';
+  return existed ? 'kept' : 'none';
+}
+
 /** Conversación de ejemplo de la vista previa: genérica, sin sector (FR-044). */
 const SAMPLE = [
   { from: 'visitor', text: 'Hola, ¿a qué hora abrís mañana?' },
@@ -120,7 +159,12 @@ export async function chatDesignRoutes(app: FastifyInstance): Promise<void> {
   async function renderForm(
     request: FastifyRequest,
     reply: FastifyReply,
-    extra: { values?: Record<string, string>; issues?: DesignIssue[]; general?: string } = {},
+    extra: {
+      values?: Record<string, string>;
+      issues?: DesignIssue[];
+      general?: string;
+      reselect?: Slot[];
+    } = {},
     status = 200,
   ): Promise<FastifyReply> {
     const state = await readState(deps);
@@ -142,6 +186,9 @@ export async function chatDesignRoutes(app: FastifyInstance): Promise<void> {
         errors,
         ...(extra.general ? { general: extra.general } : {}),
         saved: design.saved,
+        images: design.images,
+        imageLabels: IMAGE_LABELS,
+        reselect: extra.reselect ?? [],
         unsupported: design.unsupported.map((field) => UNSUPPORTED_MESSAGES[field] ?? field),
         defaults: {
           chat_name: defaultChatName(state.business.name),
@@ -160,7 +207,18 @@ export async function chatDesignRoutes(app: FastifyInstance): Promise<void> {
     await upload.register(multipart, {
       attachFieldsToBody: 'keyValues',
       limits: { files: 3, fileSize: MAX_IMAGE_BYTES, fields: 20, fieldSize: 2048 },
+      // Un fichero mayor se corta y queda marcado: el error sale en su campo (US3-4). Lo que
+      // pasa de 256 KB se descarta mientras se lee.
       throwFileSizeLimit: false,
+      onFile: async (part) => {
+        const bytes = await part.toBuffer();
+        // Un campo de fichero sin elegir llega vacío y sin nombre.
+        const upload: ImageUpload | null =
+          bytes.length === 0 && part.filename === ''
+            ? null
+            : { bytes, truncated: part.file.truncated };
+        Object.assign(part, { value: upload });
+      },
     });
 
     upload.setErrorHandler(async (error: FastifyError, request, reply) => {
@@ -173,26 +231,35 @@ export async function chatDesignRoutes(app: FastifyInstance): Promise<void> {
 
     upload.post('/chat-design', { bodyLimit: BODY_LIMIT }, async (request, reply) => {
       const body = (request.body ?? {}) as Record<string, unknown>;
-      const result = validateChatDesign(body);
+      const changes = imageChanges(body);
+      // Todo o nada (FR-011a): opciones, textos, contraste e imágenes a la vez.
+      const result = validateChatDesignWithImages(body, changes);
       if (!result.ok) {
         chatDesignSaved(request.log, {
           outcome: 'rejected',
           reasons: [...new Set(result.issues.map((i) => i.reason))],
         });
         const values = Object.fromEntries(
-          Object.keys(formValues(previewOptions({}))).map((key) => [key, echo(body[key])]),
+          [...Object.keys(formValues(previewOptions({}))), ...SLOTS.map((s) => `${s}_remove`)].map(
+            (key) => [key, echo(body[key])],
+          ),
         );
+        // Un fichero elegido no se puede volver a poner en el campo: se pide de nuevo (R8).
+        const reselect = SLOTS.filter((slot) => changes[slot]?.kind === 'replace');
         return renderForm(
           request,
           reply,
-          { values, issues: result.issues, general: INVALID_MESSAGE },
+          { values, issues: result.issues, general: INVALID_MESSAGE, reselect },
           422,
         );
       }
-      await withTransaction(deps.db, (tx) => saveChatDesign(tx, result.options));
+      const before = await readChatDesign(deps.db);
+      await withTransaction(deps.db, (tx) => saveChatDesign(tx, result.options, result.images));
       chatDesignSaved(request.log, {
         outcome: 'saved',
-        images: { logo: 'none', avatar: 'none', icon: 'none' },
+        images: Object.fromEntries(
+          SLOTS.map((slot) => [slot, imageOutcome(result.images[slot], before.images[slot] !== undefined)]),
+        ) as Record<Slot, ImageOutcome>,
       });
       return savedResponse(request, reply, '/admin/chat-design', SAVED_MESSAGE);
     });

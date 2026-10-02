@@ -8,10 +8,12 @@ import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
 import { chatDesign } from '../../../src/db/schema.js';
 import { readWebChatSettings } from '../../../src/webchat/settings.js';
 import {
+  buildTestApp,
   cookieHeader,
   encodeForm,
   get,
   hasFieldError,
+  loggedEvents,
   login,
   postForm,
   type Session,
@@ -26,6 +28,7 @@ import {
   loadImageFixture,
   postDesign,
   seedChatDesign,
+  seedChatDesignWithImages,
 } from '../../helpers/chat-design.js';
 import { createTestDatabase, type TestDatabase } from '../../helpers/db.js';
 
@@ -282,6 +285,85 @@ describe('Diseño del chat (/admin/chat-design)', () => {
       expect(frame.body).toContain('Estás hablando con el asistente automático de Peluquería Tijeras');
       expect(frame.body).toContain('Política de privacidad');
       expect(frame.body).not.toContain('Nada');
+    });
+  });
+
+  describe('imágenes (US3)', () => {
+    it('guardado multipart con las tres imágenes válidas → 303 y se guardan normalizadas', async () => {
+      await start();
+      const res = await postDesign(app, session, designForm(GREEN_FORM), [
+        { name: 'logo', bytes: loadImageFixture('metadata.png') },
+        { name: 'avatar', bytes: loadImageFixture('valid.jpg'), filename: 'foto.jpg', type: 'image/jpeg' },
+        { name: 'icon', bytes: loadImageFixture('valid.webp'), filename: 'icono.webp', type: 'image/webp' },
+      ]);
+      expect(res.statusCode).toBe(303);
+      const images = await designImages(t.db);
+      expect(Object.keys(images).sort()).toEqual(['avatar', 'icon', 'logo']);
+      expect(images.logo?.mimeType).toBe('image/png');
+      expect(images.logo?.bytes.includes(Buffer.from('tEXt'))).toBe(false);
+      expect(images.avatar?.mimeType).toBe('image/jpeg');
+      expect(images.icon?.mimeType).toBe('image/webp');
+    });
+
+    it.each([
+      ['un SVG renombrado', 'svg-renamed.png', 'Formato no admitido: solo PNG, JPEG o WebP'],
+      ['más de 256 KB (llega cortado)', 'too-big.png', 'La imagen supera el máximo de 256 KB'],
+      ['2000 × 2000 px', 'too-large-dims.png', 'La imagen debe medir entre 16 y 1024 px de ancho y de alto'],
+    ])('con %s junto a colores válidos → 422 con el error en su campo y nada guardado', async (_name, file, message) => {
+      await start();
+      const res = await postDesign(app, session, designForm({ ...GREEN_FORM, chat_name: 'Nuevo' }), [
+        { name: 'logo', bytes: loadImageFixture('valid.png') },
+        { name: 'icon', bytes: loadImageFixture(file) },
+      ]);
+      expect(res.statusCode).toBe(422);
+      // El error está en el campo del icono, no en el del logo.
+      const iconBlock = res.body.slice(res.body.indexOf('id="icon"'), res.body.indexOf('</fieldset>', res.body.indexOf('id="icon"')));
+      expect(iconBlock).toContain(`class="field-error" role="alert">${message}`);
+      const logoBlock = res.body.slice(res.body.indexOf('id="logo"'), res.body.indexOf('id="avatar"'));
+      expect(logoBlock).not.toContain('class="field-error"');
+      // Las elegidas hay que volver a elegirlas.
+      expect(logoBlock).toContain('Vuelve a elegir la imagen');
+      expect(iconBlock).toContain('Vuelve a elegir la imagen');
+      expect(await designRow(t.db)).toBeUndefined();
+      expect(await designImages(t.db)).toEqual({});
+    });
+
+    it('"Quitar" solo aparece si hay imagen guardada', async () => {
+      await start();
+      const empty = await get(app, session, '/admin/chat-design');
+      expect(empty.body).not.toContain('name="logo_remove"');
+      await seedChatDesignWithImages(t.db, { logo: 'valid.png' });
+      const page = await get(app, session, '/admin/chat-design');
+      expect(page.body).toContain('name="logo_remove"');
+      expect(page.body).not.toContain('name="icon_remove"');
+      expect(page.body).toMatch(/<img src="\/chat\/design\/logo\/[0-9a-f]{16}\.png"/);
+    });
+
+    it('registra el guardado sin nombres de fichero, textos ni colores (R12)', async () => {
+      const lines: string[] = [];
+      bot = await createTestBot(t);
+      // App con registros capturados sobre la misma BD.
+      const logged = await buildTestApp(t.db, undefined, null, {}, lines);
+      try {
+        const s = await login(logged);
+        await postDesign(logged, s, designForm({ ...GREEN_FORM, chat_name: 'Nombre secreto' }), [
+          { name: 'icon', bytes: loadImageFixture('valid.png'), filename: 'mi-foto-privada.png' },
+        ]);
+        await postDesign(logged, s, designForm({ text_color: '#aaaaaa' }));
+        const events = loggedEvents(lines, 'chat_design');
+        expect(events.map((e) => [e.event, e.outcome])).toEqual([
+          ['chat_design_saved', 'saved'],
+          ['chat_design_saved', 'rejected'],
+        ]);
+        expect(events[0]?.images).toEqual({ logo: 'none', avatar: 'none', icon: 'added' });
+        expect(events[1]?.reasons).toEqual(['contrast']);
+        const all = lines.join('\n');
+        expect(all).not.toContain('Nombre secreto');
+        expect(all).not.toContain('mi-foto-privada');
+        expect(all).not.toContain('#0b6e4f');
+      } finally {
+        await logged.close();
+      }
     });
   });
 

@@ -230,3 +230,41 @@ body {
 [data-palette] .handoff {
   color: #1d2330;
 }
+
+/* Imágenes del diseño (011): tamaño fijo del hueco, sin deformar y sin girar por EXIF (R7). */
+.toggle .design-icon {
+  display: block;
+  width: 28px;
+  height: 28px;
+  margin: auto;
+  object-fit: contain;
+  image-orientation: none;
+}
+/* El emoji solo se oculta si hay icono; si la imagen falla, frame.js la quita y vuelve. */
+.toggle .design-icon + span {
+  display: none;
+}
+.panel-head .design-logo {
+  width: 28px;
+  height: 28px;
+  flex: none;
+  object-fit: contain;
+  image-orientation: none;
+}
+/* Avatar junto a los mensajes del bot, sin cambiar la disposición (FR-030). */
+[data-avatar] .messages .from-bot:not(.notice) {
+  position: relative;
+  margin-left: 30px;
+  max-width: calc(85% - 30px);
+}
+[data-avatar] .messages .from-bot:not(.notice)::before {
+  content: '';
+  position: absolute;
+  left: -30px;
+  top: 0;
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  background: var(--chat-avatar) center / cover no-repeat;
+  image-orientation: none;
+}

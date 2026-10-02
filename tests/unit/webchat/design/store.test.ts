@@ -86,3 +86,35 @@ describe('resolveChatDesign: contraste de lo guardado (R13)', () => {
     expect(resolved.options.shape).toBe('soft');
   });
 });
+
+describe('resolveChatDesign: imágenes (R13)', () => {
+  const meta = (slot: string, over: Record<string, unknown> = {}) => ({
+    slot,
+    mimeType: 'image/png',
+    sha256: 'a'.repeat(64),
+    width: 64,
+    height: 64,
+    byteSize: 1000,
+    ...over,
+  });
+
+  it('cada imagen válida da su URL por huella', () => {
+    const resolved = resolveChatDesign(row(), [meta('logo'), meta('icon', { mimeType: 'image/webp' })]);
+    expect(resolved.images.logo?.url).toBe(`/chat/design/logo/${'a'.repeat(16)}.png`);
+    expect(resolved.images.icon?.url).toBe(`/chat/design/icon/${'a'.repeat(16)}.webp`);
+    expect(resolved.images.avatar).toBeUndefined();
+  });
+
+  it('una imagen que ya no vale se ignora (hueco vacío) sin afectar al resto', () => {
+    const resolved = resolveChatDesign(row(), [
+      meta('logo', { mimeType: 'image/gif' }),
+      meta('avatar', { width: 4000 }),
+      meta('icon'),
+    ]);
+    expect(resolved.images.logo).toBeUndefined();
+    expect(resolved.images.avatar).toBeUndefined();
+    expect(resolved.images.icon).toBeDefined();
+    expect(resolved.unsupported).toEqual(expect.arrayContaining(['logo', 'avatar']));
+    expect(resolved.options.primaryColor).toBe('#0b6e4f');
+  });
+});

@@ -15,8 +15,14 @@ import { Eta } from 'eta';
 import type { FastifyInstance, FastifyReply } from 'fastify';
 import { unavailable, webChatAvailability } from '../../webchat/availability.js';
 import { renderDesignCss } from '../../webchat/design/css.js';
-import { originalResolved, type ResolvedChatDesign } from '../../webchat/design/defaults.js';
-import { readChatDesign } from '../../webchat/design/store.js';
+import {
+  originalResolved,
+  SLOTS,
+  type ResolvedChatDesign,
+  type Slot,
+} from '../../webchat/design/defaults.js';
+import { IMAGE_EXTENSIONS } from '../../webchat/design/images.js';
+import { readChatDesign, readDesignImageBytes } from '../../webchat/design/store.js';
 import { computeTheme, designVersion } from '../../webchat/design/theme.js';
 import { readWebChatSettings } from '../../webchat/settings.js';
 import { webChatApi, WEB_MESSAGE_MAX_CHARS } from './api.js';
@@ -47,6 +53,11 @@ const frameCsp = (ancestors: string): string =>
 
 /** Rutas cuyo `Content-Security-Policy` lo pone este plugin, no la cabecera global. */
 export const CHAT_FRAME_PATH = '/chat/frame';
+/** Imágenes del diseño (011, R10): llevan su propia CSP con `sandbox`. */
+export const CHAT_DESIGN_IMAGES_PREFIX = '/chat/design/';
+
+/** `<16 hex del SHA-256>.<png|jpg|webp>` (R10). */
+const IMAGE_FILE = /^([0-9a-f]{16})\.(png|jpg|webp)$/;
 
 /**
  * CSP de respaldo del frame para las respuestas que no pasan por su manejador (un error
@@ -94,6 +105,37 @@ export async function webChatRoutes(chat: FastifyInstance): Promise<void> {
     const css = renderDesignCss(computeTheme(await loadDesign(), ''));
     return reply.type('text/css; charset=utf-8').header('Cache-Control', 'no-store').send(css);
   });
+
+  /**
+   * Imágenes del diseño (011, R10, FR-031, FR-032): solo la imagen vigente del hueco, con su
+   * tipo detectado y caché inmutable (la URL cambia con el contenido). Cualquier otra cosa, 404.
+   */
+  chat.get<{ Params: { slot: string; file: string } }>(
+    '/design/:slot/:file',
+    async (request, reply) => {
+      const { slot, file } = request.params;
+      const match = IMAGE_FILE.exec(file);
+      const image =
+        match && (SLOTS as readonly string[]).includes(slot)
+          ? await readDesignImageBytes(db, slot as Slot).catch(() => null)
+          : null;
+      if (
+        !match ||
+        !image ||
+        image.sha256.slice(0, 16) !== match[1] ||
+        IMAGE_EXTENSIONS[image.mimeType] !== match[2]
+      ) {
+        return reply.code(404).type('text/plain; charset=utf-8').send('No encontrado');
+      }
+      return reply
+        .type(image.mimeType)
+        .header('Cache-Control', 'public, max-age=31536000, immutable')
+        .header('Content-Disposition', 'inline')
+        .header('Content-Security-Policy', "default-src 'none'; sandbox")
+        .header('Cross-Origin-Resource-Policy', 'same-origin')
+        .send(image.bytes);
+    },
+  );
 
   await chat.register(webChatApi, {
     prefix: '/api',

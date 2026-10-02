@@ -10,6 +10,8 @@ import { z } from 'zod';
 import { contrastFailures } from './contrast.js';
 import {
   COLOR_FIELDS,
+  SLOTS,
+  type Slot,
   ORIGINAL_DESIGN,
   POSITIONS,
   SHAPES,
@@ -18,6 +20,7 @@ import {
   type ColorField,
   type Hex,
 } from './defaults.js';
+import { validateDesignImage, type DesignImage, type ImageChange } from './images.js';
 
 export const COLOR_MESSAGE = 'Indica un color opaco en formato #RRGGBB';
 export const OPTION_MESSAGE = 'Opción no válida';
@@ -260,5 +263,41 @@ export function validateChatDesign(input: unknown): DesignValidation {
   const contrast = contrastIssues(body);
   if (base.ok && contrast.length === 0) return base;
   const issues = [...(base.ok ? [] : base.issues), ...contrast];
+  return { ok: false, issues, errors: issuesToErrors(issues) };
+}
+
+/** Cambio de un hueco ya validado: la imagen nueva sale normalizada (R7). */
+export type ValidImageChange =
+  | { kind: 'keep' }
+  | { kind: 'remove' }
+  | { kind: 'replace'; image: DesignImage };
+
+export type FullDesignValidation =
+  | { ok: true; options: ChatDesignOptions; images: Record<Slot, ValidImageChange> }
+  | { ok: false; issues: DesignIssue[]; errors: Record<string, string> };
+
+/**
+ * Guardado del panel: opciones, textos, contraste e imágenes, todo a la vez (FR-011a). Los
+ * errores de imagen van en el campo del hueco (`logo`, `avatar`, `icon`).
+ */
+export function validateChatDesignWithImages(
+  input: unknown,
+  changes: Partial<Record<Slot, ImageChange>> = {},
+): FullDesignValidation {
+  const base = validateChatDesign(input);
+  const images = {} as Record<Slot, ValidImageChange>;
+  const imageIssues: DesignIssue[] = [];
+  for (const slot of SLOTS) {
+    const change = changes[slot] ?? { kind: 'keep' };
+    if (change.kind !== 'replace') {
+      images[slot] = change;
+      continue;
+    }
+    const result = validateDesignImage(change.upload);
+    if (result.ok) images[slot] = { kind: 'replace', image: result.image };
+    else imageIssues.push({ field: slot, message: result.message, reason: 'image' });
+  }
+  if (base.ok && imageIssues.length === 0) return { ok: true, options: base.options, images };
+  const issues = [...(base.ok ? [] : base.issues), ...imageIssues];
   return { ok: false, issues, errors: issuesToErrors(issues) };
 }

@@ -140,9 +140,13 @@ export function computeTheme(resolved: ResolvedChatDesign, businessName: string)
   if (customPalette) htmlAttrs['data-palette'] = 'custom';
   if (o.position !== ORIGINAL_DESIGN.position) htmlAttrs['data-position'] = o.position;
   if (o.size !== ORIGINAL_DESIGN.size) htmlAttrs['data-size'] = o.size;
+  const { logo, avatar, icon } = resolved.images;
+  // El avatar es un fondo CSS junto a los mensajes del bot (FR-030): token y atributo.
+  const avatarTokens: Theme['tokens'] = avatar ? { '--chat-avatar': `url(${avatar.url})` } : {};
+  if (avatar) htmlAttrs['data-avatar'] = 'on';
   return {
     customPalette,
-    tokens: { ...paletteTokens(o), ...shapeTokens(o.shape) },
+    tokens: { ...paletteTokens(o), ...shapeTokens(o.shape), ...avatarTokens },
     htmlAttrs,
     texts: {
       chatName: o.chatName ?? defaultChatName(businessName),
@@ -151,7 +155,11 @@ export function computeTheme(resolved: ResolvedChatDesign, businessName: string)
       placeholder: o.placeholder ?? DEFAULT_PLACEHOLDER,
       sendLabel: o.sendLabel ?? DEFAULT_SEND_LABEL,
     },
-    images: {},
+    images: {
+      ...(logo ? { logo: logo.url } : {}),
+      ...(avatar ? { avatar: avatar.url } : {}),
+      ...(icon ? { icon: icon.url } : {}),
+    },
   };
 }
 

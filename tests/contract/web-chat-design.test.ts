@@ -14,7 +14,13 @@ import type { FastifyInstance } from 'fastify';
 import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
 import { modelPrice, modelUsage, usageSettings, webUsageDay } from '../../src/db/schema.js';
 import { createTestBot, TEST_LLM_MODEL, type TestBot } from '../helpers/bot.js';
-import { GREEN_PALETTE, seedChatDesign } from '../helpers/chat-design.js';
+import {
+  clearChatDesign,
+  GREEN_PALETTE,
+  imageUrl,
+  seedChatDesign,
+  seedChatDesignWithImages,
+} from '../helpers/chat-design.js';
 import { createTestDatabase, type TestDatabase } from '../helpers/db.js';
 
 const ORIGIN = 'https://negocio.example';
@@ -309,5 +315,164 @@ describe('diseño del chat web: elementos obligatorios con cualquier diseño (US
       await b.close();
       bot = null;
     }
+  });
+});
+
+describe('diseño del chat web: imágenes (US3)', () => {
+  let t: TestDatabase;
+  let bot: TestBot | null = null;
+
+  beforeAll(async () => {
+    t = await createTestDatabase();
+  });
+  afterAll(async () => {
+    await t.close();
+  });
+  afterEach(async () => {
+    await bot?.close();
+    bot = null;
+  });
+
+  const frame = (app: FastifyInstance) => app.inject({ method: 'GET', url: '/chat/frame' });
+
+  /** Imagen de un hueco que el test acaba de guardar. */
+  const must = <T>(value: T | undefined): T => {
+    if (value === undefined) throw new Error('Falta la imagen');
+    return value;
+  };
+
+  it('icono dentro del botón y logo a la izquierda del título (FR-030a, FR-030b)', async () => {
+    bot = await createTestBot(t, { webChat: WEB_ON });
+    const images = await seedChatDesignWithImages(t.db, { logo: 'valid.png', icon: 'valid.webp' });
+    const res = await frame(bot.app);
+    const icon = imageUrl('icon', must(images.icon));
+    const logo = imageUrl('logo', must(images.logo));
+    // El botón conserva aria-expanded y su etiqueta; el emoji sigue en el HTML (oculto por CSS).
+    const toggle = res.body.slice(res.body.indexOf('<button id="chat-toggle"'), res.body.indexOf('</button>'));
+    expect(toggle).toContain('aria-expanded="false"');
+    expect(toggle).toContain(`<img class="design-icon" src="${icon}" alt="">`);
+    expect(toggle.indexOf('design-icon')).toBeLessThan(toggle.indexOf('<span aria-hidden="true">💬</span>'));
+    expect(toggle).toContain('<span class="sr-only">Abrir el chat</span>');
+    const head = res.body.slice(res.body.indexOf('<header class="panel-head">'), res.body.indexOf('</header>'));
+    expect(head).toContain(`<img class="design-logo" src="${logo}" alt="">`);
+    expect(head.indexOf('design-logo')).toBeLessThan(head.indexOf('<h1>'));
+  });
+
+  it('avatar: data-avatar y --chat-avatar en design.css', async () => {
+    bot = await createTestBot(t, { webChat: WEB_ON });
+    const images = await seedChatDesignWithImages(t.db, { avatar: 'valid.jpg' });
+    const res = await frame(bot.app);
+    expect(res.body).toContain('data-avatar="on"');
+    const css = await bot.app.inject({ method: 'GET', url: '/chat/design.css' });
+    expect(css.body).toContain(`--chat-avatar: url(${imageUrl('avatar', must(images.avatar))});`);
+  });
+
+  it('GET /chat/design/:slot/:file con la huella vigente: bytes y cabeceras (FR-032)', async () => {
+    bot = await createTestBot(t, { webChat: WEB_ON });
+    const images = await seedChatDesignWithImages(t.db, {
+      logo: 'metadata.png',
+      avatar: 'valid.jpg',
+      icon: 'valid.webp',
+    });
+    const types = { logo: 'image/png', avatar: 'image/jpeg', icon: 'image/webp' } as const;
+    for (const slot of ['logo', 'avatar', 'icon'] as const) {
+      const image = must(images[slot]);
+      const res = await bot.app.inject({ method: 'GET', url: imageUrl(slot, image) });
+      expect([slot, res.statusCode]).toEqual([slot, 200]);
+      expect(res.rawPayload.equals(image.bytes)).toBe(true);
+      expect(res.headers['content-type']).toBe(types[slot]);
+      expect(res.headers['cache-control']).toBe('public, max-age=31536000, immutable');
+      expect(res.headers['content-disposition']).toBe('inline');
+      expect(res.headers['content-security-policy']).toBe("default-src 'none'; sandbox");
+      expect(res.headers['cross-origin-resource-policy']).toBe('same-origin');
+      expect(res.headers['x-content-type-options']).toBe('nosniff');
+      expect(res.headers['set-cookie']).toBeUndefined();
+    }
+    // Lo servido ya no lleva los metadatos.
+    const logo = await bot.app.inject({ method: 'GET', url: imageUrl('logo', must(images.logo)) });
+    expect(logo.rawPayload.includes(Buffer.from('tEXt'))).toBe(false);
+  });
+
+  it('huella antigua, hueco desconocido, extensión distinta o sin diseño → 404 (FR-031)', async () => {
+    bot = await createTestBot(t, { webChat: WEB_ON });
+    const images = await seedChatDesignWithImages(t.db, { logo: 'valid.png' });
+    const logo = must(images.logo);
+    const hash = logo.sha256.slice(0, 16);
+    const urls = [
+      `/chat/design/logo/${'0'.repeat(16)}.png`,
+      `/chat/design/banner/${hash}.png`,
+      `/chat/design/logo/${hash}.jpg`,
+      `/chat/design/logo/${hash}.svg`,
+      `/chat/design/icon/${hash}.png`,
+      `/chat/design/logo/${hash}`,
+    ];
+    for (const url of urls) {
+      const res = await bot.app.inject({ method: 'GET', url });
+      expect([url, res.statusCode]).toEqual([url, 404]);
+    }
+    await clearChatDesign(t.db);
+    const gone = await bot.app.inject({ method: 'GET', url: imageUrl('logo', logo) });
+    expect(gone.statusCode).toBe(404);
+  });
+
+  it('una imagen guardada cuyos bytes ya no valen no se sirve (R13)', async () => {
+    bot = await createTestBot(t, { webChat: WEB_ON });
+    const images = await seedChatDesignWithImages(t.db, { logo: 'valid.png' });
+    await t.db.execute(sql`update chat_design_image set bytes = ${Buffer.from('<svg/>')}`);
+    const res = await bot.app.inject({ method: 'GET', url: imageUrl('logo', must(images.logo)) });
+    expect(res.statusCode).toBe(404);
+  });
+
+  it('ninguna URL del frame ni de design.css apunta a otro origen (FR-041)', async () => {
+    bot = await createTestBot(t, { webChat: WEB_ON });
+    await seedChatDesignWithImages(
+      t.db,
+      { logo: 'valid.png', avatar: 'valid.png', icon: 'valid.png' },
+      { ...GREEN_PALETTE, shape: 'soft' },
+    );
+    const res = await frame(bot.app);
+    const css = await bot.app.inject({ method: 'GET', url: '/chat/design.css' });
+    for (const body of [res.body, css.body]) {
+      const urls = [...body.matchAll(/(?:src|href)="([^"]+)"|url\(([^)]+)\)/g)].map(
+        (m) => m[1] ?? m[2] ?? '',
+      );
+      expect(urls.length).toBeGreaterThan(0);
+      for (const url of urls) {
+        // Solo rutas propias, y el enlace de privacidad que configura el operador.
+        expect([url, url.startsWith('/') || url === `${ORIGIN}/privacidad`]).toEqual([url, true]);
+      }
+    }
+  });
+
+  it('elementos obligatorios con las tres imágenes y los textos al máximo (US2-6, SC-004)', async () => {
+    bot = await createTestBot(t, { webChat: WEB_ON });
+    await seedChatDesignWithImages(
+      t.db,
+      { logo: 'valid.png', avatar: 'valid.jpg', icon: 'valid.webp' },
+      {
+        ...GREEN_PALETTE,
+        shape: 'round',
+        chatName: 'N'.repeat(40),
+        welcomeText: `${'Bienvenida larga. '.repeat(15)}\nSegunda línea`.slice(0, 280),
+      },
+    );
+    const res = await frame(bot.app);
+    const notice = res.body.indexOf('Estás hablando con el asistente automático de Peluquería Tijeras');
+    const privacy = res.body.indexOf('>Política de privacidad</a>');
+    const welcome = res.body.indexOf('<li class="welcome">');
+    expect(notice).toBeGreaterThan(-1);
+    expect(privacy).toBeGreaterThan(notice);
+    expect(welcome).toBeGreaterThan(privacy);
+    expect(res.body).toContain(`<h1>${'N'.repeat(40)}</h1>`);
+    expect(res.body).toMatch(/<textarea id="chat-text"/);
+    expect(res.body).toMatch(/<button type="submit">Enviar<\/button>/);
+    expect(res.body).toContain('id="chat-close"');
+    expect(res.body).toContain('Abrir el chat');
+
+    // Y con el chat desactivado, el contacto de no disponible.
+    await bot.setWebChat({ enabled: false });
+    const off = await frame(bot.app);
+    expect(off.body).toContain('Para hablar con una persona de Peluquería Tijeras');
+    expect(off.body).toContain('class="design-logo"');
   });
 });

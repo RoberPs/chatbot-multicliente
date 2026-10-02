@@ -97,6 +97,27 @@
     </div>
   </fieldset>
 
+  <fieldset>
+    <legend>Imágenes</legend>
+    <p class="hint">PNG, JPEG o WebP de hasta 256 KB y entre 16 y 1024 px de lado. Se guardan sin los datos internos de la foto (ubicación, cámara, fecha).</p>
+    <% ['logo', 'avatar', 'icon'].forEach(function (slot) { const img = it.images[slot]; const meta = it.imageLabels[slot]; %>
+      <div class="design-image">
+        <label for="<%= slot %>"><%= meta.label %></label>
+        <% if (img) { %>
+          <img src="<%= img.url %>" alt="<%= meta.label %> guardado" width="48" height="48">
+        <% } %>
+        <input id="<%= slot %>" name="<%= slot %>" type="file" accept="image/png,image/jpeg,image/webp" data-image-slot="<%= slot %>" data-saved="<%= img ? img.url : '' %>">
+        <span class="hint"><%= meta.hint %></span>
+        <span class="field-warning" data-image-warning="<%= slot %>" role="status"></span>
+        <% if (img) { %>
+          <label class="inline"><input type="checkbox" name="<%= slot %>_remove" value="1"<% if (v[slot + '_remove']) { %> checked<% } %>> Quitar</label>
+        <% } %>
+        <%~ include('/partials/field-error', { message: it.h.err(e, slot) }) %>
+        <% if (it.reselect.indexOf(slot) >= 0) { %><span class="hint">Vuelve a elegir la imagen: no se ha guardado nada.</span><% } %>
+      </div>
+    <% }) %>
+  </fieldset>
+
   <div class="actions">
     <button type="submit">Guardar</button>
   </div>

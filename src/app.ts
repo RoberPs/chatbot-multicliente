@@ -15,7 +15,12 @@ import { CHAT_DESIGN_PREVIEW_PATHS } from './admin/routes/chat-design.js';
 import { adminRoutes } from './admin/routes/index.js';
 import { handoffLinkRoutes } from './channels/handoff-links/routes.js';
 import { healthRoutes } from './channels/health/routes.js';
-import { CHAT_FRAME_PATH, FRAME_FALLBACK_CSP, webChatRoutes } from './channels/web/routes.js';
+import {
+  CHAT_DESIGN_IMAGES_PREFIX,
+  CHAT_FRAME_PATH,
+  FRAME_FALLBACK_CSP,
+  webChatRoutes,
+} from './channels/web/routes.js';
 import { whatsappWebhook } from './channels/whatsapp/webhook.js';
 import type { Env, WhatsAppEnv } from './config/env.js';
 import type { ActivityLog } from './conversation/activity-log.js';
@@ -196,17 +201,23 @@ export async function buildApp({
     const path = request.url.split('?')[0] ?? '';
     const isChatFrame = path === CHAT_FRAME_PATH;
     // La vista previa del diseño (011, R9) se incrusta en el propio panel: pone su CSP y
-    // `X-Frame-Options: SAMEORIGIN`. Sin ellas (sin sesión, un error), las del panel.
+    // `X-Frame-Options: SAMEORIGIN`. Las imágenes del diseño llevan su CSP con `sandbox` (R10).
+    // Si la respuesta no las trae (sin sesión, un error), van las del panel.
     const isDesignPreview = CHAT_DESIGN_PREVIEW_PATHS.includes(path);
+    const ownCsp =
+      (isDesignPreview || path.startsWith(CHAT_DESIGN_IMAGES_PREFIX)) &&
+      reply.getHeader('content-security-policy') !== undefined;
     if (isChatFrame) {
       // Si el manejador del frame no llegó a responder (p. ej. un 500), la respuesta saldría
       // sin ninguna CSP: se pone la de respaldo, que no permite incrustarla en ningún sitio.
       if (reply.getHeader('content-security-policy') === undefined) {
         reply.header('Content-Security-Policy', FRAME_FALLBACK_CSP);
       }
-    } else if (!isDesignPreview || reply.getHeader('content-security-policy') === undefined) {
+    } else if (!ownCsp) {
       reply.header('X-Frame-Options', 'DENY');
       reply.header('Content-Security-Policy', CSP);
+    } else if (!isDesignPreview) {
+      reply.header('X-Frame-Options', 'DENY');
     }
     reply.header('X-Content-Type-Options', 'nosniff');
     reply.header('Referrer-Policy', 'same-origin');
