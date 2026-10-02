@@ -98,7 +98,7 @@ todas las parejas de §3.
 |---|---|
 | Color: `#` + 6 hexadecimales (sin alfa, sin nombres); se normaliza a minúsculas (FR-006) | "Indica un color opaco en formato #RRGGBB" |
 | `shape`, `position`, `size` en su lista | "Opción no válida" |
-| Textos: longitud máxima y saltos de línea según R14; sin caracteres de control | "Máximo N caracteres" · "Este texto va en una sola línea" |
+| Textos: longitud máxima (unidades UTF-16, como `maxlength`; R14) y saltos de línea según R14; sin caracteres de control | "Máximo N caracteres" · "Este texto va en una sola línea" |
 | Parejas de contraste (R4), cada una ≥ 4,5:1 | "El texto sobre el color principal tiene un contraste de 3,21:1; el mínimo es 4,5:1" (en el control del color de la pareja que el operador está cambiando: el segundo de la tabla de R4 se marca en ambos) |
 | Imagen: formato real PNG/JPEG/WebP (R7) | "Formato no admitido: solo PNG, JPEG o WebP" |
 | Imagen dañada, vacía o con estructura incoherente | "La imagen está dañada o vacía" |

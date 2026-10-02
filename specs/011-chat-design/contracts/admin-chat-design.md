@@ -60,7 +60,8 @@ desactivado o el negocio en preparación.
 
 ## `POST /admin/chat-design/check` — contraste en vivo (htmx)
 
-Cuerpo: los cinco colores (urlencoded o multipart). Respuesta `200 text/html`: parcial con el
+Cuerpo: los cinco colores y `_csrf` (urlencoded; el panel nunca envía aquí las imágenes elegidas;
+multipart se acepta pero se ignoran los ficheros). Respuesta `200 text/html`: parcial con el
 resultado de cada pareja (`hx-swap-oob` en el contenedor de aviso de cada control): pareja, razón
 obtenida truncada a dos decimales y mínimo, o vacío si cumple. Un color mal escrito se señala como
 "Indica un color opaco en formato #RRGGBB". No guarda nada. Sin JavaScript no se usa (US2-3).

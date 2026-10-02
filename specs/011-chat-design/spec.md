@@ -290,7 +290,8 @@ sirven.
   el valor original de esa opción y la sección lo señala al operador al abrirla.
 - **Texto con emojis, saltos de línea o idioma distinto del español**: los emojis y varios idiomas se
   admiten; los saltos de línea solo en el texto de bienvenida (hasta el límite); el resto de textos
-  es de una línea.
+  es de una línea; un emoji puede ocupar dos posiciones del límite, igual que en el contador del
+  navegador.
 - **Texto con enlaces**: se muestra como texto plano, sin enlace pulsable; los únicos enlaces del
   chat siguen siendo el de privacidad y los `https://` de las respuestas del bot (004, FR-020a).
 - **Importación de un fichero con diseño en un destino con el chat web activado**: el diseño se
@@ -322,8 +323,9 @@ sirven.
   MUST NOT permitir estilos libres, código, tipografías elegidas por el operador ni recursos
   externos; el texto del chat usa siempre las fuentes del sistema del visitante.
 - **FR-005**: Los textos (nombre, bienvenida, ayuda y etiqueta de Enviar) MUST ser texto plano con
-  longitud máxima (40, 280, 80 y 20 caracteres respectivamente), sin formato ni enlaces, y MUST
-  mostrarse siempre literalmente como texto. Vacío significa el valor por defecto, salvo la
+  longitud máxima (40, 280, 80 y 20 unidades de texto respectivamente, medidas igual que el límite
+  del navegador en el formulario, de modo que algunos emojis cuentan como dos), sin formato ni
+  enlaces, y MUST mostrarse siempre literalmente como texto. Vacío significa el valor por defecto, salvo la
   bienvenida, cuyo vacío significa que no hay bienvenida.
 - **FR-006**: Los colores MUST ser opacos (sin transparencia).
 - **FR-007**: El texto de bienvenida y el nombre del chat MUST ser texto de la interfaz, no mensajes
