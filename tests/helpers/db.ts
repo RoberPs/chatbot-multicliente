@@ -6,6 +6,7 @@ import { closeDb, createDb, type Db } from '../../src/db/client.js';
 import {
   allTableNames,
   business,
+  chatDesign,
   conversationTableNames,
   handoffAlerts,
   modelPrice,
@@ -72,6 +73,8 @@ export async function resetDb(db: Db): Promise<void> {
     .update(webChatSettings)
     .set({ enabled: false, allowedOrigins: [], privacyUrl: null, dailyCap: 200, monthlyCap: 3000 });
   await db.update(handoffAlerts).set({ whatsappPhone: null, email: null });
+  // Diseño del chat (011): sin fila es el aspecto original; las imágenes caen en cascada.
+  await db.delete(chatDesign);
   // Consumo (010): no está en `allTableNames` (alimenta el `max(updated_at)` del snapshot).
   await db.execute(sql`truncate ${modelUsage}, ${modelPrice}`);
   // Upsert: algún test borra la fila única para provocar fallos.

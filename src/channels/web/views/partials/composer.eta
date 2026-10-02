@@ -1,0 +1,6 @@
+      <form id="chat-form" class="composer">
+        <label class="sr-only" for="chat-text">Tu mensaje</label>
+        <textarea id="chat-text" rows="2" maxlength="<%= it.maxLength %>" required
+                  placeholder="Escribe tu mensaje"></textarea>
+        <button type="submit">Enviar</button>
+      </form>

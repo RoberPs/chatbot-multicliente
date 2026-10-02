@@ -25,6 +25,8 @@ const CONFIG_TABLES = [
   'handoff_hours',
   'web_chat_settings',
   'handoff_alerts',
+  'chat_design',
+  'chat_design_image',
 ];
 
 const tables = (Object.values(schema) as unknown[])

@@ -1,0 +1,4 @@
+  <button id="chat-toggle" type="button" class="toggle" aria-expanded="false" aria-controls="chat-panel">
+    <span aria-hidden="true">💬</span>
+    <span class="sr-only">Abrir el chat</span>
+  </button>

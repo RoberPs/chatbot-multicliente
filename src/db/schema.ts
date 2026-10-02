@@ -389,6 +389,63 @@ export const webChatSettings = pgTable(
   ],
 );
 
+/**
+ * Diseño del chat web (011, data-model §1): una sola fila; si no existe, el chat tiene el
+ * aspecto original. Las opciones son `text` sin enums ni `CHECK` de valores: se validan al
+ * escribir y se leen con tolerancia, campo a campo (R1, R13).
+ */
+export const chatDesign = pgTable(
+  'chat_design',
+  {
+    id: smallint('id').primaryKey().default(1),
+    primaryColor: text('primary_color').notNull(),
+    onPrimaryColor: text('on_primary_color').notNull(),
+    backgroundColor: text('background_color').notNull(),
+    textColor: text('text_color').notNull(),
+    botBubbleColor: text('bot_bubble_color').notNull(),
+    shape: text('shape').notNull(),
+    position: text('position').notNull(),
+    size: text('size').notNull(),
+    /** Nulo = "Asistente de" + nombre del negocio. */
+    chatName: text('chat_name'),
+    /** Nulo = sin bienvenida. */
+    welcomeText: text('welcome_text'),
+    /** Nulo = "Escribe tu mensaje". */
+    placeholderText: text('placeholder_text'),
+    /** Nulo = "Enviar". */
+    sendLabel: text('send_label'),
+    updatedAt: updatedAt(),
+  },
+  (t) => [check('chat_design_singleton', sql`${t.id} = 1`)],
+);
+
+/** Imágenes del diseño (011, R7): una fila por hueco ocupado, ya sin metadatos. */
+export const chatDesignImage = pgTable(
+  'chat_design_image',
+  {
+    slot: text('slot').primaryKey(),
+    designId: smallint('design_id')
+      .notNull()
+      .references(() => chatDesign.id, { onDelete: 'cascade' }),
+    /** Tipo detectado por el contenido, no el declarado. */
+    mimeType: text('mime_type').notNull(),
+    bytes: bytea('bytes').notNull(),
+    /** SHA-256 en hexadecimal de `bytes` (URL de la imagen y comparación). */
+    sha256: text('sha256').notNull(),
+    width: integer('width').notNull(),
+    height: integer('height').notNull(),
+    byteSize: integer('byte_size').notNull(),
+    updatedAt: updatedAt(),
+  },
+  (t) => [
+    check('chat_design_image_byte_size', sql`${t.byteSize} between 1 and 262144`),
+    check(
+      'chat_design_image_dimensions',
+      sql`${t.width} between 16 and 1024 and ${t.height} between 16 and 1024`,
+    ),
+  ],
+);
+
 /** Respuestas del canal web por día en la zona horaria del negocio (004, R9). */
 export const webUsageDay = pgTable('web_usage_day', {
   day: isoDate('day').primaryKey(),

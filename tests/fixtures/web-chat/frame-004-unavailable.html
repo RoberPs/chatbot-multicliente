@@ -1,0 +1,28 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Chat con el asistente</title>
+  <link rel="stylesheet" href="/chat/assets/frame.css">
+</head>
+<body>
+  <button id="chat-toggle" type="button" class="toggle" aria-expanded="false" aria-controls="chat-panel">
+    <span aria-hidden="true">💬</span>
+    <span class="sr-only">Abrir el chat</span>
+  </button>
+  <section id="chat-panel" class="panel" hidden>
+    <header class="panel-head">
+      <h1>Chat</h1>
+      <button id="chat-close" type="button" class="close" aria-label="Cerrar el chat">
+        <span aria-hidden="true">×</span>
+      </button>
+    </header>
+          <div class="unavailable">
+        <p class="message">Ahora mismo el chat no está disponible.</p>
+        <p class="contact">Para hablar con una persona de Peluquería Tijeras: WhatsApp +34 612 34 56 78.</p>      </div>
+      </section>
+  <script src="/chat/assets/links.js" defer></script>
+  <script src="/chat/assets/frame.js" defer></script>
+</body>
+</html>
