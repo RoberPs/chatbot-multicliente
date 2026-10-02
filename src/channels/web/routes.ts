@@ -14,6 +14,10 @@ import { fileURLToPath } from 'node:url';
 import { Eta } from 'eta';
 import type { FastifyInstance, FastifyReply } from 'fastify';
 import { unavailable, webChatAvailability } from '../../webchat/availability.js';
+import { renderDesignCss } from '../../webchat/design/css.js';
+import { originalResolved, type ResolvedChatDesign } from '../../webchat/design/defaults.js';
+import { readChatDesign } from '../../webchat/design/store.js';
+import { computeTheme, designVersion } from '../../webchat/design/theme.js';
 import { readWebChatSettings } from '../../webchat/settings.js';
 import { webChatApi, WEB_MESSAGE_MAX_CHARS } from './api.js';
 import { frameAncestors, NO_ANCESTORS, refererAllowed } from './guards.js';
@@ -72,6 +76,25 @@ export async function webChatRoutes(chat: FastifyInstance): Promise<void> {
   );
   chat.get('/assets/frame.css', async (_request, reply) => cached(reply, 'text/css', frameStyles));
 
+  /**
+   * Diseño guardado, leído en cada petición sin caché (011, FR-012). Si la lectura falla se
+   * registra y se sirve el chat original: el diseño nunca deja sin chat (FR-018).
+   */
+  async function loadDesign(): Promise<ResolvedChatDesign> {
+    try {
+      return await readChatDesign(db);
+    } catch (error) {
+      chat.log.error({ err: error, event: 'chat_design_read_failed' }, 'No se pudo leer el diseño del chat');
+      return originalResolved();
+    }
+  }
+
+  // Solo propiedades personalizadas calculadas por el servidor (011, R2); `v` se ignora.
+  chat.get('/design.css', async (_request, reply) => {
+    const css = renderDesignCss(computeTheme(await loadDesign(), ''));
+    return reply.type('text/css; charset=utf-8').header('Cache-Control', 'no-store').send(css);
+  });
+
   await chat.register(webChatApi, {
     prefix: '/api',
     db,
@@ -128,7 +151,14 @@ export async function webChatRoutes(chat: FastifyInstance): Promise<void> {
       }
     }
 
-    const html = await eta.renderAsync('frame', view);
+    const design = await loadDesign();
+    const businessName = availability.available ? availability.snapshot.business.name : '';
+    const html = await eta.renderAsync('frame', {
+      ...view,
+      theme: computeTheme(design, businessName),
+      // La hoja del diseño solo se enlaza si hay diseño guardado (R2); sin él, el HTML de la 004.
+      designHref: design.saved ? `/chat/design.css?v=${designVersion(design)}` : null,
+    });
     return reply
       .header('Content-Security-Policy', frameCsp(ancestors))
       .header('Cache-Control', 'no-store')

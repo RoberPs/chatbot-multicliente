@@ -11,6 +11,7 @@ import { authPlugin, csrfOnPost, requireOperator } from './admin/auth/plugin.js'
 import { authRoutes } from './admin/auth/routes.js';
 import './admin/fastify-types.js';
 import { renderNotFound } from './admin/render.js';
+import { CHAT_DESIGN_PREVIEW_PATHS } from './admin/routes/chat-design.js';
 import { adminRoutes } from './admin/routes/index.js';
 import { handoffLinkRoutes } from './channels/handoff-links/routes.js';
 import { healthRoutes } from './channels/health/routes.js';
@@ -35,6 +36,10 @@ const cssSource = readFileSync(
 );
 const adminJsSource = readFileSync(
   fileURLToPath(new URL('./admin/views/app.js', import.meta.url)),
+  'utf8',
+);
+const chatDesignJsSource = readFileSync(
+  fileURLToPath(new URL('./admin/views/chat-design.js', import.meta.url)),
   'utf8',
 );
 
@@ -188,14 +193,18 @@ export async function buildApp({
   app.addHook('onSend', async (request, reply) => {
     // El chat web se incrusta en la web del negocio: su CSP la pone su propio plugin y no
     // puede llevar X-Frame-Options (lo sustituye `frame-ancestors`, 004 FR-015).
-    const isChatFrame = (request.url.split('?')[0] ?? '') === CHAT_FRAME_PATH;
+    const path = request.url.split('?')[0] ?? '';
+    const isChatFrame = path === CHAT_FRAME_PATH;
+    // La vista previa del diseño (011, R9) se incrusta en el propio panel: pone su CSP y
+    // `X-Frame-Options: SAMEORIGIN`. Sin ellas (sin sesión, un error), las del panel.
+    const isDesignPreview = CHAT_DESIGN_PREVIEW_PATHS.includes(path);
     if (isChatFrame) {
       // Si el manejador del frame no llegó a responder (p. ej. un 500), la respuesta saldría
       // sin ninguna CSP: se pone la de respaldo, que no permite incrustarla en ningún sitio.
       if (reply.getHeader('content-security-policy') === undefined) {
         reply.header('Content-Security-Policy', FRAME_FALLBACK_CSP);
       }
-    } else {
+    } else if (!isDesignPreview || reply.getHeader('content-security-policy') === undefined) {
       reply.header('X-Frame-Options', 'DENY');
       reply.header('Content-Security-Policy', CSP);
     }
@@ -220,6 +229,13 @@ export async function buildApp({
       .type('text/javascript; charset=utf-8')
       .header('Cache-Control', 'public, max-age=3600')
       .send(adminJsSource),
+  );
+  // Vista previa en vivo de "Diseño del chat" (011, R9): solo actúa en esa sección.
+  app.get('/assets/chat-design.js', async (_request, reply) =>
+    reply
+      .type('text/javascript; charset=utf-8')
+      .header('Cache-Control', 'public, max-age=3600')
+      .send(chatDesignJsSource),
   );
   app.get('/assets/app.css', async (_request, reply) =>
     reply

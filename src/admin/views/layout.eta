@@ -8,6 +8,7 @@
   <link rel="stylesheet" href="/assets/app.css">
   <script src="/assets/htmx.min.js" defer></script>
   <script src="/assets/app.js" defer></script>
+  <script src="/assets/chat-design.js" defer></script>
 </head>
 <body hx-boost="true" hx-headers='{"x-csrf-token": "<%= it.layout.csrf %>"}'>
   <header class="topbar">
@@ -35,6 +36,7 @@
       ['/admin/handoffs', 'Derivaciones'],
       ['/admin/playground', 'Probar el bot'],
       ['/admin/web-chat', 'Chat web'],
+      ['/admin/chat-design', 'Diseño del chat'],
       ['/admin/usage', 'Consumo'],
       ['/admin/config', 'Exportar e importar'],
     ].forEach(function (item) {

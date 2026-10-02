@@ -3,10 +3,13 @@
  */
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
+import type { FastifyInstance } from 'fastify';
 import type { Db } from '../../src/db/client.js';
-import { chatDesign } from '../../src/db/schema.js';
+import { chatDesign, chatDesignImage } from '../../src/db/schema.js';
 import { ORIGINAL_DESIGN, type ChatDesignOptions } from '../../src/webchat/design/defaults.js';
 import { saveChatDesign } from '../../src/webchat/design/store.js';
+import type { Session } from './app.js';
+import { multipartBody } from './config-transfer.js';
 
 const IMAGES = fileURLToPath(new URL('../fixtures/images/', import.meta.url));
 
@@ -36,3 +39,74 @@ export const GREEN_PALETTE = {
   textColor: '#1d2330',
   botBubbleColor: '#eef6f2',
 } as const;
+
+/** Formulario completo del panel con los valores originales sobrescritos por `over`. */
+export const designForm = (over: Record<string, string> = {}): Record<string, string> => ({
+  primary_color: ORIGINAL_DESIGN.primaryColor,
+  on_primary_color: ORIGINAL_DESIGN.onPrimaryColor,
+  background_color: ORIGINAL_DESIGN.backgroundColor,
+  text_color: ORIGINAL_DESIGN.textColor,
+  bot_bubble_color: ORIGINAL_DESIGN.botBubbleColor,
+  shape: ORIGINAL_DESIGN.shape,
+  position: ORIGINAL_DESIGN.position,
+  size: ORIGINAL_DESIGN.size,
+  chat_name: '',
+  welcome_text: '',
+  placeholder: '',
+  send_label: '',
+  ...over,
+});
+
+/** Paleta verde como campos del formulario. */
+export const GREEN_FORM = {
+  primary_color: GREEN_PALETTE.primaryColor,
+  on_primary_color: GREEN_PALETTE.onPrimaryColor,
+  background_color: GREEN_PALETTE.backgroundColor,
+  text_color: GREEN_PALETTE.textColor,
+  bot_bubble_color: GREEN_PALETTE.botBubbleColor,
+};
+
+export interface DesignFile {
+  name: 'logo' | 'avatar' | 'icon';
+  bytes: Buffer;
+  filename?: string;
+  type?: string;
+}
+
+/** Guardado multipart del panel, como lo envía el navegador (con o sin imágenes). */
+export function postDesign(
+  app: FastifyInstance,
+  session: Session,
+  fields: Record<string, string>,
+  files: DesignFile[] = [],
+  opts: { url?: string; headers?: Record<string, string> } = {},
+) {
+  const { payload, contentType } = multipartBody([
+    { name: '_csrf', value: session.csrf },
+    ...Object.entries(fields).map(([name, value]) => ({ name, value })),
+    ...files.map((f) => ({
+      name: f.name,
+      value: f.bytes,
+      filename: f.filename ?? `${f.name}.png`,
+      type: f.type ?? 'image/png',
+    })),
+  ]);
+  return app.inject({
+    method: 'POST',
+    url: opts.url ?? '/admin/chat-design',
+    headers: { cookie: session.cookie, 'content-type': contentType, ...opts.headers },
+    payload,
+  });
+}
+
+/** Fila del diseño guardado (o `undefined`). */
+export async function designRow(db: Db) {
+  const [row] = await db.select().from(chatDesign);
+  return row;
+}
+
+/** Imágenes guardadas, por hueco. */
+export async function designImages(db: Db) {
+  const rows = await db.select().from(chatDesignImage);
+  return Object.fromEntries(rows.map((r) => [r.slot, r]));
+}

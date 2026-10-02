@@ -1,5 +1,5 @@
     <header class="panel-head">
-      <h1><%= it.available ? 'Asistente de ' + it.businessName : 'Chat' %></h1>
+      <h1><%= it.available ? it.theme.texts.chatName : it.theme.texts.unavailableTitle %></h1>
       <button id="chat-close" type="button" class="close" aria-label="Cerrar el chat">
         <span aria-hidden="true">×</span>
       </button>

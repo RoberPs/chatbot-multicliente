@@ -1,10 +1,13 @@
 <!doctype html>
-<html lang="es">
+<html lang="es"<% Object.entries(it.theme.htmlAttrs).forEach(function (attr) { %> <%= attr[0] %>="<%= attr[1] %>"<% }) %>>
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Chat con el asistente</title>
   <link rel="stylesheet" href="/chat/assets/frame.css">
+  <% if (it.designHref) { %>
+  <link rel="stylesheet" href="<%= it.designHref %>">
+  <% } %>
 </head>
 <body>
 <%~ include('/partials/toggle', it) %>

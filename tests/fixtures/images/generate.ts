@@ -146,7 +146,8 @@ const metadataPng = png(64, 64, {
 });
 const badCrc = Buffer.from(validPng);
 // Último byte del CRC de IHDR (firma 8 + longitud 4 + tipo 4 + datos 13 + CRC 4).
-badCrc[8 + 4 + 4 + 13 + 3] ^= 0xff;
+const crcAt = 8 + 4 + 4 + 13 + 3;
+badCrc[crcAt] = (badCrc[crcAt] ?? 0) ^ 0xff;
 
 // --- JPEG ---------------------------------------------------------------------------------
 

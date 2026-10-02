@@ -206,3 +206,18 @@ export function validateChatDesignOptions(input: unknown): DesignValidation {
   });
   return { ok: false, issues, errors: issuesToErrors(issues) };
 }
+
+/**
+ * Opciones de la vista previa en vivo (`preview.css`): cada campo que falte o no valga toma el
+ * original, sin errores (solo es una vista, R9). Los textos no se usan aquí.
+ */
+export function previewOptions(input: Record<string, unknown>): ChatDesignOptions {
+  const shape = chatDesignFormSchema.def.in.shape;
+  const options: Record<string, unknown> = { ...ORIGINAL_DESIGN };
+  for (const [form, option] of Object.entries(FORM_FIELDS)) {
+    if (TEXT_FORM_FIELDS.has(form)) continue;
+    const parsed = shape[form as FormField].safeParse(input[form]);
+    if (parsed.success) options[option] = parsed.data;
+  }
+  return options as unknown as ChatDesignOptions;
+}
