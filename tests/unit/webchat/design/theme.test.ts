@@ -164,3 +164,19 @@ describe('colores derivados (R4, FR-019a)', () => {
     expect(theme.tokens['--chat-field-border']).toBeUndefined();
   });
 });
+
+describe('posición y tamaño (R5, R6)', () => {
+  it('izquierda → data-position; pequeño o grande → data-size', () => {
+    expect(computeTheme(design({ position: 'left' }), BUSINESS).htmlAttrs).toEqual({
+      'data-position': 'left',
+    });
+    expect(computeTheme(design({ size: 'small' }), BUSINESS).htmlAttrs).toEqual({ 'data-size': 'small' });
+    expect(computeTheme(design({ size: 'large' }), BUSINESS).htmlAttrs).toEqual({ 'data-size': 'large' });
+  });
+
+  it('derecha y mediano son el original: sin atributos ni tokens', () => {
+    const theme = computeTheme(design({ position: 'right', size: 'medium' }), BUSINESS);
+    expect(theme.htmlAttrs).toEqual({});
+    expect(theme.tokens).toEqual({});
+  });
+});

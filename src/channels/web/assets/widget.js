@@ -23,7 +23,15 @@
   }
 
   var CLOSED = { width: '72px', height: '72px' };
-  var OPEN = { width: '380px', height: '560px' };
+  /**
+   * Tamaños del chat abierto (011, R5). El chat los pide por nombre; cualquier otro valor es el
+   * mediano, así que el chat nunca puede pedir unas medidas arbitrarias.
+   */
+  var SIZES = {
+    small: { width: '320px', height: '480px' },
+    medium: { width: '380px', height: '560px' },
+    large: { width: '440px', height: '640px' },
+  };
 
   var frame = document.createElement('iframe');
   frame.src = origin + '/chat/frame';
@@ -43,10 +51,19 @@
   // Hasta que el chat se anuncie no se ve nada (ni el marco bloqueado del navegador).
   frame.style.visibility = 'hidden';
 
-  function resize(open) {
-    var size = open ? OPEN : CLOSED;
-    frame.style.width = size.width;
-    frame.style.height = size.height;
+  function resize(open, size, position) {
+    // Esquina: abajo a la izquierda solo si lo pide así; si no, la de siempre.
+    if (position === 'left') {
+      frame.style.left = '16px';
+      frame.style.right = 'auto';
+    } else {
+      frame.style.left = 'auto';
+      frame.style.right = '16px';
+    }
+    var known = typeof size === 'string' && Object.prototype.hasOwnProperty.call(SIZES, size);
+    var dims = open ? (known ? SIZES[size] : SIZES.medium) : CLOSED;
+    frame.style.width = dims.width;
+    frame.style.height = dims.height;
   }
 
   window.addEventListener('message', function (event) {
@@ -55,9 +72,10 @@
     if (event.source !== frame.contentWindow) return;
     var data = event.data;
     if (!data || data.type !== 'chat:resize') return;
+    // Primero la esquina y el tamaño, para que nunca aparezca en el sitio equivocado.
+    resize(data.open === true, data.size, data.position);
     // El chat ha cargado de verdad: ya se puede mostrar.
     frame.style.visibility = 'visible';
-    resize(data.open === true);
   });
 
   function insert() {

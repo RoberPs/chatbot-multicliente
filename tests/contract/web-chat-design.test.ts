@@ -13,11 +13,15 @@ import { sql } from 'drizzle-orm';
 import type { FastifyInstance } from 'fastify';
 import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
 import { modelPrice, modelUsage, usageSettings, webUsageDay } from '../../src/db/schema.js';
+import { get, login } from '../helpers/app.js';
 import { createTestBot, TEST_LLM_MODEL, type TestBot } from '../helpers/bot.js';
 import {
   clearChatDesign,
+  designForm,
+  designRow,
   GREEN_PALETTE,
   imageUrl,
+  postDesign,
   seedChatDesign,
   seedChatDesignWithImages,
 } from '../helpers/chat-design.js';
@@ -474,5 +478,46 @@ describe('diseño del chat web: imágenes (US3)', () => {
     const off = await frame(bot.app);
     expect(off.body).toContain('Para hablar con una persona de Peluquería Tijeras');
     expect(off.body).toContain('class="design-logo"');
+  });
+});
+
+describe('diseño del chat web: posición y tamaño (US4)', () => {
+  let t: TestDatabase;
+  let bot: TestBot | null = null;
+
+  beforeAll(async () => {
+    t = await createTestDatabase();
+  });
+  afterAll(async () => {
+    await t.close();
+  });
+  afterEach(async () => {
+    await bot?.close();
+    bot = null;
+  });
+
+  it('el frame lleva data-position y data-size solo si difieren del original', async () => {
+    bot = await createTestBot(t, { webChat: WEB_ON });
+    await seedChatDesign(t.db, { position: 'left', size: 'large' });
+    const res = await bot.app.inject({ method: 'GET', url: '/chat/frame' });
+    expect(res.body).toMatch(/<html lang="es" data-position="left" data-size="large">/);
+
+    await seedChatDesign(t.db, { position: 'right', size: 'medium', chatName: 'Solo el nombre' });
+    const original = await bot.app.inject({ method: 'GET', url: '/chat/frame' });
+    expect(original.body).toContain('<html lang="es">');
+  });
+
+  it('el panel muestra los radios de posición y tamaño y guarda sus valores', async () => {
+    bot = await createTestBot(t);
+    const session = await login(bot.app);
+    const page = await get(bot.app, session, '/admin/chat-design');
+    for (const label of ['Abajo a la derecha', 'Abajo a la izquierda', 'Pequeño', 'Mediano', 'Grande']) {
+      expect(page.body).toContain(label);
+    }
+    expect(page.body).toMatch(/name="position" value="right"[^>]*checked/);
+    expect(page.body).toMatch(/name="size" value="medium"[^>]*checked/);
+    const res = await postDesign(bot.app, session, designForm({ position: 'left', size: 'small' }));
+    expect(res.statusCode).toBe(303);
+    expect(await designRow(t.db)).toMatchObject({ position: 'left', size: 'small' });
   });
 });

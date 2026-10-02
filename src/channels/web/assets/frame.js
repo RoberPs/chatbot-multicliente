@@ -156,7 +156,18 @@
    */
   function tellParent(open) {
     if (window.parent === window) return;
-    window.parent.postMessage({ type: 'chat:resize', open: open }, '*');
+    // Tamaño y esquina del diseño (011, R6), por nombre: nunca medidas. Los pone el servidor
+    // en <html>; sin diseño, los de siempre.
+    var data = (document.documentElement && document.documentElement.dataset) || {};
+    window.parent.postMessage(
+      {
+        type: 'chat:resize',
+        open: open,
+        size: data.size || 'medium',
+        position: data.position || 'right',
+      },
+      '*',
+    );
   }
 
   /* --- Llamadas a la API --- */

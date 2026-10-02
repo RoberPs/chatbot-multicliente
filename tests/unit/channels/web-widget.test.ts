@@ -133,3 +133,88 @@ describe('widget.js del chat web', () => {
     expect(sinSrc.appended).toEqual([]);
   });
 });
+
+describe('widget.js: tamaño y posición del diseño (011, R6)', () => {
+  /** Como `runWidget`, pero el estilo del iframe anota el orden en que se cambia. */
+  function runRecording() {
+    const writes: Array<[string, string]> = [];
+    const style = new Proxy({} as Record<string, string>, {
+      set(target, key: string, value: string) {
+        writes.push([key, value]);
+        target[key] = value;
+        return true;
+      },
+    });
+    const appended: Array<{ style: Record<string, string>; contentWindow: object }> = [];
+    const handlers: MessageHandler[] = [];
+    const document = {
+      currentScript: { src: `${INSTANCE}/chat/widget.js` },
+      readyState: 'complete',
+      createElement: () => ({ style, contentWindow: {}, setAttribute: () => undefined }),
+      body: { appendChild: (el: { style: Record<string, string>; contentWindow: object }) => appended.push(el) },
+      addEventListener: () => undefined,
+    };
+    const window = {
+      addEventListener: (type: string, handler: MessageHandler) => {
+        if (type === 'message') handlers.push(handler);
+      },
+    };
+    runInNewContext(source, { window, document, URL });
+    const frame = appended[0];
+    const send = (data: unknown) => {
+      for (const h of handlers) h({ origin: INSTANCE, source: frame?.contentWindow, data });
+    };
+    return { style, writes, send };
+  }
+
+  it.each([
+    ['small', '320px', '480px'],
+    ['medium', '380px', '560px'],
+    ['large', '440px', '640px'],
+  ])('abierto en tamaño %s: %s × %s, sin salir de la pantalla', (size, width, height) => {
+    const w = runWidget();
+    w.send({ type: 'chat:resize', open: true, size, position: 'right' });
+    expect(w.frame?.style.width).toBe(width);
+    expect(w.frame?.style.height).toBe(height);
+    expect(w.frame?.style.maxWidth).toBe('calc(100vw - 32px)');
+    expect(w.frame?.style.maxHeight).toBe('calc(100vh - 32px)');
+  });
+
+  it('cerrado sigue en 72 × 72 con cualquier tamaño', () => {
+    const w = runWidget();
+    w.send({ type: 'chat:resize', open: false, size: 'large', position: 'left' });
+    expect(w.frame?.style.width).toBe('72px');
+    expect(w.frame?.style.height).toBe('72px');
+  });
+
+  it('a la izquierda: left 16px y right auto antes de hacerlo visible', () => {
+    const r = runRecording();
+    r.send({ type: 'chat:resize', open: false, size: 'medium', position: 'left' });
+    expect(r.style.left).toBe('16px');
+    expect(r.style.right).toBe('auto');
+    const visibleAt = r.writes.findIndex(([k, v]) => k === 'visibility' && v === 'visible');
+    const leftAt = r.writes.findIndex(([k, v]) => k === 'left' && v === '16px');
+    expect(leftAt).toBeGreaterThan(-1);
+    expect(leftAt).toBeLessThan(visibleAt);
+  });
+
+  it('sin campos o con valores desconocidos: mediano y a la derecha', () => {
+    for (const extra of [{}, { size: 'huge', position: 'center' }, { size: '999px', position: 1 }, { size: 3 }]) {
+      const w = runWidget();
+      w.send({ type: 'chat:resize', open: true, ...extra });
+      expect(w.frame?.style.width).toBe('380px');
+      expect(w.frame?.style.height).toBe('560px');
+      expect(w.frame?.style.right).toBe('16px');
+      expect(w.frame?.style.left).not.toBe('16px');
+    }
+  });
+
+  it('los mensajes de otro origen u otra ventana se siguen ignorando', () => {
+    const w = runWidget();
+    w.send({ type: 'chat:resize', open: true, size: 'large', position: 'left' }, { origin: 'https://atacante.example' });
+    w.send({ type: 'chat:resize', open: true, size: 'large', position: 'left' }, { source: { id: 'otra' } });
+    expect(w.frame?.style.visibility).toBe('hidden');
+    expect(w.frame?.style.width).toBe('72px');
+    expect(w.frame?.style.left).not.toBe('16px');
+  });
+});

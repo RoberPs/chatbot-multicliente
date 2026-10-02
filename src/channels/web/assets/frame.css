@@ -268,3 +268,9 @@ body {
   background: var(--chat-avatar) center / cover no-repeat;
   image-orientation: none;
 }
+
+/* Chat abajo a la izquierda (011, R5): el botón se pega a la izquierda del iframe. */
+[data-position='left'] .toggle {
+  left: 8px;
+  right: auto;
+}

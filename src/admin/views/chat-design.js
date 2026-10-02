@@ -150,10 +150,26 @@
     if (warning) warning.textContent = message;
   }
 
+  /* --- Tamaño y esquina del chat abierto (R5): la misma tabla que el fragmento. --- */
+
+  var SIZES = { small: [320, 480], medium: [380, 560], large: [440, 640] };
+
+  function applyFrameSize(f) {
+    var open = document.querySelector('iframe.chat-preview[data-view="open"]');
+    var dims = SIZES[value(f, 'size')] || SIZES.medium;
+    if (open) {
+      open.setAttribute('width', String(dims[0]));
+      open.setAttribute('height', String(dims[1]));
+    }
+    var box = document.querySelector('.preview-frames');
+    if (box) box.setAttribute('data-position', value(f, 'position') === 'left' ? 'left' : 'right');
+  }
+
   function apply() {
     timer = null;
     var f = form();
     if (!f) return;
+    applyFrameSize(f);
     var params = new URLSearchParams();
     CSS_FIELDS.forEach(function (name) {
       params.set(name, value(f, name));

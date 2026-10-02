@@ -200,17 +200,17 @@ de antes y comprobar la esquina y 440×640; en un móvil, nada sale de la pantal
 
 ### Tests for User Story 4 ⚠️
 
-- [ ] T063 [P] [US4] Ampliar `tests/unit/channels/web-widget.test.ts`: `chat:resize` con `size: 'small' | 'medium' | 'large'` da 320×480, 380×560 y 440×640 con `max-width: calc(100vw - 32px)` y `max-height: calc(100vh - 32px)`; `position: 'left'` pone `left: 16px; right: auto` antes de hacer visible el iframe; sin campos o con valores desconocidos (`'huge'`, `'999px'`, números) → `medium` y `right`; cerrado sigue en 72×72; mensajes de otro origen u otra ventana se siguen ignorando
-- [ ] T064 [P] [US4] Ampliar `tests/unit/channels/web-assets.test.ts` (o el test de `frame.js` existente): `tellParent(open)` incluye `size` y `position` leídos de `document.documentElement.dataset`, con `medium`/`right` si faltan
-- [ ] T065 [US4] Ampliar `tests/unit/webchat/design/theme.test.ts` y `tests/contract/web-chat-design.test.ts`: `position: 'left'` → `data-position="left"`; `size: 'small' | 'large'` → `data-size`; `right` y `medium` no emiten atributos (R3); el formulario del panel muestra los radios de posición y tamaño y guarda sus valores
+- [X] T063 [P] [US4] Ampliar `tests/unit/channels/web-widget.test.ts`: `chat:resize` con `size: 'small' | 'medium' | 'large'` da 320×480, 380×560 y 440×640 con `max-width: calc(100vw - 32px)` y `max-height: calc(100vh - 32px)`; `position: 'left'` pone `left: 16px; right: auto` antes de hacer visible el iframe; sin campos o con valores desconocidos (`'huge'`, `'999px'`, números) → `medium` y `right`; cerrado sigue en 72×72; mensajes de otro origen u otra ventana se siguen ignorando
+- [X] T064 [P] [US4] Ampliar `tests/unit/channels/web-assets.test.ts` (o el test de `frame.js` existente): `tellParent(open)` incluye `size` y `position` leídos de `document.documentElement.dataset`, con `medium`/`right` si faltan
+- [X] T065 [US4] Ampliar `tests/unit/webchat/design/theme.test.ts` y `tests/contract/web-chat-design.test.ts`: `position: 'left'` → `data-position="left"`; `size: 'small' | 'large'` → `data-size`; `right` y `medium` no emiten atributos (R3); el formulario del panel muestra los radios de posición y tamaño y guarda sus valores
 
 ### Implementation for User Story 4
 
-- [ ] T066 [US4] En `src/webchat/design/theme.ts`, emitir `data-position` y `data-size` solo cuando difieren del original
-- [ ] T067 [US4] En `src/channels/web/assets/frame.css`, `[data-position="left"] .toggle { left: 8px; right: auto }` y lo que haga falta para que el chat abierto se alinee a la izquierda dentro del iframe
-- [ ] T068 [US4] En `src/channels/web/assets/frame.js`, añadir `size` y `position` (por nombre, nunca medidas) al mensaje `chat:resize` (R6)
-- [ ] T069 [US4] En `src/channels/web/assets/widget.js`, tabla propia de tamaños de R5, traducción por nombre con `medium`/`right` por defecto ante cualquier otro valor, cambio de `left`/`right` del iframe antes de hacerlo visible, conservando los límites de pantalla pequeña y la comprobación de origen (FR-013, FR-034)
-- [ ] T070 [US4] En `src/admin/views/chat-design.eta`, radios de posición ("Abajo a la derecha", "Abajo a la izquierda") y tamaño ("Pequeño", "Mediano", "Grande"); en `src/admin/views/chat-design.js`, ajustar tamaño y esquina del iframe abierto de la vista previa con la misma tabla (FR-008, US4-6)
+- [X] T066 [US4] En `src/webchat/design/theme.ts`, emitir `data-position` y `data-size` solo cuando difieren del original
+- [X] T067 [US4] En `src/channels/web/assets/frame.css`, `[data-position="left"] .toggle { left: 8px; right: auto }` y lo que haga falta para que el chat abierto se alinee a la izquierda dentro del iframe
+- [X] T068 [US4] En `src/channels/web/assets/frame.js`, añadir `size` y `position` (por nombre, nunca medidas) al mensaje `chat:resize` (R6)
+- [X] T069 [US4] En `src/channels/web/assets/widget.js`, tabla propia de tamaños de R5, traducción por nombre con `medium`/`right` por defecto ante cualquier otro valor, cambio de `left`/`right` del iframe antes de hacerlo visible, conservando los límites de pantalla pequeña y la comprobación de origen (FR-013, FR-034)
+- [X] T070 [US4] En `src/admin/views/chat-design.eta`, radios de posición ("Abajo a la derecha", "Abajo a la izquierda") y tamaño ("Pequeño", "Mediano", "Grande"); en `src/admin/views/chat-design.js`, ajustar tamaño y esquina del iframe abierto de la vista previa con la misma tabla (FR-008, US4-6)
 
 **Checkpoint**: posición y tamaño llegan a la web del negocio con el fragmento ya pegado.
 

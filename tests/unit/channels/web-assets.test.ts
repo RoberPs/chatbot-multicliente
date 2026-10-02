@@ -5,6 +5,7 @@
  */
 import { readFileSync, readdirSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
+import { runInNewContext } from 'node:vm';
 import { describe, expect, it } from 'vitest';
 
 const assetsDir = fileURLToPath(new URL('../../../src/channels/web/assets', import.meta.url));
@@ -57,5 +58,43 @@ describe('franja de derivación del iframe (005, FR-013a, R15)', () => {
     expect(frame).toMatch(/function startPolling\(\) \{\s*if \(state\.handoffActive\) return;/);
     expect(frame).toContain("if (!state.handoffActive) setStatus('escribiendo…');");
     expect(frame).toContain('data.waiting && !state.handoffActive');
+  });
+});
+
+describe('frame.js: tamaño y posición en chat:resize (011, R6)', () => {
+  /** Ejecuta frame.js sobre un DOM mínimo y devuelve los mensajes que manda a la web. */
+  function runFrame(dataset: Record<string, string>) {
+    const posted: unknown[] = [];
+    const element = () => ({
+      hidden: false,
+      setAttribute: () => undefined,
+      addEventListener: () => undefined,
+      focus: () => undefined,
+    });
+    const elements: Record<string, ReturnType<typeof element>> = {
+      'chat-toggle': element(),
+      'chat-panel': element(),
+      'chat-close': element(),
+    };
+    const document = {
+      getElementById: (id: string) => elements[id] ?? null,
+      querySelectorAll: () => [],
+      addEventListener: () => undefined,
+      documentElement: { dataset },
+    };
+    const parent = { postMessage: (message: unknown) => posted.push(message) };
+    const window = { parent, localStorage: null, setInterval, clearInterval, fetch: () => Promise.reject() };
+    runInNewContext(readFileSync(`${assetsDir}/frame.js`, 'utf8'), { window, document });
+    return posted;
+  }
+
+  it('sin atributos: mediano y a la derecha', () => {
+    expect(runFrame({})).toEqual([{ type: 'chat:resize', open: false, size: 'medium', position: 'right' }]);
+  });
+
+  it('lee data-size y data-position de <html>, por nombre', () => {
+    expect(runFrame({ size: 'large', position: 'left' })).toEqual([
+      { type: 'chat:resize', open: false, size: 'large', position: 'left' },
+    ]);
   });
 });

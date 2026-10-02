@@ -588,3 +588,8 @@ tr.total td {
 .field-warning:empty {
   display: none;
 }
+/* Chat abajo a la izquierda en la vista previa: el chat abierto pasa al lado izquierdo. */
+.preview-frames[data-position='left'] {
+  flex-direction: row-reverse;
+  justify-content: flex-end;
+}
