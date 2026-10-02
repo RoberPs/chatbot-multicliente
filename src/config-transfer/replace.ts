@@ -7,6 +7,7 @@
  * - Horario, cierres, enlaces, franjas, ausencias y medios de derivación se sustituyen enteros.
  * - Solo se escribe lo que cambia: reemplazar con la misma configuración no toca ningún
  *   `updated_at` (SC-002).
+ * - El diseño del chat (011) se reemplaza entero y no toca la configuración del chat web.
  * - Nunca cambia `business.status` ni `web_chat_settings.enabled` (FR-017); `handoff_alerts`
  *   solo con `importAlerts` y destinos en el documento (FR-021).
  *
@@ -19,6 +20,7 @@ import type { Tx } from '../db/client.js';
 import {
   business,
   businessHours,
+  chatDesign,
   closure,
   faq,
   handoffAlerts,
@@ -38,8 +40,13 @@ import { touch, touchBusiness } from '../db/timestamps.js';
 import { readHandoffAlerts } from '../handoff/settings.js';
 import { loadKnowledgeState } from '../knowledge/state.js';
 import type { KnowledgeState, WeeklySlot } from '../knowledge/types.js';
+import { SLOTS, type Slot } from '../webchat/design/defaults.js';
+import { validateDesignImage } from '../webchat/design/images.js';
+import type { ValidImageChange } from '../webchat/design/schemas.js';
+import { saveChatDesign } from '../webchat/design/store.js';
 import { readWebChatSettings } from '../webchat/settings.js';
 import { normalizeKey, type ConfigDateBlock, type ConfigDocument } from './format.js';
+import { readChatDesignDocument } from './read.js';
 
 export interface ReplaceOptions {
   /** El operador eligió importar los destinos de los avisos (FR-021). */
@@ -409,6 +416,37 @@ async function replaceWebChat(tx: Tx, doc: ConfigDocument): Promise<void> {
   await tx.update(webChatSettings).set({ ...next, ...touch() }).where(eq(webChatSettings.id, 1));
 }
 
+/**
+ * Diseño del chat (011, FR-037): reemplazo completo; `null` borra la fila y, en cascada, sus
+ * imágenes. Si las opciones y las imágenes no cambian no se escribe nada. Nunca toca
+ * `web_chat_settings`.
+ */
+async function replaceChatDesign(tx: Tx, doc: ConfigDocument): Promise<void> {
+  const wanted = doc.chatDesign ?? null;
+  const current = await readChatDesignDocument(tx);
+  if (same(current, wanted)) return;
+  if (!wanted) {
+    await tx.delete(chatDesign);
+    return;
+  }
+  const { images, ...options } = wanted;
+  const changes: Partial<Record<Slot, ValidImageChange>> = {};
+  for (const slot of SLOTS) {
+    const next = images[slot];
+    if (!next) {
+      changes[slot] = { kind: 'remove' };
+    } else if (current?.images[slot]?.data === next.data) {
+      changes[slot] = { kind: 'keep' };
+    } else {
+      // Ya validada al leer el fichero; aquí solo se obtienen sus metadatos.
+      const result = validateDesignImage({ bytes: Buffer.from(next.data, 'base64'), truncated: false });
+      if (!result.ok) throw new Error('Imagen del diseño sin validar');
+      changes[slot] = { kind: 'replace', image: result.image };
+    }
+  }
+  await saveChatDesign(tx, options, changes);
+}
+
 async function replaceAlerts(tx: Tx, doc: ConfigDocument): Promise<void> {
   const wanted = doc.alertDestinations;
   if (!wanted) return;
@@ -439,6 +477,7 @@ export async function replaceConfig(
   removed = (await replaceTone(tx, state, doc)) || removed;
   removed = (await replaceHandoff(tx, state, doc)) || removed;
   await replaceWebChat(tx, doc);
+  await replaceChatDesign(tx, doc);
   if (opts.importAlerts) await replaceAlerts(tx, doc);
   // Un borrado no deja ninguna fila modificada: se marca el cambio en el negocio, como el panel.
   if (removed) await touchBusiness(tx);

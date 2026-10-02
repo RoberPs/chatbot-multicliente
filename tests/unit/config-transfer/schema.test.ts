@@ -41,7 +41,7 @@ describe('ficheros válidos', () => {
     if (!result.ok) throw new Error(JSON.stringify(result.issues));
     expect(result.envelope).toEqual({
       format: 'business-config',
-      formatVersion: 1,
+      formatVersion: 2,
       exportedAt: '2026-09-30T10:15:00.000Z',
       source: { instanceId: 'demo-01', schema: '0005_config_transfer' },
       includesAlertDestinations: false,
@@ -402,5 +402,94 @@ describe('reglas de cada sección (una prueba por regla)', () => {
 
   it('◆ business.name vacío se acepta', () => {
     expect(issuesOf(variant((f) => (f.business.name = '')))).toEqual([]);
+  });
+});
+
+describe('sección chatDesign (011, contracts/config-file-chat-design.md)', () => {
+  const withDesign = (change: (design: Json) => void = () => undefined): Json => {
+    const file = load('v2-chat-design.json');
+    change(file.chatDesign);
+    return file;
+  };
+  const png = () => readFileSync(join(FIXTURES, '..', 'images', 'valid.png')).toString('base64');
+
+  it('el fichero de ejemplo con diseño es válido y null también', () => {
+    expect(issuesOf(withDesign())).toEqual([]);
+    expect(issuesOf(variant((f) => (f.chatDesign = null)))).toEqual([]);
+  });
+
+  it('chatDesign es obligatorio (objeto o null)', () => {
+    expectIssue(
+      variant((f) => {
+        delete f.chatDesign;
+      }),
+      { section: 'chatDesign', sectionLabel: 'Diseño del chat', field: null, message: 'Falta este campo' },
+    );
+  });
+
+  it('objetos estrictos: una clave desconocida es un error', () => {
+    expectIssue(withDesign((d) => (d.privacyNotice = '')), {
+      section: 'chatDesign',
+      field: 'privacyNotice',
+      message: 'Campo desconocido',
+    });
+    expectIssue(withDesign((d) => (d.images.banner = null)), {
+      section: 'chatDesign',
+      field: 'images.banner',
+    });
+    expectIssue(withDesign((d) => (d.images.logo.name = 'logo.png')), {
+      field: 'images.logo.name',
+    });
+  });
+
+  it('las cuatro claves de images son obligatorias', () => {
+    expectIssue(
+      withDesign((d) => {
+        delete d.images.icon;
+      }),
+      { field: 'images.icon', message: 'Falta este campo' },
+    );
+  });
+
+  it('devuelve todos los errores a la vez, con la sección y el campo', () => {
+    const issues = issuesOf(
+      withDesign((d) => {
+        d.textColor = '#aaaaaa';
+        d.images.icon = { type: 'image/png', data: d.images.icon.data };
+        d.images.avatar = { type: 'image/jpeg', data: 'no es base64!' };
+        d.images.logo = { type: 'image/png', data: Buffer.alloc(300 * 1024, 1).toString('base64') };
+        d.size = 'huge';
+        d.welcomeText = 'x'.repeat(300);
+      }),
+    );
+    const byField = Object.fromEntries(issues.map((i) => [i.field, i.message]));
+    expect(issues.every((i) => i.section === 'chatDesign' && i.sectionLabel === 'Diseño del chat')).toBe(true);
+    expect(byField).toEqual({
+      textColor: expect.stringMatching(
+        /^El texto (del chat )?sobre (el fondo|los mensajes del bot) tiene un contraste de \d,\d{2}:1; el mínimo es 4,5:1/,
+      ) as unknown,
+      size: 'Valor no válido; se admite: "small", "medium", "large"',
+      welcomeText: 'Máximo 280 caracteres',
+      'images.logo.data': 'La imagen supera el máximo de 256 KB',
+      'images.avatar.data': 'La imagen no está en base64',
+      'images.icon.type': 'El tipo declarado no coincide con el contenido de la imagen',
+    });
+  });
+
+  it('una imagen que no es PNG, JPEG ni WebP se rechaza en su campo', () => {
+    const svg = Buffer.from('<svg xmlns="http://www.w3.org/2000/svg"/>').toString('base64');
+    expectIssue(withDesign((d) => (d.images.logo = { type: 'image/png', data: svg })), {
+      field: 'images.logo.data',
+      message: 'Formato no admitido: solo PNG, JPEG o WebP',
+    });
+    expectIssue(withDesign((d) => (d.images.logo = { type: 'image/svg+xml', data: png() })), {
+      field: 'images.logo.type',
+    });
+  });
+
+  it('los colores se normalizan a minúsculas', () => {
+    const result = validateConfigFile(withDesign((d) => (d.primaryColor = '#0B6E4F')), 'ES');
+    if (!result.ok) throw new Error(JSON.stringify(result.issues));
+    expect(result.document.chatDesign?.primaryColor).toBe('#0b6e4f');
   });
 });

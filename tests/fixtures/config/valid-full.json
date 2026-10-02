@@ -1,6 +1,6 @@
 {
   "format": "business-config",
-  "formatVersion": 1,
+  "formatVersion": 2,
   "exportedAt": "2026-09-30T10:15:00.000Z",
   "source": {
     "instanceId": "demo-01",
@@ -153,5 +153,6 @@
     "privacyUrl": "https://www.example.com/privacidad",
     "dailyCap": 200,
     "monthlyCap": 3000
-  }
+  },
+  "chatDesign": null
 }

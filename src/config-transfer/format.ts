@@ -18,13 +18,23 @@ export const FORMAT_ID = 'business-config';
  * Versión del formato que escribe y entiende este núcleo. Toda migración que añada o cambie
  * configuración del negocio la sube y añade su actualizador a `UPDATERS` (research R4).
  */
-export const CURRENT_FORMAT_VERSION = 1;
+export const CURRENT_FORMAT_VERSION = 2;
 
 /** Convierte un fichero de la versión N (ya analizado como JSON) a la N + 1. */
 export type Updater = (raw: unknown) => unknown;
 
-/** `UPDATERS[n]` actualiza de la versión `n` a la `n + 1`. Vacío en la versión 1. */
-export const UPDATERS: Readonly<Record<number, Updater>> = {};
+/**
+ * `UPDATERS[n]` actualiza de la versión `n` a la `n + 1`.
+ *
+ * - 1 → 2 (011, diseño del chat): un fichero sin la sección es un negocio sin diseño, así que
+ *   se importa como `chatDesign: null` (el destino vuelve al aspecto original, US5-4).
+ */
+export const UPDATERS: Readonly<Record<number, Updater>> = {
+  1: (raw) =>
+    typeof raw === 'object' && raw !== null && !Array.isArray(raw)
+      ? { ...raw, chatDesign: null }
+      : raw,
+};
 
 export interface ConfigDateBlock {
   startDate: string;
@@ -83,6 +93,33 @@ export interface ConfigWebChat {
   monthlyCap: number;
 }
 
+/** Imagen del diseño en el fichero: tipo y bytes ya normalizados en base64 (011). */
+export interface ConfigChatImage {
+  type: 'image/png' | 'image/jpeg' | 'image/webp';
+  data: string;
+}
+
+/** Diseño del chat web (011, contracts/config-file-chat-design.md). */
+export interface ConfigChatDesign {
+  primaryColor: string;
+  onPrimaryColor: string;
+  backgroundColor: string;
+  textColor: string;
+  botBubbleColor: string;
+  shape: 'square' | 'soft' | 'round';
+  position: 'right' | 'left';
+  size: 'small' | 'medium' | 'large';
+  chatName: string | null;
+  welcomeText: string | null;
+  placeholder: string | null;
+  sendLabel: string | null;
+  images: {
+    logo: ConfigChatImage | null;
+    avatar: ConfigChatImage | null;
+    icon: ConfigChatImage | null;
+  };
+}
+
 export interface ConfigAlertDestinations {
   whatsapp: string | null;
   email: string | null;
@@ -100,6 +137,8 @@ export interface ConfigDocument {
   tone: { addressForm: AddressForm; styleDescription: string | null } | null;
   handoff: ConfigHandoff | null;
   webChat: ConfigWebChat;
+  /** `null`: sin diseño, el chat tiene el aspecto original (011). */
+  chatDesign: ConfigChatDesign | null;
   /** Solo si el fichero incluye los destinos de los avisos (FR-005). */
   alertDestinations?: ConfigAlertDestinations;
 }
@@ -132,6 +171,7 @@ export const SECTION_KEYS = [
   'tone',
   'handoff',
   'webChat',
+  'chatDesign',
   'alertDestinations',
 ] as const;
 
@@ -152,6 +192,7 @@ export const SECTION_LABELS: Record<IssueSection, string> = {
   tone: 'Tono',
   handoff: 'Contacto de derivación',
   webChat: 'Chat web',
+  chatDesign: 'Diseño del chat',
   alertDestinations: 'Destinos de los avisos de derivación',
 };
 
@@ -282,6 +323,25 @@ export const COLUMN_COVERAGE: Readonly<Record<string, Readonly<Record<string, st
     whatsapp_phone: 'alertDestinations.whatsapp',
     email: 'alertDestinations.email',
   },
+  chat_design: {
+    primary_color: 'chatDesign.primaryColor',
+    on_primary_color: 'chatDesign.onPrimaryColor',
+    background_color: 'chatDesign.backgroundColor',
+    text_color: 'chatDesign.textColor',
+    bot_bubble_color: 'chatDesign.botBubbleColor',
+    shape: 'chatDesign.shape',
+    position: 'chatDesign.position',
+    size: 'chatDesign.size',
+    chat_name: 'chatDesign.chatName',
+    welcome_text: 'chatDesign.welcomeText',
+    placeholder_text: 'chatDesign.placeholder',
+    send_label: 'chatDesign.sendLabel',
+  },
+  chat_design_image: {
+    slot: 'chatDesign.images.<slot>',
+    mime_type: 'chatDesign.images.<slot>.type',
+    bytes: 'chatDesign.images.<slot>.data',
+  },
 };
 
 /**
@@ -306,4 +366,7 @@ export const EXCLUDED_COLUMNS: Readonly<Record<string, readonly string[]>> = {
   handoff_hours: ['id', 'contact_id', 'updated_at'],
   web_chat_settings: ['id', 'enabled', 'updated_at'],
   handoff_alerts: ['id', 'updated_at'],
+  // Huella, dimensiones y tamaño se derivan de los bytes (011).
+  chat_design: ['id', 'updated_at'],
+  chat_design_image: ['design_id', 'sha256', 'width', 'height', 'byte_size', 'updated_at'],
 };

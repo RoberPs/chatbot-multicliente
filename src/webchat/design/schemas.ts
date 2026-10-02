@@ -10,6 +10,7 @@ import { z } from 'zod';
 import { contrastFailures } from './contrast.js';
 import {
   COLOR_FIELDS,
+  IMAGE_TYPES,
   SLOTS,
   type Slot,
   ORIGINAL_DESIGN,
@@ -20,7 +21,13 @@ import {
   type ColorField,
   type Hex,
 } from './defaults.js';
-import { validateDesignImage, type DesignImage, type ImageChange } from './images.js';
+import {
+  MAX_IMAGE_BYTES,
+  TOO_BIG_MESSAGE,
+  validateDesignImage,
+  type DesignImage,
+  type ImageChange,
+} from './images.js';
 
 export const COLOR_MESSAGE = 'Indica un color opaco en formato #RRGGBB';
 export const OPTION_MESSAGE = 'Opción no válida';
@@ -300,4 +307,94 @@ export function validateChatDesignWithImages(
   if (base.ok && imageIssues.length === 0) return { ok: true, options: base.options, images };
   const issues = [...(base.ok ? [] : base.issues), ...imageIssues];
   return { ok: false, issues, errors: issuesToErrors(issues) };
+}
+
+// --- Fichero de configuración (011, contracts/config-file-chat-design.md) ----------------
+
+export const MISSING_FIELD_MESSAGE = 'Falta este campo';
+export const BASE64_MESSAGE = 'La imagen no está en base64';
+export const TYPE_MISMATCH_MESSAGE = 'El tipo declarado no coincide con el contenido de la imagen';
+
+/** La clave tiene que estar, con su valor o `null` (un campo que falta no se da por vacío). */
+const required = <T extends z.ZodType>(schema: T) =>
+  z.preprocess((value, ctx) => {
+    if (value === undefined) {
+      ctx.addIssue({ code: 'custom', message: MISSING_FIELD_MESSAGE });
+      return z.NEVER;
+    }
+    return value;
+  }, schema);
+
+const BASE64 = /^[A-Za-z0-9+/]*={0,2}$/;
+/** Base64 de 256 KB: lo que pase de aquí ni se decodifica. */
+const MAX_BASE64_LENGTH = Math.ceil(MAX_IMAGE_BYTES / 3) * 4;
+
+/**
+ * Imagen del fichero: el tipo declarado tiene que coincidir con el detectado y la imagen cumplir
+ * R7. Sale normalizada (sin metadatos), así que reimportar no muestra cambios (SC-008).
+ */
+const fileImageSchema = z
+  .strictObject({ type: z.enum(IMAGE_TYPES), data: z.string() })
+  .transform((image, ctx) => {
+    const { data } = image;
+    if (data.length % 4 !== 0 || !BASE64.test(data)) {
+      ctx.addIssue({ code: 'custom', path: ['data'], message: BASE64_MESSAGE });
+      return z.NEVER;
+    }
+    if (data.length > MAX_BASE64_LENGTH) {
+      ctx.addIssue({ code: 'custom', path: ['data'], message: TOO_BIG_MESSAGE });
+      return z.NEVER;
+    }
+    const result = validateDesignImage({ bytes: Buffer.from(data, 'base64'), truncated: false });
+    if (!result.ok) {
+      ctx.addIssue({ code: 'custom', path: ['data'], message: result.message });
+      return z.NEVER;
+    }
+    if (result.image.mimeType !== image.type) {
+      ctx.addIssue({ code: 'custom', path: ['type'], message: TYPE_MISMATCH_MESSAGE });
+      return z.NEVER;
+    }
+    return { type: result.image.mimeType, data: result.image.bytes.toString('base64') };
+  });
+
+/**
+ * Sección `chatDesign` del fichero: objetos estrictos, las mismas reglas que el panel
+ * (FR-036). El contraste lo comprueba `fileContrastIssues`, sobre el fichero tal cual, para que
+ * salga a la vez que los errores de los campos.
+ */
+export const chatDesignFileSchema = z.strictObject({
+  primaryColor: hexColor,
+  onPrimaryColor: hexColor,
+  backgroundColor: hexColor,
+  textColor: hexColor,
+  botBubbleColor: hexColor,
+  shape: z.enum(SHAPES),
+  position: z.enum(POSITIONS),
+  size: z.enum(SIZES),
+  chatName: required(textSchema('chatName')),
+  welcomeText: required(textSchema('welcomeText')),
+  placeholder: required(textSchema('placeholder')),
+  sendLabel: required(textSchema('sendLabel')),
+  images: z.strictObject({
+    logo: required(fileImageSchema.nullable()),
+    avatar: required(fileImageSchema.nullable()),
+    icon: required(fileImageSchema.nullable()),
+  }),
+});
+
+/**
+ * Parejas sin contraste en la sección del fichero tal cual (solo con los colores bien escritos:
+ * los demás ya tienen su error). Cada pareja se marca en su primer color.
+ */
+export function fileContrastIssues(raw: unknown): Array<{ path: string[]; message: string }> {
+  if (typeof raw !== 'object' || raw === null || Array.isArray(raw)) return [];
+  const colors: Partial<Record<ColorField, Hex>> = {};
+  for (const field of COLOR_FIELDS) {
+    const parsed = hexColor.safeParse((raw as Record<string, unknown>)[field]);
+    if (parsed.success) colors[field] = parsed.data;
+  }
+  return contrastFailures(colors).map((failure) => ({
+    path: [failure.pair.fg],
+    message: failure.message,
+  }));
 }

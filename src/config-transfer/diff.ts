@@ -7,9 +7,13 @@ import { formatCents } from '../knowledge/money.js';
 import { splitMinutes } from '../knowledge/schemas/policies.js';
 import type { PriceType, WeeklySlot } from '../knowledge/types.js';
 import { WEEKDAY_SHORT } from '../knowledge/warnings.js';
+import { ORIGINAL_DESIGN } from '../webchat/design/defaults.js';
+import { validateDesignImage } from '../webchat/design/images.js';
 import {
   normalizeKey,
   SECTION_LABELS,
+  type ConfigChatDesign,
+  type ConfigChatImage,
   type ConfigDateBlock,
   type ConfigDocument,
   type FieldChange,
@@ -347,6 +351,78 @@ function webChatDiff(before: ConfigDocument, after: ConfigDocument): SectionDiff
   return s;
 }
 
+// --- Diseño del chat (011, data-model §6) --------------------------------------------------
+
+const SHAPE_LABELS = { square: 'Recta', soft: 'Suave', round: 'Redondeada' } as const;
+const POSITION_LABELS = { right: 'Abajo a la derecha', left: 'Abajo a la izquierda' } as const;
+const SIZE_LABELS = { small: 'Pequeño', medium: 'Mediano', large: 'Grande' } as const;
+const IMAGE_LABELS = { logo: 'Logo', avatar: 'Avatar', icon: 'Icono del botón' } as const;
+const IMAGE_FORMATS: Record<ConfigChatImage['type'], string> = {
+  'image/png': 'PNG',
+  'image/jpeg': 'JPEG',
+  'image/webp': 'WebP',
+};
+
+/** Sin diseño, los valores efectivos son los originales (y sin imágenes). */
+const ORIGINAL_CHAT_DESIGN: ConfigChatDesign = {
+  ...ORIGINAL_DESIGN,
+  images: { logo: null, avatar: null, icon: null },
+};
+
+/** "Imagen (PNG, 128 × 128)", con la huella para saber si ha cambiado. */
+function imageInfo(image: ConfigChatImage | null): { label: string; sha256: string } | null {
+  if (!image) return null;
+  const result = validateDesignImage({ bytes: Buffer.from(image.data, 'base64'), truncated: false });
+  if (!result.ok) return { label: `Imagen (${IMAGE_FORMATS[image.type]})`, sha256: image.data };
+  const { width, height, sha256 } = result.image;
+  return { label: `Imagen (${IMAGE_FORMATS[image.type]}, ${width} × ${height})`, sha256 };
+}
+
+function imageChange(slot: keyof typeof IMAGE_LABELS, b: ConfigChatDesign, a: ConfigChatDesign) {
+  const before = imageInfo(b.images[slot]);
+  const after = imageInfo(a.images[slot]);
+  if (before?.sha256 === after?.sha256) return [];
+  const label = IMAGE_LABELS[slot];
+  if (before && after && before.label === after.label) {
+    // Misma descripción pero otra imagen: se dice que cambia.
+    return [{ field: `images.${slot}`, fieldLabel: label, before: before.label, after: `${after.label}, otra imagen` }];
+  }
+  return change(`images.${slot}`, label, before?.label ?? EMPTY, after?.label ?? EMPTY);
+}
+
+/**
+ * Diseño del chat: alta o baja del diseño y, campo a campo, los valores **efectivos** que
+ * cambian (sin diseño = los originales). Las imágenes se comparan por su huella.
+ */
+function chatDesignDiff(before: ConfigDocument, after: ConfigDocument): SectionDiff {
+  const s = emptySection('chatDesign');
+  const bDesign = before.chatDesign ?? null;
+  const aDesign = after.chatDesign ?? null;
+  if (!bDesign && aDesign) s.added.push({ label: SECTION_LABELS.chatDesign });
+  if (bDesign && !aDesign) s.removed.push({ label: `${SECTION_LABELS.chatDesign} (vuelve al aspecto original)` });
+  const b = bDesign ?? ORIGINAL_CHAT_DESIGN;
+  const a = aDesign ?? ORIGINAL_CHAT_DESIGN;
+  const fields = [
+    ...change('primaryColor', 'Color principal', b.primaryColor, a.primaryColor),
+    ...change('onPrimaryColor', 'Texto sobre el principal', b.onPrimaryColor, a.onPrimaryColor),
+    ...change('backgroundColor', 'Fondo del chat', b.backgroundColor, a.backgroundColor),
+    ...change('textColor', 'Texto del chat', b.textColor, a.textColor),
+    ...change('botBubbleColor', 'Fondo de los mensajes del bot', b.botBubbleColor, a.botBubbleColor),
+    ...change('shape', 'Forma', SHAPE_LABELS[b.shape], SHAPE_LABELS[a.shape]),
+    ...change('position', 'Posición', POSITION_LABELS[b.position], POSITION_LABELS[a.position]),
+    ...change('size', 'Tamaño', SIZE_LABELS[b.size], SIZE_LABELS[a.size]),
+    ...change('chatName', 'Nombre del chat', text(b.chatName), text(a.chatName)),
+    ...change('welcomeText', 'Bienvenida', longText(b.welcomeText), longText(a.welcomeText)),
+    ...change('placeholder', 'Texto de ayuda', text(b.placeholder), text(a.placeholder)),
+    ...change('sendLabel', 'Botón Enviar', text(b.sendLabel), text(a.sendLabel)),
+    ...imageChange('logo', b, a),
+    ...imageChange('avatar', b, a),
+    ...imageChange('icon', b, a),
+  ];
+  if (fields.length > 0) s.modified.push({ label: SECTION_LABELS.chatDesign, fields });
+  return s;
+}
+
 function alertsDiff(before: ConfigDocument, after: ConfigDocument): SectionDiff {
   const s = emptySection('alertDestinations');
   const b = before.alertDestinations;
@@ -373,6 +449,7 @@ export function diffConfig(before: ConfigDocument, after: ConfigDocument, opts: 
     toneDiff(before, after),
     handoffDiff(before, after),
     webChatDiff(before, after),
+    chatDesignDiff(before, after),
     alertsDiff(before, after),
   ].filter(hasChanges);
 

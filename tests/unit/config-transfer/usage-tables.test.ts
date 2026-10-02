@@ -21,8 +21,8 @@ describe('tablas de consumo fuera del formato de la 008', () => {
     }
   });
 
-  it('formatVersion no cambia con la 010', () => {
-    expect(CURRENT_FORMAT_VERSION).toBe(1);
-    expect(Object.keys(UPDATERS)).toEqual([]);
+  it('formatVersion no cambia con la 010 (la 2 es la del diseño del chat de la 011)', () => {
+    expect(CURRENT_FORMAT_VERSION).toBe(2);
+    expect(Object.keys(UPDATERS)).toEqual(['1']);
   });
 });

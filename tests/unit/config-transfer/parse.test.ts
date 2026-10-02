@@ -3,6 +3,7 @@
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
+import { UPDATERS } from '../../../src/config-transfer/format.js';
 import { parseConfigFile, type ParseOptions } from '../../../src/config-transfer/parse.js';
 
 const FIXTURES = join(import.meta.dirname, '..', '..', 'fixtures', 'config');
@@ -81,7 +82,9 @@ describe('parseConfigFile', () => {
       f.money = f.business.currency;
       delete f.business.currency;
     });
+    // La cadena sigue con los actualizadores reales (1 → 2 de la 011).
     const updaters = {
+      ...UPDATERS,
       0: (raw: unknown) => {
         const { money, ...rest } = raw as Json;
         return { ...rest, formatVersion: 1, business: { ...rest.business, currency: money } };
@@ -96,7 +99,7 @@ describe('parseConfigFile', () => {
     // Sin su actualizador, la misma versión no se admite.
     expect(parseConfigFile(v0, OPTIONS)).toMatchObject({ reason: 'unsupported_version' });
     // Y lo que devuelve el actualizador pasa por el esquema actual.
-    const broken = parseConfigFile(v0, { ...OPTIONS, updaters: { 0: (raw) => raw } });
+    const broken = parseConfigFile(v0, { ...OPTIONS, updaters: { ...UPDATERS, 0: (raw) => raw } });
     expect(broken).toMatchObject({ ok: false, reason: 'invalid' });
   });
 
@@ -183,5 +186,28 @@ describe('parseConfigFile', () => {
       OPTIONS,
     );
     expect(result).toMatchObject({ ok: false, sourceInstance: null });
+  });
+});
+
+describe('formato 2: diseño del chat (011)', () => {
+  it('un fichero de la versión 1 se actualiza con chatDesign: null', () => {
+    const result = parseConfigFile(bytes('v1-full.json'), OPTIONS);
+    if (!result.ok) throw new Error(JSON.stringify(result.issues));
+    expect(result.fileVersion).toBe(1);
+    expect(result.document.chatDesign).toBeNull();
+    expect(result.document.services.map((s) => s.name)).toEqual(['Servicio A', 'Servicio B']);
+  });
+
+  it('un fichero de la versión 2 con diseño se acepta', () => {
+    const result = parseConfigFile(bytes('v2-chat-design.json'), OPTIONS);
+    if (!result.ok) throw new Error(JSON.stringify(result.issues));
+    expect(result.fileVersion).toBe(2);
+    expect(result.document.chatDesign).toMatchObject({ shape: 'soft', position: 'left', size: 'large' });
+    expect(result.document.chatDesign?.images.logo?.type).toBe('image/png');
+  });
+
+  it('un fichero de la versión 3 se rechaza como versión posterior', () => {
+    const result = parseConfigFile(variant((f) => (f.formatVersion = 3)), OPTIONS);
+    expect(result).toMatchObject({ ok: false, reason: 'future_version' });
   });
 });

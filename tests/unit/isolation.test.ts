@@ -95,10 +95,11 @@ describe('aislamiento: exportar e importar la configuración (008)', () => {
     expect(bad).toEqual([]);
   });
 
-  it('@fastify/multipart solo se importa desde la ruta de importación del panel', () => {
+  it('@fastify/multipart solo se importa desde las rutas del panel que suben ficheros', () => {
     const users = files(SRC)
       .filter((file) => imports(file).includes('@fastify/multipart'))
       .map((file) => relative(SRC, file).replaceAll('\\', '/'));
-    expect(users).toEqual(['admin/routes/config.ts']);
+    // La subida de la 008 y el guardado con imágenes de la 011 (research R8), cada uno en su contexto.
+    expect(users.sort()).toEqual(['admin/routes/chat-design.ts', 'admin/routes/config.ts']);
   });
 });

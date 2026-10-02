@@ -6,6 +6,8 @@
 import { createHash } from 'node:crypto';
 import type { BusinessStatus, WeeklySlot } from '../knowledge/types.js';
 import type {
+  ConfigChatDesign,
+  ConfigChatImage,
   ConfigDateBlock,
   ConfigDocument,
   ConfigFileEnvelope,
@@ -30,6 +32,25 @@ const service = (s: ConfigService) => ({
   durationMinutes: s.durationMinutes,
   bookable: s.bookable,
   active: s.active,
+});
+
+const image = (i: ConfigChatImage | null) => i && { type: i.type, data: i.data };
+
+/** Diseño del chat en el orden del contrato (011). */
+const chatDesign = (d: ConfigChatDesign) => ({
+  primaryColor: d.primaryColor,
+  onPrimaryColor: d.onPrimaryColor,
+  backgroundColor: d.backgroundColor,
+  textColor: d.textColor,
+  botBubbleColor: d.botBubbleColor,
+  shape: d.shape,
+  position: d.position,
+  size: d.size,
+  chatName: d.chatName,
+  welcomeText: d.welcomeText,
+  placeholder: d.placeholder,
+  sendLabel: d.sendLabel,
+  images: { logo: image(d.images.logo), avatar: image(d.images.avatar), icon: image(d.images.icon) },
 });
 
 const resource = (r: ConfigResource) => ({
@@ -77,6 +98,10 @@ function canonicalDocument(doc: ConfigDocument, includeAlerts: boolean) {
       dailyCap: webChat.dailyCap,
       monthlyCap: webChat.monthlyCap,
     },
+    // Un documento de la versión 1 (sin la sección) se reproduce tal cual.
+    ...(doc.chatDesign === undefined
+      ? {}
+      : { chatDesign: doc.chatDesign && chatDesign(doc.chatDesign) }),
     ...(includeAlerts && doc.alertDestinations
       ? {
           alertDestinations: {

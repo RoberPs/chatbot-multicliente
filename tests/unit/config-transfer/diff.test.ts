@@ -203,3 +203,58 @@ describe('diffConfig', () => {
     });
   });
 });
+
+describe('diffConfig: diseño del chat (011, data-model §6)', () => {
+  const withDesign = (): ConfigDocument => structuredClone(load('v2-chat-design.json'));
+  const design = (doc: ConfigDocument) => doc.chatDesign!;
+  const diff = (before: ConfigDocument, after: ConfigDocument) =>
+    section(diffConfig(before, after, OPTS), 'chatDesign');
+  const fields = (d: ReturnType<typeof diff>) =>
+    Object.fromEntries((d?.modified[0]?.fields ?? []).map((f) => [f.fieldLabel, [f.before, f.after]]));
+
+  it('mismo diseño → sin cambios', () => {
+    expect(diff(withDesign(), withDesign())).toBeUndefined();
+  });
+
+  it('destino sin diseño y fichero con diseño → añadido, con los campos efectivos que cambian', () => {
+    const d = diff(base(), withDesign());
+    expect(d?.sectionLabel).toBe('Diseño del chat');
+    expect(d?.added).toEqual([{ label: 'Diseño del chat' }]);
+    const f = fields(d);
+    expect(f['Color principal']).toEqual(['#1f5fbf', '#0b6e4f']);
+    expect(f.Forma).toEqual(['Redondeada', 'Suave']);
+    expect(f['Posición']).toEqual(['Abajo a la derecha', 'Abajo a la izquierda']);
+    expect(f['Tamaño']).toEqual(['Mediano', 'Grande']);
+    expect(f['Nombre del chat']).toEqual(['—', 'Atención al cliente']);
+    expect(f.Logo).toEqual(['—', 'Imagen (PNG, 64 × 64)']);
+    expect(f.Avatar).toEqual(['—', 'Imagen (JPEG, 64 × 64)']);
+    expect(f['Icono del botón']).toEqual(['—', 'Imagen (WebP, 64 × 64)']);
+    // Lo que no cambia respecto del original no aparece.
+    expect(f['Texto sobre el principal']).toBeUndefined();
+  });
+
+  it('destino con diseño y fichero sin él → "vuelve al aspecto original"', () => {
+    const d = diff(withDesign(), base());
+    expect(d?.removed).toEqual([{ label: 'Diseño del chat (vuelve al aspecto original)' }]);
+    expect(fields(d).Logo).toEqual(['Imagen (PNG, 64 × 64)', '—']);
+  });
+
+  it('cambios campo a campo con sus etiquetas; imágenes por huella', () => {
+    const after = withDesign();
+    design(after).shape = 'square';
+    design(after).sendLabel = 'Mandar';
+    design(after).images.avatar = null;
+    const png = design(after).images.logo!;
+    // Otra imagen PNG de 64 × 64: misma descripción, distinta huella.
+    design(after).images.logo = {
+      type: 'image/png',
+      data: readFileSync(join(import.meta.dirname, '..', '..', 'fixtures', 'images', 'animated.png')).toString('base64'),
+    };
+    const f = fields(diff(withDesign(), after));
+    expect(f.Forma).toEqual(['Suave', 'Recta']);
+    expect(f['Botón Enviar']).toEqual(['—', 'Mandar']);
+    expect(f.Avatar).toEqual(['Imagen (JPEG, 64 × 64)', '—']);
+    expect(f.Logo).toEqual(['Imagen (PNG, 64 × 64)', 'Imagen (PNG, 64 × 64), otra imagen']);
+    expect(png.type).toBe('image/png');
+  });
+});

@@ -35,6 +35,7 @@ import {
   WEEKDAY_MESSAGE,
   weekdaySchema,
 } from '../knowledge/schemas/weekly-slots.js';
+import { chatDesignFileSchema, fileContrastIssues } from '../webchat/design/schemas.js';
 import {
   CAP_MESSAGE,
   MAX_ALLOWED_ORIGINS,
@@ -252,7 +253,7 @@ const envelopeShape = {
   }),
 };
 
-/** Fichero completo de la versión 1: sobre y secciones. */
+/** Fichero completo de la versión actual: sobre y secciones. */
 export const configFileSchema = (region: CountryCode) =>
   z
     .strictObject({
@@ -267,6 +268,8 @@ export const configFileSchema = (region: CountryCode) =>
       tone: present(toneSchema.nullable()),
       handoff: present(handoffSchema(region).nullable()),
       webChat: webChatSchema,
+      // 011: mismas reglas que el panel; null = sin diseño (aspecto original).
+      chatDesign: present(chatDesignFileSchema.nullable()),
       alertDestinations: alertDestinationsSchema(region).optional(),
     })
     .transform(
@@ -290,6 +293,7 @@ export const configFileSchema = (region: CountryCode) =>
           tone: file.tone,
           handoff: file.handoff,
           webChat: file.webChat,
+          chatDesign: file.chatDesign,
           ...(file.alertDestinations ? { alertDestinations: file.alertDestinations } : {}),
         },
       }),
@@ -416,6 +420,11 @@ export function crossCheckConfig(raw: unknown, region: CountryCode): RawIssue[] 
         issues.push({ path: ['webChat', 'monthlyCap'], message: MONTHLY_BELOW_DAILY_MESSAGE });
       }
     }
+  }
+
+  // Contraste del diseño del chat (011): sobre el fichero tal cual, a la vez que los campos.
+  for (const issue of fileContrastIssues(raw.chatDesign)) {
+    issues.push({ path: ['chatDesign', ...issue.path], message: issue.message });
   }
 
   return issues;

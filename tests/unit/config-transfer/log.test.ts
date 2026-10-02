@@ -61,6 +61,7 @@ describe('countsOf y changesOf', () => {
       tone: 1,
       handoff: 1,
       webChat: 1,
+      chatDesign: 0,
       alertDestinations: 1,
     });
     expect(changes.services).toEqual({ added: 1, modified: 1, removed: 0 });
@@ -166,5 +167,48 @@ describe('eventos del catálogo', () => {
     configImportCancelled(logger, { reason: 'timeout', sourceInstance: null });
     // @ts-expect-error: ningún campo de texto libre
     configExported(logger, { includesAlerts: false, counts, fileName: 'x.json' });
+  });
+});
+
+describe('diseño del chat en los registros (011)', () => {
+  const v2 = JSON.parse(
+    readFileSync(join(import.meta.dirname, '..', '..', 'fixtures', 'config', 'v2-chat-design.json'), 'utf8'),
+  ) as unknown;
+  const withDesign = validateConfigFile(v2, 'ES');
+  if (!withDesign.ok) throw new Error('fixture no válido');
+
+  it('counts.chatDesign es 0 o 1 y changes.chatDesign solo lleva números', () => {
+    expect(countsOf(withDesign.document).chatDesign).toBe(1);
+    expect(countsOf(doc).chatDesign).toBe(0);
+    const diffWithDesign: SectionDiff[] = [
+      {
+        section: 'chatDesign',
+        sectionLabel: 'Diseño del chat',
+        added: [{ label: 'Diseño del chat' }],
+        modified: [{ label: 'Diseño del chat', fields: [] }],
+        removed: [],
+        reordered: false,
+      },
+    ];
+    expect(changesOf(diffWithDesign).chatDesign).toEqual({ added: 1, modified: 1, removed: 0 });
+  });
+
+  it('ningún registro lleva textos, colores ni bytes del diseño', () => {
+    const { logger, lines } = capture();
+    const counts2 = countsOf(withDesign.document);
+    configExported(logger, { includesAlerts: false, counts: counts2 });
+    configImportPreviewed(logger, {
+      sourceInstance: 'demo-01',
+      formatVersion: 2,
+      sameInstance: false,
+      counts: counts2,
+      changes: changesOf([]),
+      outcome: 'will_apply',
+    });
+    const text = JSON.stringify(lines);
+    const design = withDesign.document.chatDesign!;
+    for (const secret of [design.chatName!, design.welcomeText!, design.primaryColor, design.images.logo!.data.slice(0, 20)]) {
+      expect(text).not.toContain(secret);
+    }
   });
 });

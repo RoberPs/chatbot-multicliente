@@ -17,7 +17,11 @@ import {
   type ImportResult,
   type ImportSource,
 } from '../../src/config-transfer/service.js';
-import type { ConfigDocument, ConfigFileEnvelope } from '../../src/config-transfer/format.js';
+import {
+  CURRENT_FORMAT_VERSION,
+  type ConfigDocument,
+  type ConfigFileEnvelope,
+} from '../../src/config-transfer/format.js';
 import type { Db } from '../../src/db/client.js';
 import {
   conversation,
@@ -275,6 +279,8 @@ const FINGERPRINT_TABLES = [
   'handoff_hours',
   'web_chat_settings',
   'handoff_alerts',
+  'chat_design',
+  'chat_design_image',
   'config_pre_import',
 ];
 
@@ -304,7 +310,7 @@ export function envelopeFor(
 ): ConfigFileEnvelope {
   return {
     format: 'business-config',
-    formatVersion: 1,
+    formatVersion: CURRENT_FORMAT_VERSION,
     exportedAt: '2026-09-30T10:15:00.000Z',
     source: { instanceId: 'demo-01', schema: '0005_config_transfer' },
     includesAlertDestinations: doc.alertDestinations !== undefined,
@@ -382,6 +388,7 @@ export function buildLargeDocument(size: {
     tone: { addressForm: 'formal', styleDescription: null },
     handoff: { channels: [{ type: 'phone', value: '+34910123456' }], hours: [] },
     webChat: { allowedOrigins: [], privacyUrl: null, dailyCap: 200, monthlyCap: 3000 },
+    chatDesign: null,
   };
 }
 

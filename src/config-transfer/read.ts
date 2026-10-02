@@ -7,12 +7,15 @@ import { readHandoffAlerts } from '../handoff/settings.js';
 import { loadKnowledgeState } from '../knowledge/state.js';
 import type { KnowledgeState } from '../knowledge/types.js';
 import { readWebChatSettings } from '../webchat/settings.js';
-import type { ConfigDocument, ConfigInfo } from './format.js';
+import type { Slot } from '../webchat/design/defaults.js';
+import { readChatDesign, readDesignImageBytes } from '../webchat/design/store.js';
+import type { ConfigChatDesign, ConfigChatImage, ConfigDocument, ConfigInfo } from './format.js';
 
 /** Secciones del documento a partir del estado ya cargado (sin destinos de avisos). */
 export function documentFromState(
   state: KnowledgeState,
   webChat: ConfigDocument['webChat'],
+  chatDesign: ConfigDocument['chatDesign'],
 ): ConfigDocument {
   const serviceNames = new Map(state.services.map((s) => [s.id, s.name]));
   return {
@@ -76,6 +79,38 @@ export function documentFromState(
       hours: state.handoff.hours,
     },
     webChat,
+    chatDesign,
+  };
+}
+
+/**
+ * Diseño del chat en la forma del fichero (011): las opciones que se aplican y las imágenes tal
+ * como están guardadas (ya normalizadas), con las claves en el orden del contrato. `null` sin
+ * diseño.
+ */
+export async function readChatDesignDocument(tx: Tx): Promise<ConfigChatDesign | null> {
+  const design = await readChatDesign(tx);
+  if (!design.saved) return null;
+  const image = async (slot: Slot): Promise<ConfigChatImage | null> => {
+    if (!design.images[slot]) return null;
+    const stored = await readDesignImageBytes(tx, slot);
+    return stored ? { type: stored.mimeType, data: stored.bytes.toString('base64') } : null;
+  };
+  const o = design.options;
+  return {
+    primaryColor: o.primaryColor,
+    onPrimaryColor: o.onPrimaryColor,
+    backgroundColor: o.backgroundColor,
+    textColor: o.textColor,
+    botBubbleColor: o.botBubbleColor,
+    shape: o.shape,
+    position: o.position,
+    size: o.size,
+    chatName: o.chatName,
+    welcomeText: o.welcomeText,
+    placeholder: o.placeholder,
+    sendLabel: o.sendLabel,
+    images: { logo: await image('logo'), avatar: await image('avatar'), icon: await image('icon') },
   };
 }
 
@@ -93,7 +128,7 @@ export async function readConfigDocument(tx: Tx, opts: ReadOptions): Promise<Con
     privacyUrl: settings.privacyUrl,
     dailyCap: settings.dailyCap,
     monthlyCap: settings.monthlyCap,
-  });
+  }, await readChatDesignDocument(tx));
   if (!opts.includeAlerts) return doc;
   const alerts = await readHandoffAlerts(tx);
   return { ...doc, alertDestinations: { whatsapp: alerts.whatsapp, email: alerts.email } };
@@ -119,7 +154,7 @@ export async function readConfigWithInfo(
       privacyUrl: settings.privacyUrl,
       dailyCap: settings.dailyCap,
       monthlyCap: settings.monthlyCap,
-    }),
+    }, await readChatDesignDocument(tx)),
     alertDestinations: { whatsapp: alerts.whatsapp, email: alerts.email },
   };
   return {

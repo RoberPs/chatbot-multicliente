@@ -34,6 +34,7 @@ export function countsOf(doc: ConfigDocument): SectionCounts {
     tone: doc.tone ? 1 : 0,
     handoff: doc.handoff ? 1 : 0,
     webChat: 1,
+    chatDesign: doc.chatDesign ? 1 : 0,
     alertDestinations: doc.alertDestinations ? 1 : 0,
   };
 }
