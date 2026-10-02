@@ -3,6 +3,7 @@
  * de estas interfaces; los adaptadores (canal, modelo, transcripción) viven fuera.
  */
 import { randomUUID } from 'node:crypto';
+import type { TokenUsage } from '../usage/types.js';
 import type { ModelReply, ReplyContext } from './types.js';
 
 export type { Channel, ChannelPolicies, ChannelPolicy } from './channels.js';
@@ -20,8 +21,15 @@ export class ChatModelError extends Error {
 }
 
 export interface ChatModel {
-  /** Una sola llamada; lanza ChatModelError si no hay respuesta válida en el plazo. */
-  reply(input: ReplyContext, opts: { signal: AbortSignal; feedback?: string }): Promise<ModelReply>;
+  /**
+   * Una sola llamada; lanza ChatModelError si no hay respuesta válida en el plazo. Si el
+   * proveedor responde (aunque la respuesta se descarte), llama una vez a `onUsage` con sus
+   * tokens antes de devolver o lanzar (010, R1).
+   */
+  reply(
+    input: ReplyContext,
+    opts: { signal: AbortSignal; feedback?: string; onUsage?: (usage: TokenUsage) => void },
+  ): Promise<ModelReply>;
 }
 
 export interface Transcript {

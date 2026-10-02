@@ -5,8 +5,13 @@
  */
 import type { FastifyInstance, LightMyRequestResponse } from 'fastify';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { modelPrice, modelUsage, usageSettings } from '../../src/db/schema.js';
 import { createLifecycle } from '../../src/health/lifecycle.js';
-import type { HealthReport, HealthStatus } from '../../src/health/report.js';
+import {
+  createInstanceHealth,
+  type HealthReport,
+  type HealthStatus,
+} from '../../src/health/report.js';
 import { buildTestApp, login, TEST_SESSION_SECRET } from '../helpers/app.js';
 import { seedInstance } from '../helpers/backup.js';
 import { createTestDatabase, resetDb, type TestDatabase } from '../helpers/db.js';
@@ -22,6 +27,8 @@ const reportOf = (status: HealthStatus): HealthReport => ({
     applied: status === 'not_ready' ? null : status === 'ok' ? EXPECTED : { index: 6, tag: null },
     expected: EXPECTED,
   },
+  // 010: el tope solo se informa con el esquema esperado.
+  spendCap: status === 'ok' ? 'warning' : null,
 });
 
 /** Claves permitidas por el contrato en cualquier respuesta. */
@@ -35,6 +42,7 @@ const ALLOWED_KEYS = new Set([
   'index',
   'tag',
   'error',
+  'spendCap',
 ]);
 
 function keysOf(value: unknown): string[] {
@@ -171,6 +179,7 @@ describe('GET /health con credencial', () => {
         instanceId: 'demo-01',
         coreVersion: '1.4.0',
         schema: reportOf(status).schema,
+        spendCap: reportOf(status).spendCap,
       });
       expect(res.headers['cache-control']).toBe('no-store');
       await app.close();
@@ -247,6 +256,59 @@ describe('límite de peticiones', () => {
     // Otra IP sigue atendida.
     expect((await health(app)).statusCode).toBe(200);
     await app.close();
+  });
+});
+
+describe('estado del tope de gasto (010, US3-12, FR-023a)', () => {
+  it('sin credencial solo {status}; con ella, spendCap sin importes, precios ni moneda', async () => {
+    await t.db.insert(modelPrice).values({
+      model: 'modelo-de-salud',
+      inputMicrosPerMtok: 3_000_000n,
+      outputMicrosPerMtok: 0n,
+      cacheWriteMicrosPerMtok: 0n,
+      cacheReadMicrosPerMtok: 0n,
+    });
+    await t.db
+      .update(usageSettings)
+      .set({ currency: 'GBP', capEnabled: true, monthlyCapCents: 4321 });
+    const now = new Date();
+    await t.db.insert(modelUsage).values({
+      at: now,
+      day: new Intl.DateTimeFormat('en-CA', { timeZone: 'Europe/Madrid' }).format(now),
+      channel: 'whatsapp',
+      purpose: 'reply',
+      model: 'modelo-de-salud',
+      calls: 1,
+      inputTokens: 1,
+      outputTokens: 1,
+      cacheWriteTokens: 0,
+      cacheReadTokens: 0,
+      costPico: 5000n * 10_000_000_000n,
+      currency: 'GBP',
+    });
+    const lifecycle = createLifecycle();
+    lifecycle.markReady();
+    const real = createInstanceHealth({ databaseUrl: t.url, coreVersion: '1.4.0', lifecycle });
+    const app = await appWith({ secret: HEALTH_SECRET, report: () => real.report() });
+    try {
+      const open = await health(app);
+      expect(open.json()).toEqual({ status: 'ok' });
+
+      const full = await health(app, bearer(HEALTH_SECRET));
+      expect(full.statusCode).toBe(200);
+      expect(full.json()).toMatchObject({ status: 'ok', spendCap: 'reached' });
+      for (const value of ['GBP', '4321', '43,21', '5000', 'modelo-de-salud']) {
+        expect(full.body).not.toContain(value);
+      }
+    } finally {
+      await app.close();
+      await real.close?.();
+      await t.db.delete(modelUsage);
+      await t.db.delete(modelPrice);
+      await t.db
+        .update(usageSettings)
+        .set({ currency: 'USD', capEnabled: false, monthlyCapCents: null });
+    }
   });
 });
 

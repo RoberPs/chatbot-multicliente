@@ -7,6 +7,7 @@
  */
 import type { HandoffStep } from '../handoff/types.js';
 import type { KnowledgeSnapshot } from '../knowledge/types.js';
+import { addTokenUsage, type ResponseUsage, type TokenUsage } from '../usage/types.js';
 import type { ActivityLog, ReplyTemplate } from './activity-log.js';
 import type { Channel } from './channels.js';
 import { buildAllowedFacts, deriveFacts } from './facts.js';
@@ -26,7 +27,9 @@ import {
   mediaReply,
   rateLimitReply,
   safeReply,
+  unavailableContact,
   unavailableReply,
+  type Form,
 } from './templates.js';
 import type {
   ContactReason,
@@ -86,6 +89,11 @@ export interface Response {
   };
   /** Qué hizo la derivación en esta respuesta (005); se guarda en `reply_trace.handoff`. */
   handoff?: ReplyTrace['handoff'];
+  /**
+   * Tokens de todos los intentos al modelo que informaron uso (010, R2), también si la
+   * respuesta acabó en R-SAFE o R-ERR. Sin ninguno, no hay consumo que registrar.
+   */
+  usage?: ResponseUsage;
 }
 
 export interface ComposeInput {
@@ -235,6 +243,49 @@ export function unavailableResponse(
   return templateResponse(text, truncated, contact !== null, 'R-UNAVAILABLE');
 }
 
+/**
+ * Salida de modelo sintética de R-CAP (010, contracts/spend-cap-conversation.md): sin modelo no
+ * se reconocen quejas, ofertas ni datos; la derivación solo la abre el detector determinista.
+ */
+export function capModelReply(form: Form): ModelReply {
+  return {
+    body: unavailableReply(form),
+    handoffRequested: false,
+    offerContact: false,
+    bookingRequested: false,
+    needsRephrase: false,
+    mentionedServiceIds: [],
+    complaint: false,
+    acceptsHandoff: false,
+    refusesContact: false,
+    contactName: null,
+    contactPhone: null,
+  };
+}
+
+/**
+ * R-CAP (010, FR-016, FR-018): tope de gasto alcanzado en WhatsApp. Cuerpo de R-UNAVAILABLE con el
+ * contacto del negocio (o el de emergencia si no tiene), sin saludo ni modelo. Lleva la salida
+ * sintética para que la derivación decida igual que con el modelo.
+ */
+export function capResponse(
+  snapshot: KnowledgeSnapshot,
+  emergencyPhone: string | null,
+  texts: string[],
+): Response {
+  const form = formOf(snapshot.tone.addressForm);
+  const contact = unavailableContact(snapshot, emergencyPhone);
+  const { text, truncated } = joinParts({ body: unavailableReply(form), contact });
+  return {
+    ...templateResponse(text, truncated, contact !== null, 'R-CAP'),
+    model: {
+      reply: capModelReply(form),
+      handoffDetected: texts.some((t) => detectsHandoffRequest(t)),
+      fileNotice: null,
+    },
+  };
+}
+
 export function createResponder(deps: ResponderDeps) {
   const { chatModel, clock, activityLog } = deps;
   const settings = deps.settings ?? conversationSettings;
@@ -300,11 +351,20 @@ export function createResponder(deps: ResponderDeps) {
         input.pending.some((p) => p.text !== null && detectsHandoffRequest(p.text));
       const start = clock.now().getTime();
       const elapsed = () => clock.now().getTime() - start;
+      // Consumo de la respuesta: un registro con la suma de los intentos (010, R2).
+      let usage: ResponseUsage | undefined;
+      const onUsage = (tokens: TokenUsage) => {
+        usage = usage
+          ? { calls: usage.calls + 1, tokens: addTokenUsage(usage.tokens, tokens) }
+          : { calls: 1, tokens: { ...tokens } };
+      };
+      const withUsage = (response: Response): Response =>
+        usage ? { ...response, usage } : response;
       try {
         let reply: ModelReply;
         let feedback: string | undefined;
         for (let attempt = 1; ; attempt++) {
-          reply = await chatModel.reply(context, { signal: controller.signal, feedback });
+          reply = await chatModel.reply(context, { signal: controller.signal, feedback, onUsage });
           const guard = groundingGuard(reply.body, allowed);
           if (guard.ok) break;
           groundingRejections += 1;
@@ -315,7 +375,7 @@ export function createResponder(deps: ResponderDeps) {
           const remaining = settings.modelBudgetMs - elapsed();
           if (attempt >= 2 || remaining < settings.minRetryBudgetMs) {
             // Las banderas siguen valiendo para la derivación; el cuerpo no (005).
-            return {
+            return withUsage({
               ...compose(safeReply(form), 'template', 'R-SAFE'),
               modelMs: elapsed(),
               model: {
@@ -323,16 +383,16 @@ export function createResponder(deps: ResponderDeps) {
                 handoffDetected: detected(),
                 fileNotice: notice,
               },
-            };
+            });
           }
           feedback = groundingFeedback(offendingCategories(reply.body, allowed));
         }
         const handoffDetected = detected();
-        return {
+        return withUsage({
           ...compose(reply.body, needsContact(snapshot, reply, handoffDetected)),
           modelMs: elapsed(),
           model: { reply, handoffDetected, fileNotice: notice },
-        };
+        });
       } catch (error) {
         // FR-029: el modelo falla o se agota el plazo → disculpa con contacto.
         const failure = error instanceof ChatModelError ? error : new ChatModelError('api_error');
@@ -344,7 +404,7 @@ export function createResponder(deps: ResponderDeps) {
           },
           logContext,
         );
-        return { ...compose(errorReply(form), 'template', 'R-ERR'), modelMs: elapsed() };
+        return withUsage({ ...compose(errorReply(form), 'template', 'R-ERR'), modelMs: elapsed() });
       } finally {
         clearTimeout(timer);
       }

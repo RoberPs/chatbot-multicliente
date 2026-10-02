@@ -5,8 +5,8 @@
  */
 import { randomUUID } from 'node:crypto';
 import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
-import { message } from '../../src/db/schema.js';
-import { createTestBot, type TestBot } from '../helpers/bot.js';
+import { message, modelPrice, modelUsage, usageSettings } from '../../src/db/schema.js';
+import { createTestBot, TEST_LLM_MODEL, type TestBot } from '../helpers/bot.js';
 import { createTestDatabase, type TestDatabase } from '../helpers/db.js';
 import { createWebSession, getWebMessages, getWebState, postWebMessage } from '../helpers/web.js';
 
@@ -115,5 +115,80 @@ describe('límites por IP del chat web', () => {
     const b = await start();
     for (let i = 0; i < 21; i++) await createWebSession(b.app, {}, IP);
     expect(JSON.stringify(b.log.events)).not.toContain(IP);
+  });
+});
+
+describe('tope de gasto alcanzado en el chat web (010, FR-017)', () => {
+  let t: TestDatabase;
+  let bot: TestBot | null = null;
+
+  beforeAll(async () => {
+    t = await createTestDatabase();
+  });
+  afterAll(async () => {
+    await t.close();
+  });
+  afterEach(async () => {
+    await bot?.close();
+    bot = null;
+  });
+
+  /** Tope de 10,00 alcanzado; el tope de respuestas del chat web, no. */
+  async function reachSpendCap(): Promise<void> {
+    await t.db.insert(modelPrice).values({
+      model: TEST_LLM_MODEL,
+      inputMicrosPerMtok: 3_000_000n,
+      outputMicrosPerMtok: 15_000_000n,
+      cacheWriteMicrosPerMtok: 0n,
+      cacheReadMicrosPerMtok: 0n,
+    });
+    await t.db.update(usageSettings).set({ capEnabled: true, monthlyCapCents: 1000 });
+    await t.db.insert(modelUsage).values({
+      at: new Date('2026-09-24T08:00:00Z'),
+      day: '2026-09-24',
+      channel: 'whatsapp',
+      purpose: 'reply',
+      model: TEST_LLM_MODEL,
+      calls: 1,
+      inputTokens: 1,
+      outputTokens: 1,
+      cacheWriteTokens: 0,
+      cacheReadTokens: 0,
+      costPico: 1000n * 10_000_000_000n,
+      currency: 'USD',
+    });
+  }
+
+  it('la API y el frame dan "no disponible" con reason quota y contacto', async () => {
+    const b = (bot = await createTestBot(t, { webChat: WEB_ON }));
+    const { token } = await createWebSession(b.app);
+    if (token === null) throw new Error('El chat debería estar disponible');
+    await reachSpendCap();
+
+    const session = await createWebSession(b.app);
+    expect(session.token).toBeNull();
+    expect(unavailableOf(session.body)).toMatchObject({
+      reason: 'quota',
+      message: 'Ahora mismo el chat no está disponible.',
+    });
+    expect(unavailableOf(session.body).contact).toContain(
+      'Para hablar con una persona de Peluquería Tijeras',
+    );
+
+    const state = await getWebState(b.app, token);
+    expect(state.body).toMatchObject({ available: false, unavailable: { reason: 'quota' } });
+
+    const sent = await postWebMessage(b.app, token, '¿Abrís el sábado?');
+    expect(sent.statusCode).toBe(200);
+    expect(sent.body).toMatchObject({ accepted: false, unavailable: { reason: 'quota' } });
+    expect(await t.db.select().from(message)).toEqual([]);
+
+    const frame = await b.app.inject({ method: 'GET', url: '/chat/frame' });
+    expect(frame.statusCode).toBe(200);
+    expect(frame.body).toContain('Ahora mismo el chat no está disponible.');
+    expect(frame.body).toContain('Para hablar con una persona de Peluquería Tijeras');
+    expect(frame.body).not.toContain('id="chat-messages"');
+
+    expect(b.model.calls).toHaveLength(0);
   });
 });

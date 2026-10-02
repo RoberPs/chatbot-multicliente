@@ -59,12 +59,15 @@ async function healthServer(options: {
   secret: string | undefined;
   coreVersion?: string;
   onRequest?: () => Promise<void>;
+  /** Estado del tope de gasto del informe (010). */
+  spendCap?: HealthReport['spendCap'];
 }): Promise<string> {
   const app = Fastify();
   const report: HealthReport = {
     status: 'ok',
     coreVersion: options.coreVersion ?? '1.4.0',
     schema: { applied: EXPECTED, expected: EXPECTED },
+    spendCap: options.spendCap ?? null,
   };
   if (options.onRequest) app.addHook('onRequest', options.onRequest);
   await app.register(healthRoutes, {
@@ -179,7 +182,12 @@ describe('instance:versions', () => {
 
     const noHealth = Fastify();
     const f = await fleet([
-      { id: 'demo-a', url: await healthServer({ instanceId: 'demo-a', secret: s.a }), secret: s.a },
+      {
+        id: 'demo-a',
+        // 010: el tope alcanzado se ve en la columna Tope y no cambia el resultado de la fila.
+        url: await healthServer({ instanceId: 'demo-a', secret: s.a, spendCap: 'reached' }),
+        secret: s.a,
+      },
       {
         id: 'demo-b',
         url: await healthServer({ instanceId: 'demo-b', secret: s.b, coreVersion: '1.3.0' }),
@@ -215,9 +223,9 @@ describe('instance:versions', () => {
     const { code, out, io } = await versions(f, ['--allow-insecure']);
     expect(code).toBe(1);
     expect(rowOf(out, 'demo-a')).toMatch(
-      /Correcto\s+1\.4\.0\s+0005_config_transfer\s+1\.4\.0\s+sí$/,
+      /Correcto\s+1\.4\.0\s+0005_config_transfer\s+1\.4\.0\s+sí\s+alcanzado$/,
     );
-    expect(rowOf(out, 'demo-b')).toMatch(/Correcto\s+1\.3\.0\s+.*NO$/);
+    expect(rowOf(out, 'demo-b')).toMatch(/Correcto\s+1\.3\.0\s+.*NO\s+—$/);
     expect(rowOf(out, 'demo-c')).toMatch(/No responde\s+—\s+—/);
     expect(rowOf(out, 'demo-d')).toMatch(/Identidad distinta\s+—\s+—/);
     expect(rowOf(out, 'demo-d')).not.toContain('demo-a');

@@ -18,6 +18,8 @@ import {
   phoneRetryReply,
 } from '../handoff/templates.js';
 import type { KnowledgeReader, KnowledgeSnapshot } from '../knowledge/types.js';
+import type { UsageRecording } from '../usage/meter.js';
+import { checkSpendCap } from '../usage/spend-cap.js';
 import { readWebChatSettings } from '../webchat/settings.js';
 import { capReached, incrementWebUsage, readWebUsage, type QuotaWatch } from '../webchat/usage.js';
 import type { ActivityLog, EventContext } from './activity-log.js';
@@ -29,6 +31,7 @@ import * as messages from './repositories/message.js';
 import type { InboundRow } from './repositories/message.js';
 import type { DbOrTx } from './repositories/customer.js';
 import {
+  capResponse,
   composeReply,
   createResponder,
   rateLimitResponse,
@@ -57,6 +60,8 @@ export interface ProcessorDeps {
   settings?: ConversationSettings;
   /** Derivación al negocio (005); sin ella el bot responde como en la 004. */
   handoff?: HandoffService;
+  /** Registro del consumo del modelo (010); sin él no se mide (bot:chat, eval). */
+  usage?: UsageRecording;
 }
 
 export interface Processor {
@@ -269,6 +274,54 @@ export function createProcessor(deps: ProcessorDeps): Processor {
     }
   }
 
+  /**
+   * Tope mensual de gasto alcanzado ahora (010, R7), con el gasto ya registrado; `false` si el
+   * canal no se corta ("Probar el bot", FR-019). Emite `spend_cap_reached` una vez al mes (R10).
+   */
+  async function spendCapReached(
+    policy: ChannelPolicy,
+    snapshot: KnowledgeSnapshot,
+    logContext: LogContext,
+  ): Promise<boolean> {
+    if (!policy.spendCap) return false;
+    const state = await checkSpendCap(
+      db,
+      clock.now(),
+      snapshot.business.timezone,
+      activityLog,
+      logContext,
+    );
+    return state.level === 'reached';
+  }
+
+  /**
+   * Consumo de la respuesta (010, R3): tras el modelo y antes de entregar, fuera de la
+   * transacción del saliente. Nunca impide responder (FR-005).
+   */
+  async function recordUsage(
+    response: Response,
+    channel: ConversationWithCustomer['channel'],
+    timezone: string,
+    logContext: LogContext,
+  ): Promise<void> {
+    if (!deps.usage || !response.usage) return;
+    try {
+      await deps.usage.meter.record(
+        {
+          channel,
+          purpose: 'reply',
+          model: deps.usage.model,
+          usage: response.usage,
+          at: clock.now(),
+          timezone,
+        },
+        logContext,
+      );
+    } catch {
+      // El medidor real no lanza (registra usage_record_failed); esto cubre cualquier otro.
+    }
+  }
+
   async function processConversation(conversationId: string): Promise<void> {
     const conversation = await conversations.findWithCustomer(db, conversationId);
     if (!conversation) return;
@@ -324,6 +377,16 @@ export function createProcessor(deps: ProcessorDeps): Processor {
     } else if (await webCapReached(policy, snapshot)) {
       // SC-006: con el tope alcanzado no se llama al modelo.
       response = unavailableResponse(snapshot, deps.emergencyContactPhone);
+    } else if (await spendCapReached(policy, snapshot, logContext)) {
+      // 010 (FR-016 – FR-018): sin modelo y siempre con contacto. En la web, "no disponible";
+      // en WhatsApp, R-CAP, que deja abrir la derivación con el detector determinista.
+      response = policy.usageCap
+        ? unavailableResponse(snapshot, deps.emergencyContactPhone)
+        : capResponse(
+            snapshot,
+            deps.emergencyContactPhone,
+            pending.map((m) => m.body).filter((t): t is string => t !== null),
+          );
     } else {
       response = await responder.respond({
         snapshot,
@@ -340,6 +403,7 @@ export function createProcessor(deps: ProcessorDeps): Processor {
         // FR-018: tras una derivación terminada el bot tiene en cuenta lo hablado y no saluda.
         handoffEnded: deps.handoff ? await deps.handoff.hasEnded(conversationId) : false,
       });
+      await recordUsage(response, conversation.channel, snapshot.business.timezone, logContext);
     }
 
     const turn =
@@ -542,6 +606,8 @@ export function createProcessor(deps: ProcessorDeps): Processor {
                 snapshot,
                 simulate: policy.simulateAlerts,
                 logContext,
+                // 010 (R9): con el tope de gasto alcanzado, sin resumen del modelo.
+                modelSummary: response.template !== 'R-CAP',
               })
             : ({ started: false, routes: {} } as const);
         if (!result.started || phone === null) {

@@ -13,6 +13,10 @@
 | Procesador, antes del modelo | WhatsApp y web (`policy.spendCap`) | ver § Árbol |
 | Playground | — | no se comprueba: responde con el modelo y suma (FR-019) |
 
+`GET /chat/frame` con un tope alcanzado (de gasto o de respuestas de la 004): vista "no disponible"
+con el contacto y `frame-ancestors` con las webs permitidas (no `'none'`), para que el visitante la
+vea al abrir el chat (US3-3, SC-004); desde una web no permitida, `'none'` como siempre (FR-027).
+
 Orden en la recepción y en la disponibilidad del chat web: bot → snapshot → chat activado →
 negocio activo → tope de respuestas (004) → **tope de gasto**. Los dos topes se aplican a la vez
 (FR-017).

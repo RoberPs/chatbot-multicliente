@@ -14,11 +14,13 @@ import type {
   RouteName,
   RouteResults,
 } from '../handoff/types.js';
+import type { UsagePurpose } from '../usage/types.js';
 import type { HandoffAction, MessageKind, REPLY_TEMPLATES } from './types.js';
 
 /** `disabled`: chat web desactivado; `quota`: tope del chat web alcanzado (004). */
+/** `spend_cap`: tope mensual de gasto alcanzado (010), solo en la recepción web. */
 export type DiscardReason =
-  'not_active' | 'group' | 'outside_window' | 'deactivated' | 'disabled' | 'quota';
+  'not_active' | 'group' | 'outside_window' | 'deactivated' | 'disabled' | 'quota' | 'spend_cap';
 export type TranscriptionFailure =
   'too_large' | 'too_long' | 'language' | 'empty' | 'timeout' | 'provider_error';
 export type ReplyTemplate = (typeof REPLY_TEMPLATES)[number];
@@ -55,7 +57,11 @@ export type HandoffEvent =
       noticeType: HandoffNoticeType;
       failure: string;
     }
-  | { event: 'handoff_summary_fallback'; reason: 'timeout' | 'model_error' | 'unverified' }
+  | {
+      event: 'handoff_summary_fallback';
+      /** `spend_cap`: tope de gasto alcanzado, sin llamar al modelo (010, R9). */
+      reason: 'timeout' | 'model_error' | 'unverified' | 'spend_cap';
+    }
   | { event: 'handoff_forwarded'; handoffId: string; messagesCovered: number; routes: RouteResults }
   | { event: 'handoff_forward_failed'; handoffId: string; messagesCovered: number }
   | {
@@ -119,6 +125,10 @@ export type BotEvent =
   | { event: 'web_session_created' }
   | { event: 'web_rejected'; reason: WebRejection }
   | { event: 'web_quota_reached'; period: 'day' | 'month'; cap: number }
+  /** No se pudo guardar el consumo de una respuesta; la respuesta sigue (010, FR-005). */
+  | { event: 'usage_record_failed'; purpose: UsagePurpose }
+  /** Tope de gasto alcanzado en el mes local `AAAA-MM`; una vez por mes (010, R10). Sin importes. */
+  | { event: 'spend_cap_reached'; month: string }
   | HandoffEvent;
 
 export type BotEventName = BotEvent['event'];
@@ -140,6 +150,8 @@ export const eventLevels: Record<BotEventName, Level> = {
   web_session_created: 'debug',
   web_rejected: 'warn',
   web_quota_reached: 'warn',
+  usage_record_failed: 'error',
+  spend_cap_reached: 'warn',
   handoff_offered: 'info',
   handoff_contact_requested: 'info',
   handoff_started: 'info',

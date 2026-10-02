@@ -6,30 +6,8 @@ import { and, eq, gte, lt, lte, sql } from 'drizzle-orm';
 import type { ActivityLog } from '../conversation/activity-log.js';
 import type { DbOrTx } from '../conversation/repositories/customer.js';
 import { webUsageDay } from '../db/schema.js';
+import { localDay, localMonthRange } from '../knowledge/time/local-date.js';
 import type { WebChatSettings } from './settings.js';
-
-/** Fecha local `AAAA-MM-DD` de `now` en la zona IANA. */
-export function localDay(now: Date, timezone: string): string {
-  const parts = new Intl.DateTimeFormat('en-CA', {
-    timeZone: timezone,
-    year: 'numeric',
-    month: '2-digit',
-    day: '2-digit',
-  }).formatToParts(now);
-  const get = (type: string) => parts.find((p) => p.type === type)?.value ?? '';
-  return `${get('year')}-${get('month')}-${get('day')}`;
-}
-
-/** Primer y último día (incluidos) del mes local en curso. */
-export function localMonthRange(now: Date, timezone: string): { first: string; last: string } {
-  const today = localDay(now, timezone);
-  const year = Number(today.slice(0, 4));
-  const month = Number(today.slice(5, 7));
-  // Día 0 del mes siguiente = último día de este (aritmética de calendario, sin horas).
-  const lastDay = new Date(Date.UTC(year, month, 0)).getUTCDate();
-  const prefix = today.slice(0, 8);
-  return { first: `${prefix}01`, last: `${prefix}${String(lastDay).padStart(2, '0')}` };
-}
 
 export interface WebUsage {
   today: number;

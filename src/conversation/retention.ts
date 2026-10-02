@@ -2,9 +2,13 @@
  * Borrado de conversaciones (FR-030, SC-011, research R11): cada hora y al arrancar se borran
  * las conversaciones sin mensajes desde hace 30 días (sus mensajes caen en cascada) y después
  * los clientes que se quedan sin conversaciones, de cualquier canal. Desde la 004 también borra
- * los días de uso del chat web de hace más de 400 días (FR-028).
+ * los días de uso del chat web de hace más de 400 días (FR-028), y desde la 010 el consumo del
+ * modelo anterior al mes local de hace 12 meses (FR-006).
  */
+import { eq } from 'drizzle-orm';
 import type { Db } from '../db/client.js';
+import { business } from '../db/schema.js';
+import { purgeModelUsage } from '../usage/retention.js';
 import { purgeWebUsage } from '../webchat/usage.js';
 import type { ActivityLog } from './activity-log.js';
 import type { Clock } from './ports.js';
@@ -43,6 +47,12 @@ export function createRetention(deps: RetentionDeps): Retention {
         customers: await deleteOrphans(tx),
       };
       await purgeWebUsage(tx, now);
+      // 010 (R14): el corte de mes es el local del negocio; sin negocio, UTC.
+      const [row] = await tx
+        .select({ timezone: business.timezone })
+        .from(business)
+        .where(eq(business.id, 1));
+      await purgeModelUsage(tx, now, row?.timezone ?? 'UTC');
       return removed;
     });
     activityLog.log({ event: 'retention_purged', ...result });

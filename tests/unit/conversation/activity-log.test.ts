@@ -111,6 +111,46 @@ describe('registro técnico del bot', () => {
     expect(eventLevels[event.event]).toBe(level);
   });
 
+  describe('eventos del consumo (010)', () => {
+    const usageEvents: Array<[BotEvent, string]> = [
+      [{ event: 'usage_record_failed', purpose: 'reply' }, 'error'],
+      [{ event: 'usage_record_failed', purpose: 'handoff_summary' }, 'error'],
+      [{ event: 'spend_cap_reached', month: '2026-10' }, 'warn'],
+      [{ event: 'handoff_summary_fallback', reason: 'spend_cap' }, 'warn'],
+    ];
+
+    it.each(usageEvents)('nivel de %o', (event, level) => {
+      const { logger, lines } = capture();
+      createActivityLog(logger, SECRET).log(event);
+      expect(lines[0]?.level).toBe(level);
+      expect(eventLevels[event.event]).toBe(level);
+    });
+
+    it('no llevan importes, precios, monedas ni textos', () => {
+      const { logger, lines } = capture();
+      const log = createActivityLog(logger, SECRET);
+      log.log(
+        { event: 'usage_record_failed', purpose: 'reply' },
+        { channel: 'whatsapp', customerKey: '+34600111222', conversationId: 'c1' },
+      );
+      log.log({ event: 'spend_cap_reached', month: '2026-10' });
+      log.log({ event: 'handoff_summary_fallback', reason: 'spend_cap' });
+      expect(lines.map((l) => l.obj)).toEqual([
+        {
+          channel: 'bot',
+          event: 'usage_record_failed',
+          purpose: 'reply',
+          via: 'whatsapp',
+          customer: log.pseudonym('whatsapp', '+34600111222'),
+          conversationId: 'c1',
+        },
+        { channel: 'bot', event: 'spend_cap_reached', month: '2026-10' },
+        { channel: 'bot', event: 'handoff_summary_fallback', reason: 'spend_cap' },
+      ]);
+      expect(JSON.stringify(lines)).not.toMatch(/cost|price|currency|USD|EUR|cents|pico/i);
+    });
+  });
+
   describe('eventos de la derivación (005)', () => {
     const handoffId = '0f8fad5b-d9cb-469f-a165-70867728950e';
     const handoffEvents: Array<[BotEvent, string]> = [

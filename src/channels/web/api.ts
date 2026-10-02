@@ -147,6 +147,7 @@ export async function webChatApi(api: FastifyInstance, deps: WebApiDeps): Promis
           botPresent: true,
           emergencyPhone,
           now: now(),
+          activityLog: bot.activityLog,
         })
       : { available: false, unavailable: unavailable('no_bot', null, emergencyPhone) };
     lastContact = state.available
@@ -287,7 +288,13 @@ export async function webChatApi(api: FastifyInstance, deps: WebApiDeps): Promis
         if (!outcome) throw new Error('La recepción no devolvió resultado');
 
         if (outcome.status === 'discarded') {
-          const reason = outcome.reason === 'group' ? 'disabled' : outcome.reason;
+          // El tope de gasto (010) se ve igual que el de respuestas: "no disponible" (FR-017).
+          const reason =
+            outcome.reason === 'group'
+              ? 'disabled'
+              : outcome.reason === 'spend_cap'
+                ? 'quota'
+                : outcome.reason;
           const snapshot = await readableSnapshot();
           return reply
             .code(200)

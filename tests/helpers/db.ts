@@ -8,6 +8,9 @@ import {
   business,
   conversationTableNames,
   handoffAlerts,
+  modelPrice,
+  modelUsage,
+  usageSettings,
   webChatSettings,
 } from '../../src/db/schema.js';
 import type { KnowledgeDeps } from '../../src/knowledge/services/deps.js';
@@ -53,8 +56,8 @@ export async function createTestDatabase(): Promise<TestDatabase> {
 
 /**
  * Vacía todas las tablas, deja el negocio vacío en "draft", el chat web con sus valores por
- * defecto y los destinos de avisos de derivación vacíos (filas únicas: se restablecen, no se
- * truncan).
+ * defecto, los destinos de avisos de derivación vacíos y los ajustes de consumo por defecto
+ * (filas únicas: se restablecen, no se truncan).
  */
 export async function resetDb(db: Db): Promise<void> {
   const tables = sql.join(
@@ -69,6 +72,19 @@ export async function resetDb(db: Db): Promise<void> {
     .update(webChatSettings)
     .set({ enabled: false, allowedOrigins: [], privacyUrl: null, dailyCap: 200, monthlyCap: 3000 });
   await db.update(handoffAlerts).set({ whatsappPhone: null, email: null });
+  // Consumo (010): no está en `allTableNames` (alimenta el `max(updated_at)` del snapshot).
+  await db.execute(sql`truncate ${modelUsage}, ${modelPrice}`);
+  // Upsert: algún test borra la fila única para provocar fallos.
+  const defaults = {
+    currency: 'USD',
+    capEnabled: false,
+    monthlyCapCents: null,
+    capNotifiedMonth: null,
+  };
+  await db
+    .insert(usageSettings)
+    .values({ id: 1, ...defaults })
+    .onConflictDoUpdate({ target: usageSettings.id, set: defaults });
 }
 
 /** Guarda los destinos de los avisos de derivación (005) directamente en la fila única. */

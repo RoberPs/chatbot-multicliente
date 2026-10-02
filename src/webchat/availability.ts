@@ -6,10 +6,12 @@
  * el visitante. No sabe nada de HTTP: las cabeceras y la comprobación de origen viven en
  * `src/channels/web`.
  */
+import type { ActivityLog } from '../conversation/activity-log.js';
 import { unavailableContact } from '../conversation/templates.js';
 import type { DbOrTx } from '../conversation/repositories/customer.js';
 import type { KnowledgeReader, KnowledgeSnapshot } from '../knowledge/types.js';
 import { readWebChatSettings, type WebChatSettings } from './settings.js';
+import { checkSpendCap, spendCapState } from '../usage/spend-cap.js';
 import { capReached, readWebUsage } from './usage.js';
 
 /** Por qué no se puede atender; `ip_limit` lo añade la capa HTTP (US4). */
@@ -48,15 +50,21 @@ export interface AvailabilityDeps {
   botPresent: boolean;
   emergencyPhone: string | null;
   now: Date;
+  /** Registro del evento `spend_cap_reached` (010, R10); sin él solo se lee el estado. */
+  activityLog?: ActivityLog;
 }
 
-/** Comprueba en el orden del contrato: bot, snapshot, chat activado, negocio activo y tope. */
+/**
+ * Comprueba en el orden del contrato: bot, snapshot, chat activado, negocio activo, tope de
+ * respuestas (004) y tope de gasto (010). Los dos topes se ven igual: `quota` (FR-017).
+ */
 export async function webChatAvailability({
   tx,
   reader,
   botPresent,
   emergencyPhone,
   now,
+  activityLog,
 }: AvailabilityDeps): Promise<WebChatAvailability> {
   const no = (reason: UnavailableReason, snapshot: KnowledgeSnapshot | null) => ({
     available: false as const,
@@ -80,5 +88,9 @@ export async function webChatAvailability({
   if (capReached(await readWebUsage(tx, now, timezone), settings) !== null) {
     return no('quota', snapshot);
   }
+  const spend = activityLog
+    ? await checkSpendCap(tx, now, timezone, activityLog, { channel: 'web' })
+    : await spendCapState(tx, now, timezone);
+  if (spend.level === 'reached') return no('quota', snapshot);
   return { available: true, settings, snapshot };
 }

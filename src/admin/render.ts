@@ -5,6 +5,8 @@ import { formatCents } from '../knowledge/money.js';
 import { loadKnowledgeState } from '../knowledge/state.js';
 import type { KnowledgeState, Warning, WarningTargetKind } from '../knowledge/types.js';
 import { computeWarnings } from '../knowledge/warnings.js';
+import { hasPrice } from '../usage/settings.js';
+import { spendCapState } from '../usage/spend-cap.js';
 import { isHtmx } from './auth/plugin.js';
 import { splitLinks } from './message-links.js';
 import { describeTrace } from './playground-trace.js';
@@ -102,6 +104,7 @@ export async function renderPage(
 ): Promise<FastifyReply> {
   const warnings = computeWarnings(data.state);
   const version = await versionLine(request);
+  const spend = await spendBanner(request, data.state.business.timezone);
   const html = await reply.viewAsync(view, {
     errors: {},
     values: {},
@@ -118,9 +121,36 @@ export async function renderPage(
       flash: takeFlash(request),
       path: request.url,
       version,
+      spend,
     },
   });
   return reply.code(status).type('text/html; charset=utf-8').send(html);
+}
+
+/**
+ * Aviso del tope de gasto (010, R12): como mucho uno, el más grave. No es un aviso de la
+ * configuración: no entra en `computeWarnings` ni bloquea activar el negocio.
+ */
+export type SpendBanner =
+  | { kind: 'reached'; percent: number }
+  | { kind: 'no_price'; model: string }
+  | { kind: 'warning'; percent: number };
+
+/** Calculado en cada página sin caché; si la consulta falla, no se pinta (`null`). */
+async function spendBanner(request: FastifyRequest, timezone: string): Promise<SpendBanner | null> {
+  const { db } = request.server.knowledge;
+  const model = request.server.env.LLM_MODEL;
+  try {
+    const now = request.server.bot?.clock.now() ?? new Date();
+    const state = await spendCapState(db, now, timezone);
+    if (state.level === 'none') return null;
+    if (state.level === 'reached') return { kind: 'reached', percent: state.percent ?? 100 };
+    if (!(await hasPrice(db, model))) return { kind: 'no_price', model };
+    if (state.level === 'warning') return { kind: 'warning', percent: state.percent ?? 80 };
+    return null;
+  } catch {
+    return null;
+  }
 }
 
 /** Línea del pie: versión del núcleo y del esquema (009, FR-007). */

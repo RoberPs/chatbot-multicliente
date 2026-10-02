@@ -4,6 +4,7 @@
  */
 import { sql } from 'drizzle-orm';
 import {
+  bigint,
   boolean,
   char,
   check,
@@ -372,7 +373,10 @@ export const webChatSettings = pgTable(
   {
     id: smallint('id').primaryKey().default(1),
     enabled: boolean('enabled').notNull().default(false),
-    allowedOrigins: text('allowed_origins').array().notNull().default(sql`'{}'::text[]`),
+    allowedOrigins: text('allowed_origins')
+      .array()
+      .notNull()
+      .default(sql`'{}'::text[]`),
     privacyUrl: text('privacy_url'),
     dailyCap: integer('daily_cap').notNull().default(200),
     monthlyCap: integer('monthly_cap').notNull().default(3000),
@@ -495,6 +499,92 @@ export const configPreImport = pgTable(
     sourceInstance: text('source_instance'),
   },
   (t) => [check('config_pre_import_singleton', sql`${t.id} = 1`)],
+);
+
+// ---------------------------------------------------------------------------
+// Consumo y coste del modelo (feature 010, data-model.md). No es configuración del negocio: no
+// entra en el snapshot, en los avisos ni en la exportación de la 008 (R15).
+// ---------------------------------------------------------------------------
+
+export const usagePurpose = pgEnum('usage_purpose', ['reply', 'handoff_summary']);
+
+/**
+ * Una fila por respuesta con modelo o por resumen de derivación (R2). Sin textos ni
+ * identificadores de cliente, de conversación ni IP, y sin claves ajenas (FR-003). Nunca se
+ * actualiza: el coste queda congelado al insertar (FR-011).
+ */
+export const modelUsage = pgTable(
+  'model_usage',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    at: instant('at').notNull(),
+    /** Día local del negocio en `at` (R6). */
+    day: isoDate('day').notNull(),
+    channel: customerChannel('channel').notNull(),
+    purpose: usagePurpose('purpose').notNull(),
+    model: text('model').notNull(),
+    /** Llamadas al modelo que informaron tokens en esta respuesta (reintento del verificador). */
+    calls: smallint('calls').notNull(),
+    inputTokens: integer('input_tokens').notNull(),
+    outputTokens: integer('output_tokens').notNull(),
+    cacheWriteTokens: integer('cache_write_tokens').notNull(),
+    cacheReadTokens: integer('cache_read_tokens').notNull(),
+    /** Billonésimas (10⁻¹²) de `currency`; nulo = sin precio al registrar (FR-012). */
+    costPico: bigint('cost_pico', { mode: 'bigint' }),
+    currency: char('currency', { length: 3 }),
+  },
+  (t) => [
+    index('model_usage_day_idx').on(t.day),
+    check('model_usage_calls', sql`${t.calls} >= 1`),
+    check(
+      'model_usage_tokens',
+      sql`${t.inputTokens} >= 0 and ${t.outputTokens} >= 0 and ${t.cacheWriteTokens} >= 0 and ${t.cacheReadTokens} >= 0`,
+    ),
+    check('model_usage_cost', sql`${t.costPico} is null or ${t.costPico} >= 0`),
+    check('model_usage_cost_currency', sql`(${t.costPico} is null) = (${t.currency} is null)`),
+  ],
+);
+
+/** Precio vigente por modelo, en millonésimas de la moneda por millón de tokens (R4). */
+export const modelPrice = pgTable(
+  'model_price',
+  {
+    model: text('model').primaryKey(),
+    inputMicrosPerMtok: bigint('input_micros_per_mtok', { mode: 'bigint' }).notNull(),
+    outputMicrosPerMtok: bigint('output_micros_per_mtok', { mode: 'bigint' }).notNull(),
+    cacheWriteMicrosPerMtok: bigint('cache_write_micros_per_mtok', { mode: 'bigint' }).notNull(),
+    cacheReadMicrosPerMtok: bigint('cache_read_micros_per_mtok', { mode: 'bigint' }).notNull(),
+    updatedAt: updatedAt(),
+  },
+  (t) => [
+    check(
+      'model_price_non_negative',
+      sql`${t.inputMicrosPerMtok} >= 0 and ${t.outputMicrosPerMtok} >= 0 and ${t.cacheWriteMicrosPerMtok} >= 0 and ${t.cacheReadMicrosPerMtok} >= 0`,
+    ),
+  ],
+);
+
+/** Ajustes de consumo de la instancia (R10, R13): una sola fila, editable en el panel. */
+export const usageSettings = pgTable(
+  'usage_settings',
+  {
+    id: smallint('id').primaryKey().default(1),
+    currency: char('currency', { length: 3 }).notNull().default('USD'),
+    capEnabled: boolean('cap_enabled').notNull().default(false),
+    /** Céntimos; se conserva al desactivar el tope. */
+    monthlyCapCents: integer('monthly_cap_cents'),
+    /** Primer día del mes local en que ya se registró `spend_cap_reached` (R10). */
+    capNotifiedMonth: isoDate('cap_notified_month'),
+    updatedAt: updatedAt(),
+  },
+  (t) => [
+    check('usage_settings_singleton', sql`${t.id} = 1`),
+    // `is not null` explícito: con un importe nulo, `null > 0` haría pasar el check.
+    check(
+      'usage_settings_cap',
+      sql`not ${t.capEnabled} or (${t.monthlyCapCents} is not null and ${t.monthlyCapCents} > 0)`,
+    ),
+  ],
 );
 
 /** Tablas de conversaciones del bot (sin `updated_at`: no forman parte del snapshot). */

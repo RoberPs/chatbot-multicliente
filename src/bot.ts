@@ -26,6 +26,7 @@ import { createTemplateSender } from './channels/whatsapp/template-sender.js';
 import { createBusinessRouter, withBusinessRouter } from './channels/whatsapp/business-router.js';
 import type { CountryCode } from 'libphonenumber-js';
 import { createWhisperSpeechToText } from './speech/whisper.js';
+import { createUsageMeter } from './usage/meter.js';
 import { createQuotaWatch } from './webchat/usage.js';
 
 export interface Bot extends BotHttp {
@@ -56,6 +57,8 @@ export function createBot({ env, db, logger, clock = systemClock }: CreateBotOpt
   const graph = env.whatsapp ? createGraphClient(env.whatsapp) : null;
   const policies = buildChannelPolicies({ whatsappSender: graph });
   const quotaWatch = createQuotaWatch(activityLog);
+  // Consumo del modelo (010): respuestas y resúmenes, con el modelo configurado.
+  const usage = { meter: createUsageMeter({ db, activityLog }), model: env.LLM_MODEL };
   const chatModel = createAnthropicChatModel({
     apiKey: env.ANTHROPIC_API_KEY,
     model: env.LLM_MODEL,
@@ -85,6 +88,7 @@ export function createBot({ env, db, logger, clock = systemClock }: CreateBotOpt
     cipher: createTokenCipher(env.SESSION_SECRET),
     phoneRegion: env.DEFAULT_PHONE_REGION as CountryCode,
     policies,
+    usage,
   });
   const processor = createProcessor({
     db,
@@ -97,6 +101,7 @@ export function createBot({ env, db, logger, clock = systemClock }: CreateBotOpt
     audioTranscription: env.audioTranscription,
     quotaWatch,
     handoff,
+    usage,
   });
   const wake = (id: string) => {
     processor.wake(id);

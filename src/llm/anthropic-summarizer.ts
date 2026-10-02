@@ -5,6 +5,7 @@
 import Anthropic from '@anthropic-ai/sdk';
 import type { HandoffSummarizer } from '../handoff/ports.js';
 import { summaryInstructions, summaryUserTurn } from './summary-prompt.js';
+import { reportUsage } from './token-usage.js';
 
 export interface AnthropicSummarizerOptions {
   apiKey?: string;
@@ -29,7 +30,7 @@ export function createAnthropicSummarizer(opts: AnthropicSummarizerOptions): Han
     new Anthropic({ apiKey: opts.apiKey, timeout: REQUEST_TIMEOUT_MS, maxRetries: 0 });
 
   return {
-    async summarize({ kind, customerTexts }, { signal }) {
+    async summarize({ kind, customerTexts }, { signal, onUsage }) {
       const response = await client.messages.create(
         {
           model: opts.model,
@@ -40,6 +41,8 @@ export function createAnthropicSummarizer(opts: AnthropicSummarizerOptions): Han
         },
         { signal, timeout: REQUEST_TIMEOUT_MS, maxRetries: 0 },
       );
+      // Hay respuesta: sus tokens cuentan aunque se descarte después (010, R1).
+      reportUsage(response, onUsage);
       if (response.stop_reason !== 'end_turn') {
         throw new Error(`Resumen sin terminar: ${response.stop_reason ?? 'desconocido'}`);
       }

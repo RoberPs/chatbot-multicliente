@@ -177,6 +177,7 @@ describe('classify (prioridad del contrato)', () => {
       annotated: 'chatbot:1.4.0',
       matches: true,
       review: false,
+      spendCap: null,
     });
   });
 
@@ -245,7 +246,7 @@ describe('salida', () => {
     const text = renderTable(report([ok, other, down, crossed, noHealth]));
     const lines = text.split('\n');
     expect(lines[0]).toMatch(
-      /^Instancia\s+Cliente\s+Estado\s+Núcleo\s+Esquema\s+Anotada\s+Coincide$/,
+      /^Instancia\s+Cliente\s+Estado\s+Núcleo\s+Esquema\s+Anotada\s+Coincide\s+Tope$/,
     );
     expect(text).toMatch(
       /demo-01\s+Cliente demo-01\s+Correcto\s+1\.4\.0\s+0005_config_transfer\s+chatbot:1\.4\.0\s+sí/,
@@ -305,6 +306,7 @@ describe('salida', () => {
       annotated: 'chatbot:1.4.0',
       matches: true,
       review: false,
+      spendCap: null,
     });
   });
 
@@ -359,5 +361,63 @@ describe('anotación (R6)', () => {
     const updated = result.inventory.instances.find((i) => i.id === first.id);
     expect(updated).toEqual({ ...first, imageVersion: '1.4.0' });
     expect(result.inventory.instances.find((i) => i.id === second.id)?.imageVersion).toBe('1.4.0');
+  });
+});
+
+describe('estado del tope de gasto (010, contracts/health-spend-cap.md)', () => {
+  const withCap = (spendCap: unknown, id = 'demo-01') =>
+    classify(
+      instance({ id }),
+      response(200, full({ instanceId: id, ...(spendCap === undefined ? {} : { spendCap }) })),
+    );
+
+  it('lee spendCap del informe; ausente, nulo o desconocido → null sin invalidar la fila', () => {
+    for (const level of ['none', 'normal', 'warning', 'reached'] as const) {
+      expect(withCap(level)).toMatchObject({ result: 'ok', spendCap: level });
+    }
+    for (const value of [undefined, null, 'otro', 42]) {
+      expect(withCap(value)).toMatchObject({ result: 'ok', spendCap: null });
+    }
+  });
+
+  it('columna Tope al final con el texto del contrato', () => {
+    const rows = [
+      withCap('none', 'demo-01'),
+      withCap('normal', 'demo-02'),
+      withCap('warning', 'demo-03'),
+      withCap('reached', 'demo-04'),
+      withCap(undefined, 'demo-05'),
+      classify(instance({ id: 'demo-06' }), { kind: 'error' }),
+    ];
+    const lines = renderTable(report(rows)).split('\n');
+    const tope = (id: string) =>
+      lines
+        .find((l) => l.startsWith(id))
+        ?.trim()
+        .split(/\s{2,}/)
+        .at(-1);
+    expect(tope('demo-01')).toBe('sin tope');
+    expect(tope('demo-02')).toBe('normal');
+    expect(tope('demo-03')).toBe('≥80 %');
+    expect(tope('demo-04')).toBe('alcanzado');
+    expect(tope('demo-05')).toBe('—');
+    expect(tope('demo-06')).toBe('—');
+  });
+
+  it('spendCap en --json, al final de cada fila', () => {
+    const parsed = JSON.parse(renderJson(report([withCap('warning')]))) as {
+      instances: Array<Record<string, unknown>>;
+    };
+    expect(parsed.instances[0]?.spendCap).toBe('warning');
+    expect(Object.keys(parsed.instances[0] ?? {}).at(-1)).toBe('spendCap');
+  });
+
+  it('no cambia la clasificación, el código de salida ni la anotación', () => {
+    const reached = withCap('reached');
+    const none = withCap('none');
+    expect(reached).toMatchObject({ result: 'ok', review: false });
+    expect({ ...reached, spendCap: null }).toEqual({ ...none, spendCap: null });
+    expect(exitCode(report([reached]))).toBe(0);
+    expect(annotationPlan(report([reached]))).toEqual(annotationPlan(report([none])));
   });
 });

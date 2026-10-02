@@ -5,14 +5,16 @@
  * la vista del chat y, bajo `/chat/api`, su API JSON.
  *
  * El frame se sirve sin caché y con su propia CSP: `frame-ancestors` con las webs permitidas
- * cuando el chat está activado y `'none'` en cualquier otro caso, que es lo que de verdad
- * impide que otra web lo incruste (FR-015, FR-027).
+ * cuando el chat está activado (también con un tope alcanzado, para mostrar el contacto) y
+ * `'none'` en cualquier otro caso, que es lo que de verdad impide que otra web lo incruste
+ * (FR-015, FR-027).
  */
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { Eta } from 'eta';
 import type { FastifyInstance, FastifyReply } from 'fastify';
 import { unavailable, webChatAvailability } from '../../webchat/availability.js';
+import { readWebChatSettings } from '../../webchat/settings.js';
 import { webChatApi, WEB_MESSAGE_MAX_CHARS } from './api.js';
 import { frameAncestors, NO_ANCESTORS, refererAllowed } from './guards.js';
 
@@ -87,6 +89,7 @@ export async function webChatRoutes(chat: FastifyInstance): Promise<void> {
           botPresent: true,
           emergencyPhone: bot.emergencyContactPhone,
           now: bot.clock.now(),
+          activityLog: bot.activityLog,
         })
       : {
           available: false as const,
@@ -112,12 +115,22 @@ export async function webChatRoutes(chat: FastifyInstance): Promise<void> {
             : availability.unavailable),
         };
 
+    // Con un tope alcanzado (respuestas de la 004 o gasto de la 010) el chat sigue activado: el
+    // frame se deja incrustar en las webs permitidas para que el visitante vea "no disponible"
+    // con el contacto (010 US3-3, SC-004). En los demás casos, nadie puede incrustarlo.
+    let ancestors = NO_ANCESTORS;
+    if (allowed) {
+      ancestors = frameAncestors(availability.settings);
+    } else if (!availability.available && availability.unavailable.reason === 'quota') {
+      const settings = await readWebChatSettings(db);
+      if (refererAllowed(request.headers.referer, settings.allowedOrigins)) {
+        ancestors = frameAncestors(settings);
+      }
+    }
+
     const html = await eta.renderAsync('frame', view);
     return reply
-      .header(
-        'Content-Security-Policy',
-        frameCsp(allowed ? frameAncestors(availability.settings) : NO_ANCESTORS),
-      )
+      .header('Content-Security-Policy', frameCsp(ancestors))
       .header('Cache-Control', 'no-store')
       .type('text/html; charset=utf-8')
       .send(html);

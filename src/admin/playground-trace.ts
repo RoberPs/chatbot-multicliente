@@ -15,6 +15,7 @@ const TEMPLATE_NAMES: Record<NonNullable<ReplyTrace['template']>, string> = {
   'R-AUDIO': 'audio no entendido',
   'R-LIMIT': 'límite de mensajes',
   'R-UNAVAILABLE': 'chat no disponible',
+  'R-CAP': 'tope de gasto alcanzado',
   'R-HANDOFF-ASK': 'pide los datos de contacto',
   'R-HANDOFF-PHONE': 'pide de nuevo el teléfono',
   'R-HANDOFF-OK': 'derivación confirmada',

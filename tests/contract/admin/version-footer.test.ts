@@ -54,6 +54,7 @@ describe('pie del panel con la versión', () => {
       status: 'degraded',
       coreVersion: '1.3.0',
       schema: { applied: { index: 6, tag: null }, expected: { index: 5, tag: schema.tag } },
+      spendCap: null,
     };
     app = await buildTestApp(t.db, t.url, null, {}, undefined, {
       health: { lifecycle: createLifecycle(), report: () => Promise.resolve(report) },

@@ -1,0 +1,148 @@
+<% layout('/layout') %>
+<% const v = it.values; const e = it.errors; %>
+<%~ include('/partials/general-error', { errors: it.errors, general: it.general, blocking: it.blocking, h: it.h }) %>
+<p class="hint">Coste estimado con los precios configurados aquí. No es la factura del proveedor. Importes redondeados a 4 decimales. Los importes menores de 0,0001 se muestran como «&lt; 0,0001».</p>
+
+<% if (it.monthUnavailable) { %>
+  <p class="notice" role="status">Mes no disponible: se muestra el mes en curso.</p>
+<% } %>
+
+<% if (!it.botPresent) { %>
+  <p class="notice" role="status">Esta instancia no tiene bot: no hay consumo.</p>
+<% } else { %>
+  <% if (it.unpricedModels.length > 0) { %>
+    <div class="notice" role="status">
+      <% it.unpricedModels.forEach(function (m) { %>
+        <p>Consumo sin precio del modelo «<%= m %>»: sus tokens se muestran pero no tienen coste.</p>
+      <% }) %>
+    </div>
+  <% } %>
+  <% it.tables.forEach(function (table) { %>
+    <section class="card usage">
+      <h2><%= table.title %></h2>
+      <% if (table.rows.length === 0) { %>
+        <p class="meta">Sin consumo en este mes.</p>
+      <% } else { %>
+        <div class="table-scroll">
+          <%~ include('/partials/usage-table', { id: table.id, first: table.first, rows: table.rows }) %>
+        </div>
+      <% } %>
+    </section>
+  <% }) %>
+<% } %>
+
+<% if (it.months.length > 0) { %>
+<form class="card stack" method="get" action="/admin/usage">
+  <h2>Meses anteriores</h2>
+  <div>
+    <label for="month">Mes</label>
+    <select id="month" name="month">
+      <% it.months.forEach(function (m) { %><option value="<%= m.value %>"<% if (m.selected) { %> selected<% } %>><%= m.label %></option><% }) %>
+    </select>
+    <span class="hint">Se conservan el mes en curso y los 12 anteriores.</span>
+  </div>
+  <div class="actions">
+    <button type="submit" class="secondary">Ver mes</button>
+    <a href="/admin/usage">Hoy y este mes</a>
+  </div>
+</form>
+<% } %>
+
+<section class="card" data-cap-level="<%= it.cap.level %>">
+  <h2>Tope mensual</h2>
+  <p>
+    <span class="badge <%= it.cap.level === 'reached' ? 'badge-warn' : it.cap.level === 'none' ? 'badge-draft' : 'badge-ok' %>"><%= it.cap.label %></span>
+    Gasto del mes: <%= it.cap.spent %> · Tope: <%= it.cap.cap || 'sin fijar' %><% if (it.cap.percent !== null) { %> · <%= it.cap.percent %> %<% } %>
+  </p>
+  <p class="hint">Común a todos los canales; incluye «Probar el bot» y los resúmenes de derivación. Al alcanzarlo, el bot responde en WhatsApp y en el chat web solo con el contacto del negocio hasta el mes siguiente o hasta que subas el tope.</p>
+</section>
+
+<form class="stack card" method="post" action="/admin/usage/settings">
+  <%~ include('/partials/csrf', { token: it.layout.csrf }) %>
+  <h2>Ajustes de coste</h2>
+  <div>
+    <label for="currency">Moneda de coste</label>
+    <input id="currency" name="currency" type="text" maxlength="3" value="<%= it.h.str(v.currency) %>">
+    <span class="hint">Código de 3 letras (USD, EUR…). Los precios están en esta moneda: para cambiarla, borra antes los precios.</span>
+    <%~ include('/partials/field-error', { message: it.h.err(e, 'currency') }) %>
+  </div>
+  <div>
+    <label for="monthlyCap">Tope mensual de gasto (<%= it.currency %>)</label>
+    <input id="monthlyCap" name="monthlyCap" type="text" inputmode="decimal" value="<%= it.h.str(v.monthlyCap) %>">
+    <%~ include('/partials/field-error', { message: it.h.err(e, 'monthlyCap') }) %>
+  </div>
+  <div>
+    <label for="capEnabled" class="inline">
+      <input id="capEnabled" name="capEnabled" type="checkbox"<% if (v.capEnabled) { %> checked<% } %>>
+      Activar el tope
+    </label>
+    <span class="hint">Exige el precio del modelo actual («<%= it.currentModel %>»).</span>
+    <%~ include('/partials/field-error', { message: it.h.err(e, 'capEnabled') }) %>
+  </div>
+  <div class="actions">
+    <button type="submit">Guardar</button>
+  </div>
+</form>
+
+<section class="card">
+  <h2>Precios por modelo</h2>
+  <p class="hint">Precios por millón de tokens, en <%= it.currency %>. Cambiar un precio no altera el coste de lo ya registrado.</p>
+  <% if (!it.currentHasPrice) { %>
+    <p class="notice" role="status">El modelo actual «<%= it.currentModel %>» no tiene precio. Añádelo abajo: el nombre ya está puesto.</p>
+  <% } %>
+  <% if (it.prices.length > 0) { %>
+  <div class="table-scroll">
+  <table>
+    <thead>
+      <tr>
+        <th scope="col">Modelo</th>
+        <th scope="col">Entrada</th>
+        <th scope="col">Salida</th>
+        <th scope="col">Escritura en caché</th>
+        <th scope="col">Lectura de caché</th>
+        <th scope="col"><span class="visually-hidden">Acciones</span></th>
+      </tr>
+    </thead>
+    <tbody>
+      <% it.prices.forEach(function (p) { %>
+      <tr>
+        <th scope="row"><%= p.model %><% if (p.current) { %> <span class="badge badge-ok">modelo actual</span><% } %></th>
+        <td><%= p.input %></td>
+        <td><%= p.output %></td>
+        <td><%= p.cacheWrite %></td>
+        <td><%= p.cacheRead %></td>
+        <td>
+          <form class="inline" method="post" action="/admin/usage/prices/delete" hx-confirm="¿Eliminar el precio de <%= p.model %>? Lo ya registrado conserva su coste.">
+            <%~ include('/partials/csrf', { token: it.layout.csrf }) %>
+            <input type="hidden" name="model" value="<%= p.model %>">
+            <button type="submit" class="danger small">Eliminar</button>
+          </form>
+        </td>
+      </tr>
+      <% }) %>
+    </tbody>
+  </table>
+  </div>
+  <% } %>
+
+  <form class="stack" method="post" action="/admin/usage/prices">
+    <%~ include('/partials/csrf', { token: it.layout.csrf }) %>
+    <h3>Añadir o cambiar un precio</h3>
+    <p class="hint">Para cambiar un precio, escribe el mismo nombre de modelo.</p>
+    <div>
+      <label for="model">Modelo</label>
+      <input id="model" name="model" type="text" value="<%= it.h.str(v.model) %>" maxlength="200">
+      <%~ include('/partials/field-error', { message: it.h.err(e, 'model') }) %>
+    </div>
+    <% [['input', 'Entrada'], ['output', 'Salida'], ['cacheWrite', 'Escritura en caché'], ['cacheRead', 'Lectura de caché']].forEach(function (f) { %>
+    <div>
+      <label for="<%= f[0] %>"><%= f[1] %> (<%= it.currency %> por millón de tokens)</label>
+      <input id="<%= f[0] %>" name="<%= f[0] %>" type="text" inputmode="decimal" value="<%= it.h.str(v[f[0]]) %>">
+      <%~ include('/partials/field-error', { message: it.h.err(e, f[0]) }) %>
+    </div>
+    <% }) %>
+    <div class="actions">
+      <button type="submit">Guardar precio</button>
+    </div>
+  </form>
+</section>

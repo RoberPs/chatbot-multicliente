@@ -17,6 +17,8 @@ import * as messages from '../conversation/repositories/message.js';
 import type { InboundRow } from '../conversation/repositories/message.js';
 import type { Db } from '../db/client.js';
 import type { KnowledgeReader, KnowledgeSnapshot } from '../knowledge/types.js';
+import type { UsageRecording } from '../usage/meter.js';
+import { addTokenUsage, type ResponseUsage } from '../usage/types.js';
 import type { ActCustomer, ActResult } from './business-replies.js';
 import { decide, type TurnDecision, type TurnInput } from './decision.js';
 import { alertNotice, forwardNotice, reminderNotice } from './notices.js';
@@ -30,7 +32,7 @@ import * as handoffs from './repositories/handoff.js';
 import type { HandoffWithCustomer } from './repositories/handoff.js';
 import * as notices from './repositories/handoff-notice.js';
 import { addOpenMinutes, attentionAt, type Attention } from './schedule.js';
-import { summarizeHandoff } from './summary.js';
+import { fallbackSummary, summarizeHandoff } from './summary.js';
 import { lateReplyWithContact } from './templates.js';
 import {
   hashToken,
@@ -75,6 +77,8 @@ export interface HandoffServiceDeps {
   /** Plazos más cortos en los tests. */
   routeTimeoutMs?: number;
   summaryBudgetMs?: number;
+  /** Registro del consumo del resumen (010); sin él no se mide. */
+  usage?: UsageRecording;
 }
 
 export interface StartInput {
@@ -88,6 +92,11 @@ export interface StartInput {
   /** Playground: solo la vía simulada (FR-021). */
   simulate: boolean;
   logContext: EventContext;
+  /**
+   * Resumen del motivo con el modelo (005). `false` con el tope de gasto alcanzado (010, R9):
+   * respaldo literal sin llamar al resumidor ni registrar consumo.
+   */
+  modelSummary: boolean;
 }
 
 export type StartResult =
@@ -156,6 +165,31 @@ interface Sent {
 export function createHandoffService(deps: HandoffServiceDeps): HandoffService {
   const { db, clock, activityLog } = deps;
   const routeTimeoutMs = deps.routeTimeoutMs ?? ROUTE_TIMEOUT_MS;
+
+  /** Consumo del resumen en el canal de la conversación (010); nunca impide derivar (FR-005). */
+  async function recordSummaryUsage(
+    usage: ResponseUsage | null,
+    channel: Channel,
+    timezone: string,
+    logContext: EventContext,
+  ): Promise<void> {
+    if (!deps.usage || !usage) return;
+    try {
+      await deps.usage.meter.record(
+        {
+          channel,
+          purpose: 'handoff_summary',
+          model: deps.usage.model,
+          usage,
+          at: clock.now(),
+          timezone,
+        },
+        logContext,
+      );
+    } catch {
+      // El medidor real no lanza (registra usage_record_failed); esto cubre cualquier otro.
+    }
+  }
 
   /** Una vía con su plazo: si no contesta a tiempo, cuenta como fallo (R5). */
   async function sendOne(route: AlertRoute, notice: BusinessNotice): Promise<Sent> {
@@ -512,14 +546,30 @@ export function createHandoffService(deps: HandoffServiceDeps): HandoffService {
       }
 
       const customerTexts = await messages.customerTexts(db, input.conversationId, SUMMARY_TEXTS);
-      const summary = await summarizeHandoff({
-        summarizer: deps.summarizer,
-        kind,
-        customerTexts,
-        activityLog,
-        logContext,
-        ...(deps.summaryBudgetMs === undefined ? {} : { budgetMs: deps.summaryBudgetMs }),
-      });
+      let summaryUsage: ResponseUsage | null = null;
+      const capFallback = () => {
+        activityLog.log({ event: 'handoff_summary_fallback', reason: 'spend_cap' }, logContext);
+        return { summary: fallbackSummary(kind, customerTexts), source: 'fallback' as const };
+      };
+      const summary = !input.modelSummary
+        ? capFallback()
+        : await summarizeHandoff({
+            summarizer: deps.summarizer,
+            kind,
+            customerTexts,
+            activityLog,
+            logContext,
+            ...(deps.summaryBudgetMs === undefined ? {} : { budgetMs: deps.summaryBudgetMs }),
+            onUsage(usage) {
+              summaryUsage = summaryUsage
+                ? {
+                    calls: summaryUsage.calls + 1,
+                    tokens: addTokenUsage(summaryUsage.tokens, usage),
+                  }
+                : { calls: 1, tokens: usage };
+            },
+          });
+      await recordSummaryUsage(summaryUsage, input.channel, snapshot.business.timezone, logContext);
 
       const handoffId = randomUUID();
       const token = issueToken();

@@ -12,6 +12,7 @@ import { policiesRoutes } from './policies.js';
 import { resourceRoutes } from './resources.js';
 import { serviceRoutes } from './services.js';
 import { toneRoutes } from './tone.js';
+import { usageRoutes } from './usage.js';
 import { webChatPageRoutes } from './web-chat.js';
 
 /** Rutas del panel bajo `/admin`; todas exigen sesión del operador (contracts/admin-panel.md). */
@@ -28,6 +29,7 @@ export async function adminRoutes(app: FastifyInstance): Promise<void> {
   await app.register(handoffsRoutes);
   await app.register(playgroundRoutes);
   await app.register(webChatPageRoutes);
+  await app.register(usageRoutes);
   await app.register(configRoutes);
   await app.register(partialRoutes);
 }

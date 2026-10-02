@@ -43,6 +43,13 @@
       "when": 1790768534855,
       "tag": "0005_config_transfer",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1790847372138,
+      "tag": "0006_usage",
+      "breakpoints": true
     }
   ]
 }

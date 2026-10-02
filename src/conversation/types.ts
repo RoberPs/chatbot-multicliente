@@ -70,6 +70,8 @@ export const REPLY_TEMPLATES = [
   'R-AUDIO',
   'R-LIMIT',
   'R-UNAVAILABLE',
+  /** Tope mensual de gasto alcanzado en WhatsApp (010): sin modelo, con contacto. */
+  'R-CAP',
   'R-HANDOFF-ASK',
   'R-HANDOFF-PHONE',
   'R-HANDOFF-OK',

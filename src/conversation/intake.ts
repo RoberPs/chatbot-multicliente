@@ -10,8 +10,9 @@
 import type { Db } from '../db/client.js';
 import type { KnowledgeReader, KnowledgeSnapshot } from '../knowledge/types.js';
 import { readWebChatSettings, type WebChatSettings } from '../webchat/settings.js';
+import { checkSpendCap } from '../usage/spend-cap.js';
 import { capReached, readWebUsage, type QuotaWatch } from '../webchat/usage.js';
-import type { ActivityLog, DiscardReason } from './activity-log.js';
+import type { ActivityLog, DiscardReason, EventContext } from './activity-log.js';
 import type { ChannelPolicies, ChannelPolicy } from './channels.js';
 import type { Clock } from './ports.js';
 import * as conversations from './repositories/conversation.js';
@@ -44,7 +45,7 @@ export type IntakeOutcome =
   | { status: 'stored'; conversationId: string }
   | { status: 'duplicate' }
   | { status: 'rate_limited'; conversationId: string }
-  | { status: 'discarded'; reason: 'not_active' | 'disabled' | 'quota' | 'group' };
+  | { status: 'discarded'; reason: 'not_active' | 'disabled' | 'quota' | 'spend_cap' | 'group' };
 
 export interface Intake {
   handle(events: InboundEvent[]): Promise<IntakeOutcome[]>;
@@ -121,6 +122,7 @@ export function createIntake(deps: IntakeDeps): Intake {
   function webChecks(snapshot: KnowledgeSnapshot) {
     let web: Promise<WebChatSettings> | null = null;
     let cap: Promise<'day' | 'month' | null> | null = null;
+    let spend: Promise<boolean> | null = null;
     const readSettings = () => (web ??= readWebChatSettings(db));
     return {
       readSettings,
@@ -133,6 +135,18 @@ export function createIntake(deps: IntakeDeps): Intake {
           if (period) deps.quotaWatch?.reached(period, current, now, snapshot.business.timezone);
           return period;
         })()),
+      /** Tope mensual de gasto alcanzado (010, R7); emite el evento del mes si toca (R10). */
+      spendCapReached: (logContext: EventContext) =>
+        (spend ??= (async () => {
+          const state = await checkSpendCap(
+            db,
+            clock.now(),
+            snapshot.business.timezone,
+            activityLog,
+            logContext,
+          );
+          return state.level === 'reached';
+        })()),
     };
   }
 
@@ -141,10 +155,15 @@ export function createIntake(deps: IntakeDeps): Intake {
     policy: ChannelPolicy,
     snapshot: KnowledgeSnapshot,
     web: ReturnType<typeof webChecks>,
-  ): Promise<Extract<DiscardReason, 'not_active' | 'disabled' | 'quota'> | null> {
+    logContext: EventContext,
+  ): Promise<Extract<DiscardReason, 'not_active' | 'disabled' | 'quota' | 'spend_cap'> | null> {
     if (policy.requiresActiveBusiness && snapshot.status !== 'active') return 'not_active';
     if (policy.requiresWebChatEnabled && !(await web.readSettings()).enabled) return 'disabled';
     if (policy.usageCap && (await web.capReached()) !== null) return 'quota';
+    // 010: los dos topes se aplican a la vez (FR-017); el de gasto, solo en la web (R7).
+    if (policy.spendCap && policy.usageCap && (await web.spendCapReached(logContext))) {
+      return 'spend_cap';
+    }
     return null;
   }
 
@@ -170,7 +189,7 @@ export function createIntake(deps: IntakeDeps): Intake {
         if (!policy) throw new Error(`Canal sin configurar: ${event.channel}`);
         const logContext = { channel: event.channel, customerKey: event.channelUserId };
 
-        const reason = await discardReason(policy, snapshot, web);
+        const reason = await discardReason(policy, snapshot, web, logContext);
         if (reason) {
           activityLog.log({ event: 'message_discarded', reason }, logContext);
           outcomes.push({ status: 'discarded', reason });

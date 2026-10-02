@@ -3,7 +3,11 @@
  * núcleo y versión del esquema aplicada y esperada. Solo lectura: el sondeo usa un pool propio de
  * una conexión, una transacción `READ ONLY` y un tope de 2 s, así que no compite con el bot
  * (FR-006). Ningún mensaje de error de la BD llega al informe ni a los registros (FR-002).
+ *
+ * Desde la 010, la vista completa lleva también el nivel del tope de gasto, leído en el mismo
+ * sondeo y solo con el esquema esperado; no cambia el estado (FR-023a).
  */
+import { drizzle } from 'drizzle-orm/node-postgres';
 import pg from 'pg';
 import {
   databaseSchema,
@@ -12,6 +16,10 @@ import {
   UnknownMigrationError,
   type SchemaVersion,
 } from '../backup/schema-version.js';
+import type { Db } from '../db/client.js';
+import * as dbSchema from '../db/schema.js';
+import { spendCapState } from '../usage/spend-cap.js';
+import type { SpendCapLevel } from '../usage/types.js';
 import { createLifecycle, type Lifecycle } from './lifecycle.js';
 
 export type HealthStatus = 'ok' | 'degraded' | 'not_ready';
@@ -30,18 +38,45 @@ export interface HealthReport {
     applied: SchemaRef | null;
     expected: { index: number; tag: string };
   };
+  /** Nivel del tope de gasto (010); `null` si no se pudo leer o el esquema no es el esperado. */
+  spendCap: SpendCapLevel | null;
 }
 
 /** Lo que el sondeo lee de la BD. */
 export type ProbeResult =
   | { kind: 'empty' }
-  | { kind: 'known'; schema: SchemaVersion }
+  /** `spendCap`: solo con el esquema esperado; `null` si no se pudo leer (010). */
+  | { kind: 'known'; schema: SchemaVersion; spendCap?: SpendCapLevel | null }
   /** La última migración aplicada no está en el journal de este núcleo. */
   | { kind: 'unknown'; index: number };
 
 export interface SchemaProbe {
   read(): Promise<ProbeResult>;
   close(): Promise<void>;
+}
+
+/** Mismo esquema en índice, etiqueta y hash. */
+const sameSchema = (a: SchemaVersion, b: SchemaVersion): boolean =>
+  a.index === b.index && a.tag === b.tag && a.hash === b.hash;
+
+/**
+ * Nivel del tope de gasto dentro de la transacción del sondeo, en un punto de guardado: si falla,
+ * `null` y el informe sigue (010). La zona es la del negocio; sin negocio, UTC.
+ */
+async function readSpendCap(client: pg.PoolClient): Promise<SpendCapLevel | null> {
+  await client.query('SAVEPOINT spend_cap');
+  try {
+    const zone = await client.query<{ timezone: string }>(
+      'select timezone from business where id = 1',
+    );
+    const db = drizzle(client, { schema: dbSchema }) as unknown as Db;
+    const state = await spendCapState(db, new Date(), zone.rows[0]?.timezone ?? 'UTC');
+    await client.query('RELEASE SAVEPOINT spend_cap');
+    return state.level;
+  } catch {
+    await client.query('ROLLBACK TO SAVEPOINT spend_cap');
+    return null;
+  }
 }
 
 /** Tope de cada consulta y del informe completo antes de declarar `degraded`. */
@@ -67,6 +102,7 @@ export function createSchemaProbe(
   });
   // Una conexión inactiva que se cae (BD parada) no debe tumbar el proceso.
   pool.on('error', () => undefined);
+  let expected: SchemaVersion | null = null;
 
   return {
     async read() {
@@ -77,7 +113,17 @@ export function createSchemaProbe(
         let result: ProbeResult;
         try {
           const schema = await databaseSchema(client, folder);
-          result = schema === 'empty' ? { kind: 'empty' } : { kind: 'known', schema };
+          if (schema === 'empty') {
+            result = { kind: 'empty' };
+          } else {
+            expected ??= installedSchema(folder);
+            // 010: el tope solo se lee si las tablas son las que este núcleo conoce.
+            result = {
+              kind: 'known',
+              schema,
+              spendCap: sameSchema(schema, expected) ? await readSpendCap(client) : null,
+            };
+          }
         } catch (error) {
           if (!(error instanceof UnknownMigrationError)) throw error;
           const count = await client.query<{ n: number }>(
@@ -131,10 +177,15 @@ export async function buildHealthReport(deps: HealthReportDeps): Promise<HealthR
     coreVersion: deps.coreVersion,
     expected: { index: expected.index, tag: expected.tag },
   };
-  const report = (status: HealthStatus, applied: SchemaRef | null): HealthReport => ({
+  const report = (
+    status: HealthStatus,
+    applied: SchemaRef | null,
+    spendCap: SpendCapLevel | null = null,
+  ): HealthReport => ({
     status,
     coreVersion: base.coreVersion,
     schema: { applied, expected: base.expected },
+    spendCap,
   });
 
   if (deps.lifecycle.state !== 'ready') return report('not_ready', null);
@@ -153,11 +204,11 @@ export async function buildHealthReport(deps: HealthReportDeps): Promise<HealthR
       return report('degraded', { index: result.index, tag: null });
     case 'known': {
       const { schema } = result;
-      const matches =
-        schema.index === expected.index &&
-        schema.tag === expected.tag &&
-        schema.hash === expected.hash;
-      return report(matches ? 'ok' : 'degraded', { index: schema.index, tag: schema.tag });
+      const applied = { index: schema.index, tag: schema.tag };
+      // El tope no cambia el estado (FR-023a); con otro esquema no se informa.
+      return sameSchema(schema, expected)
+        ? report('ok', applied, result.spendCap ?? null)
+        : report('degraded', applied);
     }
   }
 }
@@ -210,5 +261,7 @@ export function fullView(report: HealthReport, instanceId: string | null) {
           : { index: report.schema.applied.index, tag: report.schema.applied.tag },
       expected: { index: report.schema.expected.index, tag: report.schema.expected.tag },
     },
+    // 010: solo el nivel; sin importes, precios, moneda ni porcentajes.
+    spendCap: report.spendCap,
   };
 }

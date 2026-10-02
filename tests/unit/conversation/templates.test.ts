@@ -10,7 +10,7 @@ import {
   unavailableContact,
   unavailableReply,
 } from '../../../src/conversation/templates.js';
-import { unavailableResponse } from '../../../src/conversation/responder.js';
+import { capResponse, unavailableResponse } from '../../../src/conversation/responder.js';
 import { activeSnapshot } from '../../helpers/snapshot.js';
 import { slot, typicalWeek } from '../../helpers/state.js';
 
@@ -183,5 +183,58 @@ describe('plantillas: SALUDO (US4, FR-020)', () => {
 
   it('sin cifras propias', () => {
     expect(greeting('Negocio', 'tu')).not.toMatch(/\d/);
+  });
+});
+
+describe('plantillas: R-CAP (010, contracts/spend-cap-conversation.md)', () => {
+  it('cuerpo de R-UNAVAILABLE con el contacto del negocio, sin saludo ni modelo', () => {
+    const snapshot = activeSnapshot();
+    const response = capResponse(snapshot, '+34600999888', ['¿Abrís el sábado?']);
+    expect(response).toMatchObject({
+      template: 'R-CAP',
+      greeting: false,
+      contactBlock: true,
+      contactReason: 'template',
+      groundingRejections: 0,
+    });
+    expect(response.text).toBe(
+      `Ahora mismo no puedo atenderte por este chat.\n\n${contactBlock(snapshot)}`,
+    );
+    expect(response.modelMs).toBeUndefined();
+    expect(response.usage).toBeUndefined();
+  });
+
+  it('con el contacto de emergencia si el negocio no tiene ninguno (FR-016)', () => {
+    // Ni canales de derivación ni teléfono propio: el snapshot ya calculado queda sin contacto.
+    const base = activeSnapshot();
+    const sinContacto = { ...base, handoff: { ...base.handoff, channels: [] } };
+    expect(capResponse(sinContacto, '+34600999888', []).text).toBe(
+      'Ahora mismo no puedo atenderte por este chat.\n\n' +
+        'Si necesitas hablar con una persona: teléfono +34 600 99 98 88.',
+    );
+  });
+
+  it('lleva una salida de modelo sintética y el detector determinista del lote', () => {
+    const snapshot = activeSnapshot();
+    const plain = capResponse(snapshot, null, ['¿Abrís el sábado?']);
+    expect(plain.model).toEqual({
+      reply: {
+        body: 'Ahora mismo no puedo atenderte por este chat.',
+        handoffRequested: false,
+        offerContact: false,
+        bookingRequested: false,
+        needsRephrase: false,
+        mentionedServiceIds: [],
+        complaint: false,
+        acceptsHandoff: false,
+        refusesContact: false,
+        contactName: null,
+        contactPhone: null,
+      },
+      handoffDetected: false,
+      fileNotice: null,
+    });
+    const asks = capResponse(snapshot, null, ['Hola', 'Quiero hablar con una persona']);
+    expect(asks.model?.handoffDetected).toBe(true);
   });
 });

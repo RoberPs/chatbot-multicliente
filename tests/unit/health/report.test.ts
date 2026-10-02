@@ -54,19 +54,21 @@ describe('buildHealthReport (009, R3)', () => {
         status: 'not_ready',
         coreVersion: '1.4.0',
         schema: { applied: null, expected: { index: 5, tag: '0005_config_transfer' } },
+        spendCap: null,
       });
       expect(probe.read).not.toHaveBeenCalled();
     }
   });
 
   it('ok si el esquema aplicado es el esperado en índice, etiqueta y hash', async () => {
-    expect(await build({ kind: 'known', schema: EXPECTED })).toEqual({
+    expect(await build({ kind: 'known', schema: EXPECTED, spendCap: 'none' })).toEqual({
       status: 'ok',
       coreVersion: '1.4.0',
       schema: {
         applied: { index: 5, tag: '0005_config_transfer' },
         expected: { index: 5, tag: '0005_config_transfer' },
       },
+      spendCap: 'none',
     });
   });
 
@@ -135,8 +137,51 @@ describe('vistas del informe', () => {
         applied: { index: 6, tag: null },
         expected: { index: 5, tag: '0005_config_transfer' },
       },
+      spendCap: null,
     });
-    expect(Object.keys(view).sort()).toEqual(['coreVersion', 'instanceId', 'schema', 'status']);
+    expect(Object.keys(view)).toEqual([
+      'status',
+      'instanceId',
+      'coreVersion',
+      'schema',
+      'spendCap',
+    ]);
     expect(fullView(report, null).instanceId).toBeNull();
+  });
+});
+
+describe('estado del tope de gasto en el informe (010, FR-023a)', () => {
+  it.each(['none', 'normal', 'warning', 'reached'] as const)(
+    'con el esquema esperado lleva %s y el estado sigue ok',
+    async (level) => {
+      const report = await build({ kind: 'known', schema: EXPECTED, spendCap: level });
+      expect(report).toMatchObject({ status: 'ok', spendCap: level });
+    },
+  );
+
+  it('null si el sondeo no lo pudo leer', async () => {
+    expect((await build({ kind: 'known', schema: EXPECTED, spendCap: null })).spendCap).toBeNull();
+  });
+
+  it('null si el esquema no es el esperado, aunque el sondeo traiga un valor', async () => {
+    const report = await build({
+      kind: 'known',
+      schema: { ...EXPECTED, hash: 'otro' },
+      spendCap: 'reached',
+    });
+    expect(report).toMatchObject({ status: 'degraded', spendCap: null });
+  });
+
+  it('null si la BD no responde o está vacía', async () => {
+    expect((await build(new Error('caída'))).spendCap).toBeNull();
+    expect((await build({ kind: 'empty' })).spendCap).toBeNull();
+  });
+
+  it('solo la vista completa lo muestra, sin importes ni moneda', async () => {
+    const report = await build({ kind: 'known', schema: EXPECTED, spendCap: 'warning' });
+    expect(publicView(report)).toEqual({ status: 'ok' });
+    const view = fullView(report, 'demo-01');
+    expect(view.spendCap).toBe('warning');
+    expect(JSON.stringify(view)).not.toMatch(/currency|cents|pico|percent|price/i);
   });
 });

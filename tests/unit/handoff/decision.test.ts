@@ -5,6 +5,7 @@
 import { describe, expect, it } from 'vitest';
 import { decide, type TurnInput } from '../../../src/handoff/decision.js';
 import type { HandoffStep } from '../../../src/handoff/types.js';
+import { capModelReply } from '../../../src/conversation/responder.js';
 import { reply } from '../../helpers/fakes.js';
 
 const NOW = new Date('2026-10-01T10:00:00Z');
@@ -423,5 +424,47 @@ describe('filas 1 y 2: quejas (US6, FR-003)', () => {
           expect(d.type).not.toBe('normal');
           expect(d.type).not.toBe('offer');
         }
+  });
+});
+
+describe('tope de gasto alcanzado: salida sintética de R-CAP (010)', () => {
+  const cap = capModelReply('tu');
+
+  it('sin petición de persona → normal (queda R-CAP con contacto)', () => {
+    expect(decide(input({ reply: cap, detector: false })).type).toBe('normal');
+  });
+
+  it('petición de persona (detector) con vías → pide los datos o inicia', () => {
+    expect(decide(input({ reply: cap, detector: true })).type).toBe('ask');
+    expect(
+      decide(
+        input({
+          reply: cap,
+          detector: true,
+          contactFromChannel: true,
+          known: { name: 'Lucía', phone: '+34611222333' },
+        }),
+      ),
+    ).toEqual({ type: 'start', kind: 'person', step: null, save: {} });
+  });
+
+  it('petición de persona sin vías → normal: R-CAP con contacto', () => {
+    expect(decide(input({ reply: cap, detector: true, hasRoutes: false })).type).toBe('normal');
+  });
+
+  it('recogida de datos en curso: el teléfono se toma del texto', () => {
+    const d = decide(
+      input({
+        reply: cap,
+        step: collecting(['phone']),
+        known: { name: 'Lucía', phone: null },
+        texts: ['Mi teléfono es 612 345 678'],
+      }),
+    );
+    expect(d).toMatchObject({ type: 'start', save: { phone: '+34612345678' } });
+  });
+
+  it('no reconoce quejas ni ofertas sin modelo', () => {
+    expect(cap).toMatchObject({ complaint: false, offerContact: false, handoffRequested: false });
   });
 });

@@ -25,6 +25,8 @@ import type {
 } from '../../src/handoff/ports.js';
 import { readHandoffAlerts } from '../../src/handoff/settings.js';
 import type { BusinessNotice, HandoffKind, RouteName } from '../../src/handoff/types.js';
+import type { UsageMeter } from '../../src/usage/meter.js';
+import type { TokenUsage, UsageRecordInput } from '../../src/usage/types.js';
 
 export class ManualClock implements Clock {
   private current: number;
@@ -57,6 +59,14 @@ export const reply = (body: string, flags: Partial<ModelReply> = {}): ModelReply
   ...flags,
 });
 
+/** Tokens de prueba (010): como si el proveedor los informara. */
+export const tokens = (
+  input: number,
+  output: number,
+  cacheWrite = 0,
+  cacheRead = 0,
+): TokenUsage => ({ input, output, cacheWrite, cacheRead });
+
 /** Paso programado del modelo falso. */
 export type ModelStep =
   | ModelReply
@@ -68,6 +78,11 @@ export type ModelStep =
       takesMs?: number;
       /** Espera real (ms) respetando el AbortSignal. */
       realDelayMs?: number;
+      /**
+       * Tokens que "informa el proveedor" por `onUsage` (010). También con `error`: la respuesta
+       * llegó y se descartó. `null`: sin tokens aunque haya uno por defecto.
+       */
+      usage?: TokenUsage | null;
     };
 
 export interface ModelCall {
@@ -78,6 +93,8 @@ export interface ModelCall {
 export class FakeChatModel implements ChatModel {
   readonly calls: ModelCall[] = [];
   private readonly steps: ModelStep[] = [];
+  /** Tokens por defecto de las respuestas (010); sin ellos el doble no informa uso. */
+  private defaultUsage: TokenUsage | null = null;
 
   constructor(
     private readonly clock?: ManualClock,
@@ -90,14 +107,26 @@ export class FakeChatModel implements ChatModel {
     return this;
   }
 
+  /** Cada respuesta (salvo errores sin `usage` propio) informa estos tokens por `onUsage`. */
+  reportUsage(usage: TokenUsage | null): this {
+    this.defaultUsage = usage;
+    return this;
+  }
+
   async reply(
     context: ReplyContext,
-    opts: { signal: AbortSignal; feedback?: string },
+    opts: { signal: AbortSignal; feedback?: string; onUsage?: (usage: TokenUsage) => void },
   ): Promise<ModelReply> {
     this.calls.push({ context, feedback: opts.feedback });
     const step = this.steps.shift() ?? this.fallback;
+    const report = (usage: TokenUsage | null | undefined) => {
+      if (usage) opts.onUsage?.({ ...usage });
+    };
     if (step instanceof ChatModelError) throw step;
-    if ('body' in step) return step;
+    if ('body' in step) {
+      report(this.defaultUsage);
+      return step;
+    }
     if (step.takesMs) this.clock?.advance(step.takesMs);
     if (step.realDelayMs) {
       await new Promise<void>((resolve, reject) => {
@@ -109,7 +138,12 @@ export class FakeChatModel implements ChatModel {
       });
     }
     if (opts.signal.aborted) throw new ChatModelError('timeout');
-    if (step.error) throw step.error;
+    if (step.error) {
+      // Un error con tokens es una respuesta recibida y descartada (R1).
+      report(step.usage);
+      throw step.error;
+    }
+    report(step.usage === undefined ? this.defaultUsage : step.usage);
     return step.reply ?? this.fallback;
   }
 }
@@ -277,7 +311,9 @@ export class FakeAlertRoute implements AlertRoute {
     const step = this.steps.shift() ?? this.fallback;
     if ('hang' in step) {
       return new Promise((resolve) => {
-        const done = () => { resolve({ ok: false, failure: 'timeout' }); };
+        const done = () => {
+          resolve({ ok: false, failure: 'timeout' });
+        };
         if (opts.signal.aborted) done();
         else opts.signal.addEventListener('abort', done, { once: true });
       });
@@ -291,13 +327,20 @@ export class FakeAlertRoute implements AlertRoute {
   }
 }
 
-/** Guion del resumidor falso. */
-export type SummaryStep = { summary: string } | { fail: true } | { hang: true };
+/**
+ * Guion del resumidor falso. `usage` (010): tokens que "informa el proveedor" por `onUsage`,
+ * también en un fallo tras recibir respuesta; `null` = sin tokens aunque haya uno por defecto.
+ */
+export type SummaryStep =
+  | { summary: string; usage?: TokenUsage | null }
+  | { fail: true; usage?: TokenUsage | null }
+  | { hang: true };
 
 /** Resumidor falso: guarda las entradas y responde según su guion. */
 export class FakeSummarizer implements HandoffSummarizer {
   readonly calls: Array<{ kind: HandoffKind; customerTexts: string[] }> = [];
   private readonly steps: SummaryStep[] = [];
+  private defaultUsage: TokenUsage | null = null;
 
   constructor(
     private readonly fallback: SummaryStep = { summary: 'Resumen de prueba del motivo.' },
@@ -308,21 +351,48 @@ export class FakeSummarizer implements HandoffSummarizer {
     return this;
   }
 
+  /** Cada resumen (salvo `hang` y pasos con `usage` propio) informa estos tokens. */
+  reportUsage(usage: TokenUsage | null): this {
+    this.defaultUsage = usage;
+    return this;
+  }
+
   async summarize(
     input: { kind: HandoffKind; customerTexts: string[] },
-    opts: { signal: AbortSignal },
+    opts: { signal: AbortSignal; onUsage?: (usage: TokenUsage) => void },
   ): Promise<{ summary: string }> {
     this.calls.push({ kind: input.kind, customerTexts: [...input.customerTexts] });
     const step = this.steps.shift() ?? this.fallback;
     if ('hang' in step) {
       return new Promise((_resolve, reject) => {
-        const done = () => { reject(new Error('timeout')); };
+        const done = () => {
+          reject(new Error('timeout'));
+        };
         if (opts.signal.aborted) done();
         else opts.signal.addEventListener('abort', done, { once: true });
       });
     }
+    const usage = step.usage === undefined ? this.defaultUsage : step.usage;
+    if (usage) opts.onUsage?.({ ...usage });
     if ('fail' in step) throw new Error('fallo del resumidor');
     return { summary: step.summary };
+  }
+}
+
+/** Medidor de consumo sin BD (010): guarda lo que se le pide registrar. */
+export class RecordingUsageMeter implements UsageMeter {
+  readonly records: UsageRecordInput[] = [];
+  async record(input: UsageRecordInput): Promise<void> {
+    this.records.push(structuredClone(input));
+  }
+}
+
+/** Medidor que lanza: comprueba que quien lo llama no deja de responder (FR-005). */
+export class FailingUsageMeter implements UsageMeter {
+  attempts = 0;
+  async record(): Promise<void> {
+    this.attempts += 1;
+    throw new Error('fallo del medidor');
   }
 }
 

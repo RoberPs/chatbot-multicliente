@@ -6,7 +6,8 @@
 import { eq } from 'drizzle-orm';
 import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
 import { message, webUsageDay } from '../../../src/db/schema.js';
-import { localDay, repliesOn } from '../../../src/webchat/usage.js';
+import { localDay } from '../../../src/knowledge/time/local-date.js';
+import { repliesOn } from '../../../src/webchat/usage.js';
 import { createTestBot, type TestBot } from '../../helpers/bot.js';
 import { createTestDatabase, type TestDatabase } from '../../helpers/db.js';
 
@@ -67,7 +68,9 @@ describe('tope del chat web en la recepción y el procesador', () => {
     await b.settle();
     expect(b.model.calls).toHaveLength(0);
     const [reply] = await outbound();
-    expect(reply?.body).toMatch(/^Ahora mismo no puedo atenderte por este chat\.\n\nPara hablar con una persona de /);
+    expect(reply?.body).toMatch(
+      /^Ahora mismo no puedo atenderte por este chat\.\n\nPara hablar con una persona de /,
+    );
     expect(reply?.replyTrace).toMatchObject({
       template: 'R-UNAVAILABLE',
       greeting: false,

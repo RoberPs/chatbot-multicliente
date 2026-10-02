@@ -32,6 +32,7 @@ describe('políticas de canal (R1)', () => {
       requiresActiveBusiness: true,
       requiresWebChatEnabled: false,
       usageCap: false,
+      spendCap: true,
       contactFromChannel: true,
       simulateAlerts: false,
     });
@@ -41,6 +42,7 @@ describe('políticas de canal (R1)', () => {
       requiresActiveBusiness: true,
       requiresWebChatEnabled: true,
       usageCap: true,
+      spendCap: true,
       contactFromChannel: false,
       simulateAlerts: false,
     });
@@ -50,6 +52,8 @@ describe('políticas de canal (R1)', () => {
       requiresActiveBusiness: false,
       requiresWebChatEnabled: false,
       usageCap: false,
+      // 010 (FR-019): "Probar el bot" no se corta con el tope de gasto.
+      spendCap: false,
       contactFromChannel: false,
       simulateAlerts: true,
     });

@@ -13,6 +13,7 @@ Estados: especificada → planificada → en implementación → completada (o a
 | 007 | Aprovisionamiento de instancias | Núcleo (operación) | Completada | `007-instance-provisioning` | [spec](specs/007-instance-provisioning/spec.md) · [plan](specs/007-instance-provisioning/plan.md) · [tareas](specs/007-instance-provisioning/tasks.md) | 2026-09-30  |
 | 008 | Exportar e importar la configuración del negocio | Núcleo | Completada | `008-config-export-import` | [spec](specs/008-config-export-import/spec.md) · [plan](specs/008-config-export-import/plan.md) · [tareas](specs/008-config-export-import/tasks.md) | 2026-10-01  |
 | 009 | Versión visible y actualización escalonada | Núcleo (operación) | Completada | `009-version-health-rollout` | [spec](specs/009-version-health-rollout/spec.md) · [plan](specs/009-version-health-rollout/plan.md) · [tareas](specs/009-version-health-rollout/tasks.md) | 2026-10-01  |
+| 010 | Consumo y coste por instancia | Núcleo | Completada | `010-usage-cost-cap` | [spec](specs/010-usage-cost-cap/spec.md) · [plan](specs/010-usage-cost-cap/plan.md) · [tareas](specs/010-usage-cost-cap/tasks.md) | 2026-10-01  |
 
 ---
 
@@ -52,6 +53,12 @@ Cada instancia **declara su versión** (feature 009): `GET /health` responde su 
 secreto de salud, la versión del núcleo y del esquema; el panel la muestra al pie de cada pantalla;
 `pnpm instance:versions` la consulta en todo el parque, y la guía de operación describe la
 publicación por tandas con comprobación y vuelta atrás.
+
+Cada instancia **mide el consumo del modelo** (feature 010): tokens por respuesta y por resumen de
+derivación, por canal y sin guardar textos ni datos del cliente. El panel muestra el consumo y el
+coste estimado con los precios que configura el operador, y un **tope mensual de gasto** opcional
+hace que, al alcanzarse, el bot responda en WhatsApp y en el chat web solo con el contacto del
+negocio, sin dejar de derivar a una persona.
 
 ## Requisitos
 
@@ -147,6 +154,32 @@ negocio y da el contacto de derivación, sin prometer que le contactarán. La gu
 validación manual está en
 [specs/005-handoff-to-business/quickstart.md](specs/005-handoff-to-business/quickstart.md).
 
+## Consumo y tope de gasto
+
+La página **Consumo** del panel (`/admin/usage`, feature 010) muestra los tokens y el coste
+estimado del modelo:
+
+- **Hoy** y **Este mes** (días y meses locales del negocio), por canal —WhatsApp, Chat web y
+  "Probar el bot"— con los totales de **Clientes finales** (WhatsApp + web) e **Instancia**.
+  Meses anteriores por canal y por día: se conservan el mes en curso y los 12 anteriores.
+- **Precios por modelo**, por millón de tokens (entrada, salida, escritura y lectura de caché), en
+  la **moneda de coste** de la instancia (USD por defecto; para cambiarla hay que borrar antes los
+  precios). El coste queda fijado al registrar: cambiar un precio no cambia lo ya registrado, y lo
+  consumido sin precio se muestra «sin precio», nunca a cero. Es una estimación, no la factura del
+  proveedor.
+- **Tope mensual**, común a todos los canales (incluye "Probar el bot" y los resúmenes de
+  derivación). Para activarlo, el modelo de `LLM_MODEL` tiene que tener precio. Al 80 % todas las
+  pantallas del panel avisan; al 100 %, WhatsApp responde con el contacto del negocio sin llamar al
+  modelo (una petición de persona se sigue derivando, con el resumen literal) y el chat web pasa a
+  "no disponible". "Probar el bot" sigue funcionando. Se reanuda solo al subir o desactivar el tope o
+  al empezar el mes local.
+
+El estado del tope (`none`, `normal`, `warning`, `reached`) sale también en `GET /health` con
+credencial y en la columna **Tope** de `pnpm instance:versions`, sin importes. Los precios, la moneda
+y el tope no viajan en la exportación de la configuración; el consumo sí entra en las copias de
+seguridad. Guía de validación manual:
+[specs/010-usage-cost-cap/quickstart.md](specs/010-usage-cost-cap/quickstart.md).
+
 ## Exportar e importar la configuración
 
 La página **Exportar e importar** del panel (`/admin/config`, feature 008) lleva la configuración del
@@ -221,7 +254,8 @@ pnpm instance:health-secret <id> [--rotate] # secreto de salud de una instancia 
   `instance:retire` (solo el inventario; los pasos manuales se muestran al terminar).
 - `instance:versions` consulta `GET /health` de cada instancia no retirada con el `HEALTH_SECRET`
   de su entorno (`<dir. del inventario>/envs/<id>.env`, solo en memoria), comprueba que responde
-  la instancia esperada y compara con la versión anotada (`imageVersion`). Solo `https`
+  la instancia esperada y compara con la versión anotada (`imageVersion`); la columna **Tope**
+  (010) muestra el estado del tope de gasto, que no cuenta para el resultado. Solo `https`
   (`--allow-insecure` para `localhost`). No escribe nada salvo `--annotate`, que pide confirmación
   (`--yes` sin terminal). `instance:health-secret` escribe el secreto en el entorno sin mostrarlo.
 
@@ -332,6 +366,8 @@ src/
 │                  los enlaces públicos de derivación (`/handoff/*`) y `GET /health`
 ├── health/        salud y versión sin HTTP: versión del núcleo, informe, secreto, ciclo de vida
 ├── webchat/       dominio del chat web sin HTTP: configuración, disponibilidad, topes, sesión
+├── usage/         consumo del modelo sin HTTP: registro, importes exactos, precios, resumen,
+│                  tope mensual de gasto y retención
 ├── mail/          adaptador de email (avisos de derivación por SMTP)
 ├── llm/           adaptador de Claude, construcción del prompt y resumen de derivaciones
 ├── speech/        adaptador de transcripción (solo con audios activados)

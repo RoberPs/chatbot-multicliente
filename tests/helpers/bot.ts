@@ -32,6 +32,7 @@ import { createSimulatedRoute } from '../../src/handoff/simulated-route.js';
 import { createTokenCipher } from '../../src/handoff/tokens.js';
 import type { WebChatSettings } from '../../src/webchat/settings.js';
 import { createQuotaWatch } from '../../src/webchat/usage.js';
+import { createUsageMeter, type UsageMeter } from '../../src/usage/meter.js';
 import { hairSalon } from '../fixtures/hair-salon.js';
 import { loadFixture } from '../fixtures/load.js';
 import type { BusinessFixture } from '../fixtures/types.js';
@@ -51,6 +52,9 @@ import {
 import { CUSTOMER_WA, postWebhook, testWhatsApp, textMessage, webhookPayload } from './whatsapp.js';
 
 export const EMERGENCY_PHONE = TEST_EMERGENCY_PHONE;
+
+/** Modelo con el que se registra el consumo en los tests (010). */
+export const TEST_LLM_MODEL = 'modelo-de-prueba';
 
 /** Visitante web de prueba: hash de una sesión (64 hex). */
 export const WEB_USER = 'ab'.repeat(32);
@@ -134,6 +138,8 @@ export interface TestBotOptions {
   summarizer?: FakeSummarizer;
   /** Plazos de la derivación (por defecto 15 s por vía y 8 s el resumen). */
   handoffTimeouts?: { routeMs?: number; summaryMs?: number };
+  /** Medidor del consumo (010); por defecto el real sobre la BD de prueba. */
+  usageMeter?: UsageMeter;
 }
 
 export const TEST_SESSION_SECRET = 'secreto-de-sesion-de-prueba-con-32-caracteres';
@@ -175,6 +181,10 @@ export async function createTestBot(t: TestDatabase, opts: TestBotOptions = {}):
     email: opts.alertRoutes?.email ?? new FakeAlertRoute('email'),
   };
   const summarizer = opts.summarizer ?? new FakeSummarizer();
+  const usage = {
+    meter: opts.usageMeter ?? createUsageMeter({ db: t.db, activityLog }),
+    model: TEST_LLM_MODEL,
+  };
   const handoff = createHandoffService({
     db: t.db,
     clock,
@@ -185,6 +195,7 @@ export async function createTestBot(t: TestDatabase, opts: TestBotOptions = {}):
     cipher: createTokenCipher(TEST_SESSION_SECRET),
     phoneRegion: 'ES',
     policies,
+    usage,
     ...(opts.handoffTimeouts?.routeMs === undefined
       ? {}
       : { routeTimeoutMs: opts.handoffTimeouts.routeMs }),
@@ -205,6 +216,7 @@ export async function createTestBot(t: TestDatabase, opts: TestBotOptions = {}):
       audioTranscription,
       quotaWatch,
       handoff,
+      usage,
     });
   const processor = makeProcessor();
   const wake = (id: string) => {
@@ -240,16 +252,22 @@ export async function createTestBot(t: TestDatabase, opts: TestBotOptions = {}):
         createBusinessRouter({ db: t.db, handoff, sender, activityLog, clock }),
       )
     : intake;
-  const app = await buildTestApp(t.db, undefined, {
-    whatsapp: withWhatsApp ? testWhatsApp : null,
-    audioTranscription,
-    activityLog,
-    intake: webhookIntake,
-    reader,
-    emergencyContactPhone: EMERGENCY_PHONE,
-    clock,
-    handoff,
-  });
+  const app = await buildTestApp(
+    t.db,
+    undefined,
+    {
+      whatsapp: withWhatsApp ? testWhatsApp : null,
+      audioTranscription,
+      activityLog,
+      intake: webhookIntake,
+      reader,
+      emergencyContactPhone: EMERGENCY_PHONE,
+      clock,
+      handoff,
+    },
+    // El panel usa el mismo modelo con el que se registra el consumo (010).
+    { LLM_MODEL: TEST_LLM_MODEL },
+  );
   let sequence = 0;
 
   return {

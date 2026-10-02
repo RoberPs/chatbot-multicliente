@@ -7,6 +7,7 @@ import { z } from 'zod';
 import { ChatModelError, type ChatModel } from '../conversation/ports.js';
 import { modelReplySchema, type ModelReply, type ReplyContext } from '../conversation/types.js';
 import { buildPrompt } from './prompt.js';
+import { reportUsage } from './token-usage.js';
 
 export type Effort = 'low' | 'medium' | 'high';
 
@@ -50,7 +51,7 @@ export function createAnthropicChatModel(opts: AnthropicChatModelOptions): ChatM
   const schema = replyJsonSchema();
 
   return {
-    async reply(context: ReplyContext, { signal, feedback }): Promise<ModelReply> {
+    async reply(context: ReplyContext, { signal, feedback, onUsage }): Promise<ModelReply> {
       const prompt = buildPrompt(context, feedback);
       let response: Anthropic.Message;
       try {
@@ -73,6 +74,8 @@ export function createAnthropicChatModel(opts: AnthropicChatModelOptions): ChatM
         throw toChatModelError(error, signal);
       }
 
+      // Hay respuesta: sus tokens cuentan aunque se descarte después (010, R1).
+      reportUsage(response, onUsage);
       if (response.stop_reason === 'refusal') throw new ChatModelError('refusal');
       if (response.stop_reason !== 'end_turn') throw new ChatModelError('invalid_output');
       const text = response.content

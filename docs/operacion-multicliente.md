@@ -229,12 +229,15 @@ cumple las reglas de calidad o coincide con otra instancia, `instance:check` lo 
 1. Rellena datos del negocio, horarios, servicios, precios y preguntas frecuentes. Si ya los
    preparaste en una instancia de pruebas, llévalos con el fichero (ver abajo) en vez de teclearlos.
 2. Resuelve los avisos críticos: el sistema no deja activar un negocio que los tenga (FR-032).
-3. Prueba en "Probar el bot" las preguntas típicas del sector y alguna trampa (precio no
+3. Consumo (010): moneda de coste, precio de `LLM_MODEL` y tope mensual de gasto
+   ([sección 4.1](#41-consumo-precios-y-tope-en-el-panel-010)). No viajan en el fichero de
+   configuración: se ponen en cada instancia.
+4. Prueba en "Probar el bot" las preguntas típicas del sector y alguna trampa (precio no
    registrado, "quiero hablar con una persona").
-4. Pasa el negocio a activo.
-5. Chat web: webs permitidas, enlace de privacidad, topes diarios y mensuales acordes a lo
+5. Pasa el negocio a activo.
+6. Chat web: webs permitidas, enlace de privacidad, topes diarios y mensuales acordes a lo
    contratado, y activar. Entrega al cliente el fragmento `<script>`.
-6. WhatsApp: registra en Meta el webhook `https://…/webhooks/whatsapp` con el `WHATSAPP_VERIFY_TOKEN`
+7. WhatsApp: registra en Meta el webhook `https://…/webhooks/whatsapp` con el `WHATSAPP_VERIFY_TOKEN`
    y envía un mensaje de prueba.
 
 #### Llevar la configuración de pruebas a producción (008)
@@ -311,8 +314,47 @@ En los dos casos:
 - Nunca uses la misma clave para varios clientes: no sabrías cuánto consume cada uno, no podrías
   cortar a uno sin afectar a los demás y una filtración expondría a todos.
 - Ajusta los topes del chat web (200 al día y 3 000 al mes por defecto) a lo contratado.
-- Hoy el panel no muestra el coste en tokens por instancia; lo propone la spec
-  [P4](#p4-consumo-y-coste-por-instancia).
+- Pon el **tope mensual de gasto** de la instancia (feature 010, abajo) por debajo del límite de
+  gasto del workspace de Anthropic: el del panel corta con el contacto del negocio y deja derivar a
+  una persona; el del workspace, en cambio, deja al bot sin modelo.
+
+### 4.1 Consumo, precios y tope en el panel (010)
+
+La página **Consumo** (`/admin/usage`) de cada instancia muestra los tokens y el coste estimado del
+modelo de hoy, del mes en curso y de los 12 meses anteriores, por canal (WhatsApp, Chat web y
+"Probar el bot") y con los totales de **Clientes finales** (lo facturable al cliente) e
+**Instancia**. No identifica conversaciones ni clientes. Guía de validación:
+[specs/010-usage-cost-cap/quickstart.md](../specs/010-usage-cost-cap/quickstart.md).
+
+En el alta, tras desplegar (antes de abrir el tráfico):
+
+1. **Moneda de coste**: la de la factura del proveedor (USD por defecto). Solo se puede cambiar con la
+   tabla de precios vacía.
+2. **Precios por modelo**: añade al menos el de `LLM_MODEL` (la pantalla lo marca y ofrece añadirlo
+   con el nombre puesto), por millón de tokens de entrada, salida, escritura y lectura de caché,
+   copiados de la lista de precios del proveedor. El coste se fija al registrar: actualiza los
+   precios cuando cambien y el pasado conserva el suyo. Lo consumido sin precio sale «sin precio».
+3. **Tope mensual**: importe en la moneda de coste. Exige el precio de `LLM_MODEL`. Un tope por
+   debajo del gasto ya hecho se acepta y corta en el siguiente mensaje.
+
+Qué ocurre con el tope activo:
+
+| Gasto del mes local | Panel | WhatsApp | Chat web | "Probar el bot" |
+|---|---|---|---|---|
+| < 80 % | — | Normal | Normal | Normal |
+| ≥ 80 % | Aviso «Gasto del mes al N % del tope» en todas las pantallas | Normal | Normal | Normal |
+| ≥ 100 % | Aviso crítico en todas las pantallas | Contacto del negocio sin modelo (`R-CAP`); una petición de persona se deriva con el resumen literal | "No disponible" con el contacto | Normal y suma al gasto |
+
+- Se reanuda sin reiniciar al subir el tope por encima del gasto, al desactivarlo o al empezar el
+  mes local. El registro de actividad emite `spend_cap_reached` una vez al mes.
+- Si se borra el precio de `LLM_MODEL` con el tope activo, el panel avisa en todas las pantallas:
+  ese consumo no cuenta para el tope hasta que vuelva a tener precio.
+- Las respuestas que ya estaban en curso al cruzar el tope terminan y se registran: el exceso queda
+  acotado a las respuestas simultáneas (`processorConcurrency`).
+- Los precios, la moneda y el tope **no** viajan en la exportación de la configuración (008): hay que
+  ponerlos en cada instancia. El consumo sí entra en las copias de seguridad.
+- El estado del tope de todo el parque se ve en la columna **Tope** de `pnpm instance:versions`
+  ([sección 5](#5-actualizar-el-núcleo)).
 
 ---
 
@@ -328,8 +370,10 @@ Herramientas que usa:
 
 - **`GET /health`** en cada instancia. Sin credencial responde solo el estado (`200 {"status":"ok"}`,
   o `503` con `degraded` / `not_ready`): sirve a un monitor o balanceador. Con
-  `Authorization: Bearer <HEALTH_SECRET>` añade `instanceId`, `coreVersion` y el esquema aplicado y
-  esperado. Nunca muestra datos del negocio, conversaciones, secretos ni la causa de un fallo.
+  `Authorization: Bearer <HEALTH_SECRET>` añade `instanceId`, `coreVersion`, el esquema aplicado y
+  esperado y, desde la 010, `spendCap` (estado del tope de gasto: `none`, `normal`, `warning`,
+  `reached`, o `null` si no se pudo leer; no cambia el estado). Nunca muestra datos del negocio,
+  conversaciones, secretos, importes ni la causa de un fallo.
   Límite: 30 peticiones por minuto y por IP; un monitor debe sondear **cada 10 s o más** (con
   intervalos de 2 s o menos recibe `429` y da la instancia por caída).
 - **Pie del panel**: tras iniciar sesión, todas las pantallas muestran «Núcleo X.Y.Z · Esquema
@@ -337,7 +381,10 @@ Herramientas que usa:
 - **`pnpm instance:versions`**: consulta `/health` de todas las instancias del inventario que no
   están de baja (en paralelo, 5 s por instancia) con el `HEALTH_SECRET` de su entorno
   (`<dir. del inventario>/envs/<id>.env` o `--envs-dir`), solo en memoria. Muestra estado, núcleo,
-  esquema, versión anotada y si coincide; `--only <id>[,<id>]`, `--json`, `--timeout <s>`;
+  esquema, versión anotada, si coincide y, en la columna **Tope** (010), el estado del tope de gasto
+  (`sin tope`, `normal`, `≥80 %`, `alcanzado` o `—` si la instancia es anterior a la 010 o no lo
+  informa), que no cuenta para el resultado ni el código de salida; `--only <id>[,<id>]`, `--json`
+  (campo `spendCap`), `--timeout <s>`;
   `--allow-insecure` solo para `http://localhost` en pruebas. Código 0 si todo está `Correcto` y
   coincide con lo anotado, 1 si hay algo que revisar, 2 por argumentos, inventario o clave. No
   escribe nada salvo con `--annotate` (pide confirmación; `--yes` sin terminal), que anota en
@@ -582,6 +629,7 @@ Estado tomado del [README](../README.md) a 2026-10-01.
 | 007 | Aprovisionamiento de instancias | Completada | **Era la propuesta P1**: `pnpm instance:new`, `instance:db`, `instance:check` e inventario sin secretos ([sección 2](#2-alta-de-un-cliente-nuevo) y [sección 7](#7-baja-de-un-cliente)) |
 | 008 | Exportar e importar la configuración del negocio | Completada (2026-10-01) | **Era la propuesta P2**: fichero JSON versionado, importación con vista previa y confirmación transaccional, deshacer con la configuración anterior ([sección 2.6](#26-configuración-del-negocio-en-el-panel-de-producción)) |
 | 009 | Versión visible y actualización escalonada | Completada (2026-10-01) | **Era la propuesta P6**: `GET /health` con dos niveles (`HEALTH_SECRET`), versión en el pie del panel, `pnpm instance:versions` e `instance:health-secret`, y procedimiento de publicación por tandas con vuelta atrás ([sección 5](#5-actualizar-el-núcleo)) |
+| 010 | Consumo y coste por instancia | Completada (2026-10-01) | **Era la propuesta P4**: consumo del modelo por canal sin textos, pantalla **Consumo** con precios por modelo y moneda de coste, tope mensual de gasto con salida a una persona, y su estado en `/health` y en `instance:versions` ([sección 4.1](#41-consumo-precios-y-tope-en-el-panel-010)) |
 
 Todas están completadas. Quedan aplazadas la evaluación de audios de la 002 (T083), que se hace
 antes de activar los audios en una instancia, y el ensayo de la guía de publicación de la 009 con
@@ -597,8 +645,8 @@ orden de las pendientes).
 
 | Orden | Id | Propuesta | Prioridad | Depende de | Cuándo |
 |---|---|---|---|---|---|
-| 1 | P4 | Consumo y coste por instancia | Media | — | Antes de facturar el consumo o de activar WhatsApp en un cliente con tráfico abierto |
-| 2 | P5 | Puntos de extensión del núcleo | Baja | — | Solo cuando llegue la primera petición que no quepa en la configuración |
+| 1 | P5 | Puntos de extensión del núcleo | Baja | — | Solo cuando llegue la primera petición que no quepa en la configuración |
+| — | P4 | Consumo y coste por instancia | — | — | **Hecha** (feature 010) |
 | — | P6 | Versión visible y actualización escalonada | — | — | **Hecha** (feature 009) |
 | — | P1 | Aprovisionamiento de instancias | — | — | **Hecha** (feature 007) |
 | — | P2 | Exportar e importar la configuración del negocio | — | — | **Hecha** (feature 008) |
@@ -614,9 +662,9 @@ Por qué este orden:
    instancia de pruebas antes de llevarla a producción.
 3. **P6** (hecha) en cuanto hubo dos instancias en producción: saber qué versión corre cada una
    es lo que hace seguras las actualizaciones por tandas. Usa el inventario de P1.
-4. **P4** ahora, cuando el consumo se facture o el riesgo de gasto crezca. Mientras tanto, el límite de
-   gasto del workspace de Anthropic de cada cliente ([sección 4](#4-coste-de-la-api)) es la red de
-   seguridad.
+4. **P4** (hecha) cuando el consumo empezó a facturarse y creció el riesgo de gasto. El límite de
+   gasto del workspace de Anthropic de cada cliente ([sección 4](#4-coste-de-la-api)) sigue como
+   última red de seguridad, por encima del tope de la instancia.
 5. **P5** no se adelanta: se diseña a partir de un caso real.
 
 ### P1. Aprovisionamiento de instancias
@@ -706,6 +754,9 @@ Por qué este orden:
   > tras cada actualización y vuelta atrás con la copia previa a la migración. Ámbito: núcleo.
 
 ### P4. Consumo y coste por instancia
+
+> **Hecha** en la feature 010 ([spec](../specs/010-usage-cost-cap/spec.md)). Se conserva
+> la propuesta original como referencia.
 
 - **Ámbito**: núcleo.
 - **Problema**: el panel muestra respuestas por día y mes del chat web, pero no los tokens

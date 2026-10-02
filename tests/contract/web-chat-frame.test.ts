@@ -5,8 +5,9 @@
  */
 import type { FastifyInstance } from 'fastify';
 import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
+import { modelPrice, modelUsage, usageSettings, webUsageDay } from '../../src/db/schema.js';
 import { buildTestApp } from '../helpers/app.js';
-import { createTestBot, type TestBot } from '../helpers/bot.js';
+import { createTestBot, TEST_LLM_MODEL, type TestBot } from '../helpers/bot.js';
 import { createTestDatabase, type TestDatabase } from '../helpers/db.js';
 
 const ORIGIN = 'https://negocio.example';
@@ -158,6 +159,57 @@ describe('widget y frame del chat web', () => {
     const propio = await frame(b.app, { referer: `${ORIGIN}/contacto` });
     expect(propio.body).not.toContain(UNAVAILABLE);
     expect(directive(propio.headers, 'frame-ancestors')).toBe(`frame-ancestors ${ORIGIN}`);
+  });
+
+  it('tope alcanzado: "no disponible" con contacto, incrustable solo en las webs permitidas', async () => {
+    // El chat sigue activado: el visitante tiene que ver el contacto (004; 010 US3-3, SC-004).
+    const reachedCaps = [
+      async (b: TestBot) => {
+        await t.db.insert(webUsageDay).values({ day: '2026-09-24', replies: 200 });
+        await b.setWebChat({ dailyCap: 200 });
+      },
+      async () => {
+        await t.db.insert(modelPrice).values({
+          model: TEST_LLM_MODEL,
+          inputMicrosPerMtok: 3_000_000n,
+          outputMicrosPerMtok: 0n,
+          cacheWriteMicrosPerMtok: 0n,
+          cacheReadMicrosPerMtok: 0n,
+        });
+        await t.db.update(usageSettings).set({ capEnabled: true, monthlyCapCents: 1 });
+        await t.db.insert(modelUsage).values({
+          at: new Date('2026-09-24T08:00:00Z'),
+          day: '2026-09-24',
+          channel: 'playground',
+          purpose: 'reply',
+          model: TEST_LLM_MODEL,
+          calls: 1,
+          inputTokens: 1,
+          outputTokens: 1,
+          cacheWriteTokens: 0,
+          cacheReadTokens: 0,
+          costPico: 10_000_000_000n,
+          currency: 'USD',
+        });
+      },
+    ];
+    for (const reach of reachedCaps) {
+      const b = await createTestBot(t, { webChat: WEB_ON });
+      bot = b;
+      await reach(b);
+      const cases: Array<Record<string, string>> = [{}, { referer: `${ORIGIN}/contacto` }];
+      for (const headers of cases) {
+        const res = await frame(b.app, headers);
+        expect(res.body).toContain(UNAVAILABLE);
+        expect(res.body).toContain('Para hablar con una persona de Peluquería Tijeras');
+        expect(directive(res.headers, 'frame-ancestors')).toBe(`frame-ancestors ${ORIGIN}`);
+      }
+      // Desde una web no permitida, nada (FR-027).
+      const ajeno = await frame(b.app, { referer: `${OTRA}/pagina` });
+      expect(directive(ajeno.headers, 'frame-ancestors')).toBe("frame-ancestors 'none'");
+      await b.close();
+      bot = null;
+    }
   });
 
   it('al desactivar, la siguiente petición ya ve "no disponible" (US2-5, sin caché)', async () => {

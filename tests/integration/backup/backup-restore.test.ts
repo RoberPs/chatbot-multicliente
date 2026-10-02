@@ -5,6 +5,7 @@
 import { join } from 'node:path';
 import { eq } from 'drizzle-orm';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { installedSchema } from '../../../src/backup/schema-version.js';
 import { restoreBackup, createBackup } from '../../../src/backup/service.js';
 import { createRetention } from '../../../src/conversation/retention.js';
 import { silentActivityLog } from '../../../src/conversation/activity-log.js';
@@ -13,10 +14,14 @@ import {
   configPreImport,
   conversation,
   customer,
+  modelPrice,
+  modelUsage,
   service,
+  usageSettings,
   webChatSettings,
 } from '../../../src/db/schema.js';
 import { createKnowledgeReader } from '../../../src/knowledge/snapshot.js';
+import { spendCapState } from '../../../src/usage/spend-cap.js';
 import { allFixtures } from '../../fixtures/load.js';
 import {
   captureLogger,
@@ -112,8 +117,8 @@ describe.each(allFixtures.map((f) => [f.sector, f] as const))(
         file: backup.file,
         sourceInstance: config.instanceId,
         crossInstance: false,
-        schema: '0005_config_transfer',
-        installedSchema: '0005_config_transfer',
+        schema: '0006_usage',
+        installedSchema: '0006_usage',
         pendingMigrations: [],
         expiredConversations: seeded.expiredConversations,
       });
@@ -138,6 +143,76 @@ describe.each(allFixtures.map((f) => [f.sector, f] as const))(
     });
   },
 );
+
+describe('consumo y coste (010, FR-025)', () => {
+  it('precios, ajustes y registros vuelven y el gasto del mes es el restaurado', async () => {
+    const test = await createTestDatabase();
+    opened.push(test);
+    const clock = testClock('2026-09-29T10:15:00.000Z');
+    await seedInstance(test.db, undefined, clock.now());
+    await test.db.insert(modelPrice).values({
+      model: 'modelo-copia',
+      inputMicrosPerMtok: 3_000_000n,
+      outputMicrosPerMtok: 15_000_000n,
+      cacheWriteMicrosPerMtok: 3_750_000n,
+      cacheReadMicrosPerMtok: 300_000n,
+    });
+    await test.db
+      .update(usageSettings)
+      .set({ currency: 'EUR', capEnabled: true, monthlyCapCents: 2500, capNotifiedMonth: null });
+    await test.db.insert(modelUsage).values(
+      ['2026-09-03', '2026-09-28', '2026-08-15'].map((day, i) => ({
+        at: new Date(`${day}T10:00:00Z`),
+        day,
+        channel: (['whatsapp', 'web', 'playground'] as const)[i] ?? 'whatsapp',
+        purpose: 'reply' as const,
+        model: 'modelo-copia',
+        calls: 1,
+        inputTokens: 1000,
+        outputTokens: 100,
+        cacheWriteTokens: 0,
+        cacheReadTokens: 0,
+        costPico: BigInt(i + 1) * 1_000_000_000_000n,
+        currency: 'EUR',
+      })),
+    );
+    const spent = async () =>
+      (await spendCapState(test.db, clock.now(), 'Europe/Madrid')).spentPico;
+    expect(await spent()).toBe(3_000_000_000_000n);
+    const before = await tableSnapshot(test.url);
+
+    const config = testBackupConfig({ dir: dir.path, instanceId: 'consumo-01' });
+    const backup = await createBackup({ databaseUrl: test.url, config, reason: 'manual', clock });
+
+    // Cambios después de la copia.
+    await test.db.delete(modelUsage);
+    await test.db.update(modelPrice).set({ inputMicrosPerMtok: 9_000_000n });
+    await test.db.update(usageSettings).set({ capEnabled: false, capNotifiedMonth: '2026-09-01' });
+    expect(await spent()).toBe(0n);
+
+    const report = await restoreBackup({
+      databaseUrl: test.url,
+      file: join(dir.path, backup.file),
+      config,
+      clock,
+    });
+
+    expect(await tableSnapshot(test.url)).toEqual(before);
+    expect(await spent()).toBe(3_000_000_000_000n);
+    expect(await test.db.select().from(usageSettings)).toEqual([
+      expect.objectContaining({ currency: 'EUR', capEnabled: true, monthlyCapCents: 2500 }),
+    ]);
+    // 0006_usage se reaplica y su hash es el del núcleo instalado.
+    expect(report).toMatchObject({ schema: '0006_usage', installedSchema: '0006_usage' });
+    const applied = await withClient(test.url, async (client) => {
+      const r = await client.query<{ hash: string }>(
+        'select hash from drizzle.__drizzle_migrations order by created_at desc limit 1',
+      );
+      return r.rows[0]?.hash;
+    });
+    expect(applied).toBe(installedSchema().hash);
+  });
+});
 
 describe('secuencias', () => {
   it('tras restaurar, el siguiente valor de cada secuencia es el mismo que antes', async () => {

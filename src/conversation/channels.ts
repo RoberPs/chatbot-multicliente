@@ -41,6 +41,11 @@ export interface ChannelPolicy {
   /** Cuenta para los topes diario y mensual del chat web (FR-026). */
   usageCap: boolean;
   /**
+   * Se corta con el tope mensual de gasto (010, FR-016 – FR-019): los canales de clientes
+   * finales; "Probar el bot" no.
+   */
+  spendCap: boolean;
+  /**
    * El canal da los datos de contacto (005, R15): en WhatsApp el teléfono es el
    * `channel_user_id` y el nombre, el de perfil; en web y playground se piden al cliente.
    */
@@ -71,6 +76,7 @@ export function buildChannelPolicies(opts: {
             requiresActiveBusiness: true,
             requiresWebChatEnabled: false,
             usageCap: false,
+            spendCap: true,
             contactFromChannel: true,
             simulateAlerts: false,
           },
@@ -82,6 +88,7 @@ export function buildChannelPolicies(opts: {
       requiresActiveBusiness: true,
       requiresWebChatEnabled: true,
       usageCap: true,
+      spendCap: true,
       contactFromChannel: false,
       simulateAlerts: false,
     },
@@ -91,6 +98,7 @@ export function buildChannelPolicies(opts: {
       requiresActiveBusiness: false,
       requiresWebChatEnabled: false,
       usageCap: false,
+      spendCap: false,
       contactFromChannel: false,
       simulateAlerts: true,
     },

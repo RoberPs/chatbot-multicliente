@@ -15,6 +15,7 @@ describe('replyTraceSchema (data-model.md)', () => {
     ['redactada por el modelo con contacto', base],
     ['sin contacto', { ...base, contact: { added: false, reason: null } }],
     ['plantilla sin modelo', { ...base, template: 'R-UNAVAILABLE', modelMs: null, contact: { added: true, reason: 'template' } }],
+    ['R-CAP: tope de gasto (010)', { ...base, template: 'R-CAP', greeting: false, modelMs: null, groundingRejections: 0, contact: { added: true, reason: 'template' } }],
     ['R-SAFE tras dos rechazos', { ...base, template: 'R-SAFE', groundingRejections: 2, contact: { added: true, reason: 'template' } }],
   ])('acepta %s', (_name, trace) => {
     expect(replyTraceSchema.parse(trace)).toEqual(trace);

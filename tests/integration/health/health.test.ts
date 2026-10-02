@@ -71,6 +71,8 @@ describe('/health con la BD real', () => {
         applied: { index: expected.index, tag: expected.tag },
         expected: { index: expected.index, tag: expected.tag },
       },
+      // 010: leído en el mismo sondeo; la BD nueva tiene el tope desactivado.
+      spendCap: 'none',
     });
   });
 

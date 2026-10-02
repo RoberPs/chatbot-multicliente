@@ -8,6 +8,7 @@
 import { join } from 'node:path';
 import { z } from 'zod';
 import { extractSemanticVersion, SEMVER } from '../health/version.js';
+import type { SpendCapLevel } from '../usage/types.js';
 import { parseEnvFile } from './env-file.js';
 import { updateInstance, type Instance, type Inventory } from './inventory.js';
 
@@ -43,6 +44,11 @@ export interface VersionRow {
   annotated: string | null;
   matches: boolean | null;
   review: boolean;
+  /**
+   * Nivel del tope de gasto del informe (010); `null` si no viene, es desconocido o la fila no
+   * tiene informe completo. No interviene en la clasificación ni en la revisión.
+   */
+  spendCap: SpendCapLevel | null;
 }
 
 export interface VersionsReport {
@@ -73,7 +79,13 @@ const fullSchema = z.strictObject({
     applied: z.strictObject({ index: z.int(), tag: z.string().nullable() }).nullable(),
     expected: z.strictObject({ index: z.int(), tag: z.string() }),
   }),
+  // 010: ausente en instancias anteriores; un valor desconocido no invalida la respuesta.
+  spendCap: z.unknown().optional(),
 });
+
+const SPEND_CAP_LEVELS: readonly SpendCapLevel[] = ['none', 'normal', 'warning', 'reached'];
+const spendCapOf = (value: unknown): SpendCapLevel | null =>
+  SPEND_CAP_LEVELS.find((level) => level === value) ?? null;
 
 /** Tamaño máximo del cuerpo de `/health` que se lee. */
 export const MAX_BODY_BYTES = 4096;
@@ -149,7 +161,9 @@ type InstanceRef = Pick<Instance, 'id' | 'client' | 'imageVersion'>;
 export function classify(instance: InstanceRef, outcome: QueryOutcome): VersionRow {
   const row = (
     result: RowResult,
-    extra: Partial<Pick<VersionRow, 'reason' | 'status' | 'coreVersion' | 'schema'>> = {},
+    extra: Partial<
+      Pick<VersionRow, 'reason' | 'status' | 'coreVersion' | 'schema' | 'spendCap'>
+    > = {},
   ): VersionRow => {
     const coreVersion = extra.coreVersion ?? null;
     const matches = computeMatch(coreVersion, instance.imageVersion);
@@ -164,6 +178,7 @@ export function classify(instance: InstanceRef, outcome: QueryOutcome): VersionR
       annotated: instance.imageVersion,
       matches,
       review: !(result === 'ok' && matches === true),
+      spendCap: extra.spendCap ?? null,
     };
   };
 
@@ -198,6 +213,7 @@ export function classify(instance: InstanceRef, outcome: QueryOutcome): VersionR
       applied: schemaLabel(report.schema.applied),
       expected: report.schema.expected.tag,
     },
+    spendCap: spendCapOf(report.spendCap),
   });
 }
 
@@ -248,12 +264,29 @@ function matchLabel(row: VersionRow): string {
   return row.coreVersion === null ? '—' : 'sin anotar';
 }
 
+/** Columna Tope (010, contracts/health-spend-cap.md). */
+const SPEND_CAP_LABELS: Record<SpendCapLevel, string> = {
+  none: 'sin tope',
+  normal: 'normal',
+  warning: '≥80 %',
+  reached: 'alcanzado',
+};
+
 const pad = (text: string, size: number) => text + ' '.repeat(Math.max(0, size - text.length));
 
 /** Tabla para personas (contracts/instance-versions-command.md). */
 export function renderTable(report: VersionsReport): string {
   if (report.instances.length === 0) return 'No hay instancias activas en el inventario.';
-  const header = ['Instancia', 'Cliente', 'Estado', 'Núcleo', 'Esquema', 'Anotada', 'Coincide'];
+  const header = [
+    'Instancia',
+    'Cliente',
+    'Estado',
+    'Núcleo',
+    'Esquema',
+    'Anotada',
+    'Coincide',
+    'Tope',
+  ];
   const rows = report.instances.map((r) => [
     r.id,
     r.client,
@@ -262,6 +295,7 @@ export function renderTable(report: VersionsReport): string {
     r.schema?.applied ?? '—',
     r.annotated ?? '—',
     matchLabel(r),
+    r.spendCap === null ? '—' : SPEND_CAP_LABELS[r.spendCap],
   ]);
   const widths = header.map((h, i) => Math.max(h.length, ...rows.map((r) => (r[i] ?? '').length)));
   const line = (cells: string[]) =>

@@ -6,6 +6,7 @@
 import type { ActivityLog, EventContext } from '../conversation/activity-log.js';
 import { extractFacts, type ExtractedFact } from '../conversation/grounding.js';
 import { detectsHandoffRequest } from '../conversation/handoff-detector.js';
+import type { TokenUsage } from '../usage/types.js';
 import type { HandoffSummarizer } from './ports.js';
 import type { HandoffKind } from './types.js';
 
@@ -82,6 +83,8 @@ export interface SummarizeInput {
   logContext?: EventContext;
   /** Plazo del resumen; 8 s en producción. */
   budgetMs?: number;
+  /** Tokens que informa el proveedor, también si el resumen se descarta (010, R1). */
+  onUsage?: (usage: TokenUsage) => void;
 }
 
 export async function summarizeHandoff(
@@ -96,7 +99,10 @@ export async function summarizeHandoff(
   let reason: 'timeout' | 'model_error' | 'unverified';
   try {
     const { summary } = await Promise.race([
-      input.summarizer.summarize({ kind, customerTexts }, { signal: controller.signal }),
+      input.summarizer.summarize(
+        { kind, customerTexts },
+        { signal: controller.signal, ...(input.onUsage ? { onUsage: input.onUsage } : {}) },
+      ),
       new Promise<never>((_resolve, reject) => {
         controller.signal.addEventListener('abort', () => {
           reject(new Error('timeout'));

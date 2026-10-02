@@ -143,6 +143,79 @@ describe('ChatModel de Anthropic', () => {
     expect(error).toMatchObject({ reason, ...(status === undefined ? {} : { status }) });
   });
 
+  describe('onUsage (010, R1)', () => {
+    const usage = {
+      input_tokens: 1200,
+      output_tokens: 350,
+      cache_creation_input_tokens: null,
+      cache_read_input_tokens: 900,
+    } as unknown as Anthropic.Usage;
+    const expected = { input: 1200, output: 350, cacheWrite: 0, cacheRead: 900 };
+
+    it('respuesta válida: una vez, con los tokens mapeados (caché nula → 0)', async () => {
+      const { model } = modelWith(message({ usage }));
+      const onUsage = vi.fn();
+      await model.reply(replyContext(), { signal: signal(), onUsage });
+      expect(onUsage).toHaveBeenCalledTimes(1);
+      expect(onUsage).toHaveBeenCalledWith(expected);
+    });
+
+    it('con escritura en caché', async () => {
+      const withWrite = { ...usage, cache_creation_input_tokens: 2048 } as Anthropic.Usage;
+      const { model } = modelWith(message({ usage: withWrite }));
+      const onUsage = vi.fn();
+      await model.reply(replyContext(), { signal: signal(), onUsage });
+      expect(onUsage).toHaveBeenCalledWith({ ...expected, cacheWrite: 2048 });
+    });
+
+    it.each<[string, Anthropic.Message]>([
+      ['refusal', message({ stop_reason: 'refusal', usage })],
+      ['max_tokens', message({ stop_reason: 'max_tokens', usage })],
+      ['JSON inválido', message({ text: '{"body": ', usage })],
+      [
+        'esquema incumplido',
+        message({ text: JSON.stringify({ ...validReply, body: 'x'.repeat(1501) }), usage }),
+      ],
+    ])('respuesta descartada (%s): una vez y antes de lanzar', async (_name, result) => {
+      const { model } = modelWith(result);
+      const order: string[] = [];
+      const onUsage = vi.fn(() => order.push('usage'));
+      await model
+        .reply(replyContext(), { signal: signal(), onUsage })
+        .catch(() => order.push('throw'));
+      expect(onUsage).toHaveBeenCalledTimes(1);
+      expect(onUsage).toHaveBeenCalledWith(expected);
+      expect(order).toEqual(['usage', 'throw']);
+    });
+
+    it.each<[string, Error]>([
+      ['timeout', new Anthropic.APIConnectionTimeoutError()],
+      ['corte', new Anthropic.APIConnectionError({ message: 'corte' })],
+      [
+        'error HTTP',
+        new Anthropic.InternalServerError(
+          529,
+          { error: 'overloaded' },
+          'overloaded',
+          new Headers(),
+        ),
+      ],
+      ['abortado', new Anthropic.APIUserAbortError()],
+    ])('sin respuesta (%s): nunca', async (_name, error) => {
+      const { model } = modelWith(error);
+      const onUsage = vi.fn();
+      await expect(
+        model.reply(replyContext(), { signal: signal(), onUsage }),
+      ).rejects.toBeInstanceOf(ChatModelError);
+      expect(onUsage).not.toHaveBeenCalled();
+    });
+
+    it('sin receptor no falla', async () => {
+      const { model } = modelWith(message({ usage }));
+      await expect(model.reply(replyContext(), { signal: signal() })).resolves.toBeDefined();
+    });
+  });
+
   it('una cancelación del llamante es timeout', async () => {
     const controller = new AbortController();
     controller.abort();
