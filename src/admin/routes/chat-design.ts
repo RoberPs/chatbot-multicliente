@@ -27,7 +27,7 @@ import {
   type Slot,
 } from '../../webchat/design/defaults.js';
 import type { ImageChange, ImageUpload } from '../../webchat/design/images.js';
-import { chatDesignSaved, type ImageOutcome } from '../../webchat/design/log.js';
+import { chatDesignReset, chatDesignSaved, type ImageOutcome } from '../../webchat/design/log.js';
 import {
   COLOR_MESSAGE,
   contrastIssues,
@@ -38,7 +38,7 @@ import {
   type DesignIssue,
   type ValidImageChange,
 } from '../../webchat/design/schemas.js';
-import { readChatDesign, saveChatDesign } from '../../webchat/design/store.js';
+import { readChatDesign, resetChatDesign, saveChatDesign } from '../../webchat/design/store.js';
 import { computeTheme, designVersion } from '../../webchat/design/theme.js';
 import { readWebChatSettings } from '../../webchat/settings.js';
 import { readState, renderPage, savedResponse } from '../render.js';
@@ -46,6 +46,8 @@ import { readState, renderPage, savedResponse } from '../render.js';
 const TITLE = 'Diseño del chat';
 const SAVED_MESSAGE = 'Diseño del chat guardado';
 const INVALID_MESSAGE = 'No se ha guardado nada: revisa los campos marcados.';
+const RESET_MESSAGE = 'Aspecto original restaurado';
+const NOTHING_TO_RESET_MESSAGE = 'El chat ya usa el aspecto original';
 const TOO_MANY_MESSAGE = 'El formulario trae más campos o ficheros de los permitidos.';
 
 /** Tamaño máximo de cada imagen (FR-027) y del cuerpo del guardado (R8). */
@@ -201,6 +203,25 @@ export async function chatDesignRoutes(app: FastifyInstance): Promise<void> {
   }
 
   app.get('/chat-design', async (request, reply) => renderForm(request, reply));
+
+  // Restaurar el aspecto original (US6, FR-016): confirmación expresa, también sin JavaScript.
+  app.get('/chat-design/reset', async (request, reply) =>
+    renderPage(request, reply, 'chat-design/reset', {
+      state: await readState(deps),
+      title: 'Restaurar el aspecto original',
+    }),
+  );
+
+  app.post('/chat-design/reset', async (request, reply) => {
+    const outcome = await withTransaction(deps.db, (tx) => resetChatDesign(tx));
+    chatDesignReset(request.log, { outcome });
+    return savedResponse(
+      request,
+      reply,
+      '/admin/chat-design',
+      outcome === 'reset' ? RESET_MESSAGE : NOTHING_TO_RESET_MESSAGE,
+    );
+  });
 
   // Guardado (multipart o urlencoded): único contexto con multipart de la sección (R8).
   await app.register(async (upload) => {

@@ -2,10 +2,12 @@
  * Imágenes del diseño de punta a punta (011, US3, FR-029, FR-031): guardado todo o nada,
  * sustituir, quitar y conservar por hueco, y URLs que dejan de servirse.
  */
+import { readFileSync } from 'node:fs';
 import type { FastifyInstance } from 'fastify';
 import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
+import { webChatSettings } from '../../../src/db/schema.js';
 import { readChatDesign } from '../../../src/webchat/design/store.js';
-import { login, type Session } from '../../helpers/app.js';
+import { login, postForm, type Session } from '../../helpers/app.js';
 import { createTestBot, type TestBot } from '../../helpers/bot.js';
 import {
   designForm,
@@ -121,5 +123,52 @@ describe('imágenes del diseño', () => {
         ]);
       }
     }
+  });
+});
+
+describe('restaurar el aspecto original (US6)', () => {
+  let t: TestDatabase;
+  let bot: TestBot | null = null;
+
+  beforeAll(async () => {
+    t = await createTestDatabase();
+  });
+  afterAll(async () => {
+    await t.close();
+  });
+  afterEach(async () => {
+    await bot?.close();
+    bot = null;
+  });
+
+  const ORIGIN = 'https://negocio.example';
+  const frame004 = readFileSync(new URL('../../fixtures/web-chat/frame-004.html', import.meta.url), 'utf8');
+  const normalize = (html: string) => html.replace(/>\s+</g, '><').replace(/\s+/g, ' ').trim();
+
+  it('borra la fila y las imágenes en cascada; las URL dan 404 y el frame vuelve a ser el de la 004', async () => {
+    bot = await createTestBot(t, {
+      webChat: { enabled: true, allowedOrigins: [ORIGIN], privacyUrl: `${ORIGIN}/privacidad` },
+    });
+    const app = bot.app;
+    const session = await login(app);
+    await postDesign(app, session, designForm({ ...GREEN_FORM, chat_name: 'Recepción' }), [
+      { name: 'logo', bytes: loadImageFixture('valid.png') },
+      { name: 'icon', bytes: loadImageFixture('valid.webp'), type: 'image/webp' },
+    ]);
+    const design = await readChatDesign(t.db);
+    const urls = [design.images.logo?.url, design.images.icon?.url];
+    const [settingsBefore] = await t.db.select().from(webChatSettings);
+
+    const res = await postForm(app, session, '/admin/chat-design/reset');
+    expect(res.statusCode).toBe(303);
+
+    expect(await designRow(t.db)).toBeUndefined();
+    expect(await designImages(t.db)).toEqual({});
+    for (const url of urls) {
+      expect((await app.inject({ method: 'GET', url: url ?? '/' })).statusCode).toBe(404);
+    }
+    const frame = await app.inject({ method: 'GET', url: '/chat/frame' });
+    expect(normalize(frame.body)).toBe(normalize(frame004));
+    expect((await t.db.select().from(webChatSettings))[0]).toEqual(settingsBefore);
   });
 });

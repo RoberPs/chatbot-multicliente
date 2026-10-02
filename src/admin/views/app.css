@@ -593,3 +593,8 @@ tr.total td {
   flex-direction: row-reverse;
   justify-content: flex-end;
 }
+a.button.danger {
+  background: #fff;
+  color: var(--danger);
+  border-color: var(--danger);
+}

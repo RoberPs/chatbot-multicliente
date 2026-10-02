@@ -135,9 +135,14 @@
 </section>
 </div>
 
-<% if (!it.saved) { %>
 <section class="card">
   <h2>Aspecto original</h2>
-  <p class="meta">El chat usa el aspecto original.</p>
+  <% if (it.saved) { %>
+    <p class="hint">Borra los colores, los textos y las imágenes del diseño; el chat vuelve a verse como al principio.</p>
+    <% /* Con JavaScript, confirmación en el navegador; sin él, la página de confirmación (FR-016). */ %>
+    <a class="button danger" href="/admin/chat-design/reset" hx-post="/admin/chat-design/reset"
+       hx-confirm="¿Restaurar el aspecto original? Se borrarán los colores, los textos y las imágenes del diseño.">Restaurar el aspecto original</a>
+  <% } else { %>
+    <p class="meta">El chat usa el aspecto original.</p>
+  <% } %>
 </section>
-<% } %>

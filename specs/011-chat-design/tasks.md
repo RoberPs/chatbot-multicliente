@@ -263,14 +263,14 @@ vuelven a los originales y las URL de las imágenes dan `404` (quickstart §7).
 
 ### Tests for User Story 6 ⚠️
 
-- [ ] T087 [P] [US6] Ampliar `tests/contract/admin/chat-design.test.ts`: con diseño, la página muestra "Restaurar el aspecto original" con `hx-confirm`; `GET /admin/chat-design/reset` muestra la confirmación sin JavaScript; `POST /admin/chat-design/reset` → `303` con "Aspecto original restaurado"; sin diseño → "El chat ya usa el aspecto original" y la página no muestra el botón (US6-3); sin sesión o sin CSRF no borra nada
-- [ ] T088 [P] [US6] Ampliar `tests/integration/chat-design/images.test.ts`: restaurar borra la fila y las imágenes en cascada; las URL antiguas dan `404`; el frame vuelve a ser idéntico a `frame-004.html`; `web_chat_settings` no cambia
+- [X] T087 [P] [US6] Ampliar `tests/contract/admin/chat-design.test.ts`: con diseño, la página muestra "Restaurar el aspecto original" con `hx-confirm`; `GET /admin/chat-design/reset` muestra la confirmación sin JavaScript; `POST /admin/chat-design/reset` → `303` con "Aspecto original restaurado"; sin diseño → "El chat ya usa el aspecto original" y la página no muestra el botón (US6-3); sin sesión o sin CSRF no borra nada
+- [X] T088 [P] [US6] Ampliar `tests/integration/chat-design/images.test.ts`: restaurar borra la fila y las imágenes en cascada; las URL antiguas dan `404`; el frame vuelve a ser idéntico a `frame-004.html`; `web_chat_settings` no cambia
 
 ### Implementation for User Story 6
 
-- [ ] T089 [US6] En `src/webchat/design/store.ts`, `resetChatDesign(tx)` → `'reset' | 'nothing_to_reset'`
-- [ ] T090 [US6] En `src/admin/routes/chat-design.ts`, `GET /admin/chat-design/reset` (página de confirmación) y `POST /admin/chat-design/reset` con el flash de cada caso y el evento `chat_design_reset { outcome }` (R12)
-- [ ] T091 [P] [US6] Crear `src/admin/views/chat-design/reset.eta` con el texto "¿Restaurar el aspecto original? Se borrarán los colores, los textos y las imágenes del diseño." y el botón que envía el `POST` con `_csrf`; en `src/admin/views/chat-design.eta`, el botón con `hx-confirm` (solo con diseño guardado) o el texto "El chat usa el aspecto original"
+- [X] T089 [US6] En `src/webchat/design/store.ts`, `resetChatDesign(tx)` → `'reset' | 'nothing_to_reset'`
+- [X] T090 [US6] En `src/admin/routes/chat-design.ts`, `GET /admin/chat-design/reset` (página de confirmación) y `POST /admin/chat-design/reset` con el flash de cada caso y el evento `chat_design_reset { outcome }` (R12)
+- [X] T091 [P] [US6] Crear `src/admin/views/chat-design/reset.eta` con el texto "¿Restaurar el aspecto original? Se borrarán los colores, los textos y las imágenes del diseño." y el botón que envía el `POST` con `_csrf`; en `src/admin/views/chat-design.eta`, el botón con `hx-confirm` (solo con diseño guardado) o el texto "El chat usa el aspecto original"
 
 **Checkpoint**: todas las historias funcionan por separado.
 

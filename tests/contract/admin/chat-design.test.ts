@@ -367,6 +367,68 @@ describe('Diseño del chat (/admin/chat-design)', () => {
     });
   });
 
+  describe('restaurar el aspecto original (US6)', () => {
+    const CONFIRM =
+      '¿Restaurar el aspecto original? Se borrarán los colores, los textos y las imágenes del diseño.';
+
+    it('con diseño, la página muestra el botón con hx-confirm y la confirmación sin JavaScript', async () => {
+      await start();
+      await seedChatDesign(t.db, GREEN_PALETTE);
+      const page = await get(app, session, '/admin/chat-design');
+      expect(page.body).toContain('Restaurar el aspecto original');
+      expect(page.body).toContain(`hx-confirm="${CONFIRM}"`);
+      expect(page.body).toContain('href="/admin/chat-design/reset"');
+      expect(page.body).not.toContain('El chat usa el aspecto original');
+
+      const confirm = await get(app, session, '/admin/chat-design/reset');
+      expect(confirm.statusCode).toBe(200);
+      expect(confirm.body).toContain(CONFIRM);
+      expect(confirm.body).toMatch(/<form method="post" action="\/admin\/chat-design\/reset"/);
+      expect(confirm.body).toContain('name="_csrf"');
+    });
+
+    it('POST /reset → 303 con "Aspecto original restaurado" y sin fila', async () => {
+      await start();
+      await seedChatDesignWithImages(t.db, { logo: 'valid.png' }, GREEN_PALETTE);
+      const res = await postForm(app, session, '/admin/chat-design/reset');
+      expect(res.statusCode).toBe(303);
+      expect(res.headers.location).toBe('/admin/chat-design');
+      keepCookie(res);
+      const page = await get(app, session, '/admin/chat-design');
+      expect(page.body).toContain('Aspecto original restaurado');
+      expect(page.body).toContain('value="#1f5fbf"');
+      expect(await designRow(t.db)).toBeUndefined();
+      expect(await designImages(t.db)).toEqual({});
+    });
+
+    it('sin diseño → "El chat ya usa el aspecto original" y la página no muestra el botón (US6-3)', async () => {
+      await start();
+      const page = await get(app, session, '/admin/chat-design');
+      expect(page.body).not.toContain('hx-post="/admin/chat-design/reset"');
+      const res = await postForm(app, session, '/admin/chat-design/reset');
+      expect(res.statusCode).toBe(303);
+      keepCookie(res);
+      expect((await get(app, session, '/admin/chat-design')).body).toContain(
+        'El chat ya usa el aspecto original',
+      );
+    });
+
+    it('sin sesión o sin CSRF no borra nada', async () => {
+      await start();
+      await seedChatDesign(t.db, GREEN_PALETTE);
+      const anon = await app.inject({ method: 'POST', url: '/admin/chat-design/reset' });
+      expect(anon.statusCode).toBe(302);
+      const noCsrf = await app.inject({
+        method: 'POST',
+        url: '/admin/chat-design/reset',
+        headers: { cookie: session.cookie, 'content-type': 'application/x-www-form-urlencoded' },
+        payload: '',
+      });
+      expect(noCsrf.statusCode).toBe(403);
+      expect(await designRow(t.db)).toBeDefined();
+    });
+  });
+
   describe('vista previa', () => {
     const counts = async () => {
       const rows = await t.db.execute<{ n: string }>(sql`

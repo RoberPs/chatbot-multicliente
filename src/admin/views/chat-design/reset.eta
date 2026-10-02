@@ -1,0 +1,10 @@
+<% layout('/layout') %>
+<section class="card stack">
+  <p>¿Restaurar el aspecto original? Se borrarán los colores, los textos y las imágenes del diseño.</p>
+  <p class="hint">El chat volverá a verse como al principio en la siguiente carga. La activación, las webs y los topes del chat web no cambian.</p>
+  <form method="post" action="/admin/chat-design/reset" class="actions">
+    <%~ include('/partials/csrf', { token: it.layout.csrf }) %>
+    <button type="submit" class="danger">Restaurar el aspecto original</button>
+    <a class="button secondary" href="/admin/chat-design">Cancelar</a>
+  </form>
+</section>

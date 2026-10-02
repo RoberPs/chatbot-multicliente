@@ -219,3 +219,12 @@ export async function saveChatDesign(
       .onConflictDoUpdate({ target: chatDesignImage.slot, set: { ...image, ...touch() } });
   }
 }
+
+/**
+ * Vuelve al aspecto original (US6): borra la fila del diseño y, en cascada, sus imágenes. No
+ * toca `web_chat_settings`.
+ */
+export async function resetChatDesign(tx: DbOrTx): Promise<'reset' | 'nothing_to_reset'> {
+  const deleted = await tx.delete(chatDesign).returning({ id: chatDesign.id });
+  return deleted.length > 0 ? 'reset' : 'nothing_to_reset';
+}

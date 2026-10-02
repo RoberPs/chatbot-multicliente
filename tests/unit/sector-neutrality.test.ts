@@ -74,6 +74,18 @@ describe('neutralidad sectorial del código', () => {
     expect(paths).toContain('admin/views/config/index.eta');
     expect(paths).toContain('admin/views/config/preview.eta');
     expect(paths).toContain('admin/views/partials/config-diff.eta');
+    // 011: diseño del chat (dominio, parciales del frame, vistas del panel y su script, con la
+    // conversación de ejemplo de la vista previa).
+    expect(paths).toContain('webchat/design/defaults.ts');
+    expect(paths).toContain('webchat/design/theme.ts');
+    expect(paths).toContain('webchat/design/images.ts');
+    expect(paths).toContain('channels/web/views/partials/messages.eta');
+    expect(paths).toContain('channels/web/views/partials/header.eta');
+    expect(paths).toContain('admin/routes/chat-design.ts');
+    expect(paths).toContain('admin/views/chat-design.eta');
+    expect(paths).toContain('admin/views/chat-design.js');
+    expect(paths).toContain('admin/views/chat-design/preview.eta');
+    expect(paths).toContain('admin/views/chat-design/reset.eta');
   });
 
   it('ningún fichero de src/ contiene nombres de sector o cliente', () => {
