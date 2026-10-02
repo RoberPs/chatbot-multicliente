@@ -39,6 +39,16 @@ privacidad (feature 004, FR-017), y que siempre haya salida a una persona (Princ
   activación).
 - Se toca el código existente solo donde es imprescindible para que el aspecto sea configurable.
 
+## Clarifications
+
+### Session 2026-10-02
+
+- Q: ¿Las imágenes se guardan junto con el resto del formulario en un único "Guardar" (todo o nada) o cada una al elegirla? → A: Un único "Guardar" envía opciones, textos e imágenes juntos; se valida todo y se guarda todo o nada; si una imagen no es válida se rechaza el guardado completo con el error en su campo.
+- Q: ¿El icono subido se muestra dentro del botón flotante o lo sustituye entero? → A: Dentro del botón, en lugar del icono original; el botón conserva color principal, forma, tamaño, foco y etiqueta accesible.
+- Q: ¿El logo de la cabecera va junto al nombre del chat o lo sustituye? → A: Junto al nombre (a su izquierda); el nombre sigue siempre visible como texto y el logo se marca como decorativo.
+- Q: ¿El texto de bienvenida se muestra siempre arriba de la conversación o solo antes del primer mensaje? → A: Siempre arriba de la conversación, junto al aviso de asistente automático; se desplaza con los mensajes y sigue ahí al volver a abrir el chat o retomar la conversación.
+- Q: ¿Se garantiza contraste 3:1 en elementos que no son texto (foco, borde del campo, botones internos)? → A: Sí; el sistema deriva esos colores para alcanzar al menos 3:1 frente a su fondo con cualquier diseño válido, sin opciones nuevas para el operador; el botón flotante frente a la web del negocio queda fuera.
+
 ## User Scenarios & Testing *(mandatory)*
 
 ### User Story 1 - Personalizar colores, forma, nombre y textos con vista previa (Priority: P1)
@@ -70,9 +80,10 @@ del negocio para comprobar que el chat real muestra lo mismo que la vista previa
    guarda, **Then** el chat usa el valor por defecto de cada uno (el nombre por defecto sigue
    siendo "Asistente de" y el nombre del negocio); un texto de bienvenida vacío significa que no se
    muestra bienvenida.
-5. **Given** un texto de bienvenida configurado, **When** un visitante abre el chat por primera vez,
-   **Then** ve ese texto en la parte superior de la conversación, junto con el aviso de asistente
-   automático, y el texto no aparece como mensaje del bot ni se guarda en la conversación.
+5. **Given** un texto de bienvenida configurado, **When** un visitante abre el chat (la primera vez
+   o al volver a una conversación ya empezada), **Then** ve ese texto en la parte superior de la
+   conversación, junto con el aviso de asistente automático, que se desplaza con los mensajes; el
+   texto no aparece como mensaje del bot ni se guarda en la conversación.
 6. **Given** el operador escribe en un texto algo que parece código o formato (`<b>`, `<script>`,
    `{{ }}`), **When** guarda, **Then** el chat lo muestra literalmente como texto y no se interpreta.
 7. **Given** el operador cambia opciones y abandona la sección sin guardar, **When** vuelve, **Then**
@@ -146,8 +157,9 @@ renombrado, y comprobar que todos se rechazan sin guardar nada.
 3. **Given** un fichero que dice ser PNG pero cuyo contenido no lo es (un SVG, un HTML o un
    ejecutable renombrado, o un fichero dañado o vacío), **When** el operador intenta subirlo,
    **Then** se rechaza, porque se valida el contenido real y no el nombre ni el tipo declarado.
-4. **Given** una imagen que supera el tamaño máximo, **When** el operador intenta subirla, **Then** se
-   rechaza indicando el máximo permitido, y la imagen anterior (si la había) se conserva.
+4. **Given** una imagen que supera el tamaño máximo, **When** el operador guarda el diseño con
+   ella, **Then** se rechaza el guardado completo indicando el máximo permitido junto a esa imagen,
+   no cambia nada del diseño guardado y la imagen anterior (si la había) se conserva.
 5. **Given** un diseño con imágenes guardadas, **When** el operador sustituye una de ellas y guarda,
    **Then** el chat muestra la nueva en la siguiente carga y no la anterior, aunque el navegador
    del visitante la tuviera guardada.
@@ -316,7 +328,10 @@ sirven.
 - **FR-006**: Los colores MUST ser opacos (sin transparencia).
 - **FR-007**: El texto de bienvenida y el nombre del chat MUST ser texto de la interfaz, no mensajes
   de la conversación: no se guardan como mensajes, no los pronuncia el bot y no sustituyen el
-  saludo del bot ni el aviso de asistente automático.
+  saludo del bot ni el aviso de asistente automático. La bienvenida MUST mostrarse siempre en la
+  parte superior de la conversación, junto al aviso de asistente automático, desplazándose con los
+  mensajes, cada vez que se abre el chat o se retoma una conversación; no depende de si el
+  visitante ya la vio.
 
 ### Vista previa
 
@@ -330,7 +345,12 @@ sirven.
   para los límites, los topes de uso o de gasto ni el consumo. Debe funcionar con el chat web
   desactivado y con el negocio en preparación, y MUST NOT ser accesible para los visitantes.
 - **FR-011**: Abandonar la sección sin guardar MUST NOT dejar guardado ningún cambio ni ninguna
-  imagen subida a medias.
+  imagen subida a medias. Las imágenes elegidas solo viajan al servidor con el "Guardar" del
+  formulario; hasta entonces la vista previa las muestra desde el navegador del operador.
+- **FR-011a**: Guardar MUST ser una única operación de todo o nada: opciones, textos e imágenes
+  (nuevas, sustituidas o quitadas) se validan juntos y se guardan juntos. Si algo no es válido
+  (una imagen, un texto, un contraste), no se guarda nada, el diseño guardado no cambia y el panel
+  muestra el error en cada campo afectado, conservando lo que el operador estaba editando.
 
 ### Guardado y aplicación
 
@@ -363,6 +383,11 @@ sirven.
   que el chat muestre, incluidos el texto atenuado, los avisos de derivación y los mensajes del
   propio chat, MUST cumplir AA frente a su fondo con cualquier diseño que se pueda guardar, aunque
   su color no sea una de las cinco opciones.
+- **FR-019a**: Los elementos del chat que no son texto (indicador de foco del teclado, borde del
+  campo de escritura y botones dentro del chat) MUST tener un contraste mínimo de 3:1 frente a su
+  fondo (WCAG 2.x, 1.4.11) con cualquier diseño que se pueda guardar. El sistema deriva esos
+  colores de los elegidos, sin opciones nuevas para el operador. Queda fuera el botón flotante
+  frente a la web del negocio, cuyo fondo el sistema no puede conocer.
 - **FR-020**: La comprobación de FR-019 MUST hacerse siempre al guardar, con independencia de la
   vista previa; mientras el operador edita, el panel MUST indicar qué pareja incumple, el contraste
   obtenido y el mínimo, junto al control afectado. El rechazo no cambia el diseño guardado.
@@ -378,7 +403,8 @@ sirven.
 - **FR-023**: Los enlaces del chat MUST distinguirse por algo más que el color; el diseño MUST NOT
   cambiar los tamaños de letra del chat ni impedir el zoom del navegador del visitante.
 - **FR-024**: Las imágenes del diseño MUST ir con texto alternativo (el nombre del chat) o marcadas
-  como decorativas, de modo que no aporten ruido a quien usa lector de pantalla.
+  como decorativas, de modo que no aporten ruido a quien usa lector de pantalla. El logo MUST
+  marcarse como decorativo, porque el nombre del chat siempre está visible como texto a su lado.
 
 ### Imágenes
 
@@ -399,6 +425,12 @@ sirven.
   ese elemento a su aspecto original (sin logo, sin avatar, icono original del botón).
 - **FR-030**: Las imágenes MUST mostrarse siempre dentro de su hueco, ajustadas sin deformarse y sin
   alterar la disposición ni el tamaño del chat.
+- **FR-030a**: El icono del botón MUST mostrarse dentro del botón flotante, en lugar del icono
+  original. El botón conserva siempre el color principal de fondo, la forma elegida, su tamaño, su
+  indicador de foco y su etiqueta accesible; la imagen nunca sustituye al botón entero.
+- **FR-030b**: El logo MUST mostrarse en la cabecera junto al nombre del chat (a su izquierda) y
+  nunca en su lugar: el nombre sigue siempre visible como texto, también con el nombre más largo,
+  que se acorta visualmente si no cabe sin tapar el botón de cerrar.
 - **FR-031**: Una imagen sustituida o quitada MUST dejar de mostrarse en la siguiente carga, aunque
   el navegador del visitante tuviera la anterior guardada.
 - **FR-032**: Las imágenes MUST servirse con su tipo real y sin que el navegador pueda
@@ -476,7 +508,8 @@ sirven.
 - **SC-003**: El 100 % de los intentos de guardar un diseño con alguna pareja de colores por debajo
   de WCAG AA se rechaza, y el 0 % de los diseños guardados incumple AA en algún texto del chat
   (también el atenuado y los avisos de derivación), tanto desde el panel como desde la
-  importación.
+  importación; y en el 100 % de los diseños guardados el foco, el borde del campo de escritura y
+  los botones internos alcanzan al menos 3:1 frente a su fondo.
 - **SC-004**: Con cualquier combinación de opciones, incluidos los valores extremos de longitud,
   tamaño, forma e imágenes, el aviso de asistente automático, el enlace de privacidad, el campo de
   escritura, el botón de enviar y el de cerrar están visibles y son utilizables en el 100 % de los
@@ -533,9 +566,10 @@ sirven.
   nombre del negocio, "Escribe tu mensaje", "Enviar", sin bienvenida, esquina inferior derecha y
   tamaño mediano. Esos colores cumplen WCAG AA (el contraste más bajo, el del texto atenuado, es
   de 5,6:1), así que el aspecto original es un diseño válido.
-- El contraste exigido se aplica a las parejas de colores de FR-019 y a todo texto del chat. Los
-  colores que el chat deriva de los elegidos (texto atenuado, bordes, aviso de derivación) los
-  calcula el sistema para cumplir AA; el plan decide cómo. El contenido de las imágenes no se
+- El contraste exigido se aplica a las parejas de colores de FR-019, a todo texto del chat y a los
+  elementos que no son texto de FR-019a. Los colores que el chat deriva de los elegidos (texto
+  atenuado, bordes, foco, aviso de derivación) los calcula el sistema para cumplir AA (4,5:1 en
+  texto, 3:1 en lo que no es texto); el plan decide cómo. El contenido de las imágenes no se
   evalúa; el operador lo ve en la vista previa.
 - Los tamaños concretos de "pequeño" y "grande", las dimensiones máximas de las imágenes y el
   tratamiento de imágenes animadas o con metadatos los fija el plan; el tamaño "mediano" es el
