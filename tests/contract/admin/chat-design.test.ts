@@ -19,9 +19,11 @@ import {
 import { createTestBot, type TestBot } from '../../helpers/bot.js';
 import {
   designForm,
+  designImages,
   designRow,
   GREEN_FORM,
   GREEN_PALETTE,
+  loadImageFixture,
   postDesign,
   seedChatDesign,
 } from '../../helpers/chat-design.js';
@@ -206,6 +208,80 @@ describe('Diseño del chat (/admin/chat-design)', () => {
       const res = await postDesign(app, session, designForm(GREEN_FORM));
       expect(res.statusCode).toBe(303);
       expect(await readWebChatSettings(t.db)).toEqual(before);
+    });
+  });
+
+  describe('contraste (US2)', () => {
+    it('POST con contraste insuficiente → 422 con la pareja, la razón y el mínimo; nada cambia', async () => {
+      await start();
+      await seedChatDesign(t.db, { ...GREEN_PALETTE, chatName: 'Antes' });
+      const before = await designRow(t.db);
+      const res = await postDesign(
+        app,
+        session,
+        designForm({ ...GREEN_FORM, text_color: '#aaaaaa', chat_name: 'Después' }),
+      );
+      expect(res.statusCode).toBe(422);
+      expect(res.body).toMatch(
+        /El texto del chat sobre el fondo tiene un contraste de \d,\d{2}:1; el mínimo es 4,5:1/,
+      );
+      expect(await designRow(t.db)).toEqual(before);
+    });
+
+    it('sin JavaScript también: un urlencoded con contraste insuficiente se rechaza (US2-3)', async () => {
+      await start();
+      const res = await postForm(app, session, '/admin/chat-design', designForm({ primary_color: '#ff8800' }));
+      expect(res.statusCode).toBe(422);
+      expect(res.body).toContain('El color principal frente al fondo del chat tiene un contraste de');
+      expect(await designRow(t.db)).toBeUndefined();
+    });
+
+    it('POST /check: un contenedor por control, vacío si cumple, sin guardar', async () => {
+      await start();
+      const ok = await postForm(app, session, '/admin/chat-design/check', designForm(GREEN_FORM));
+      expect(ok.statusCode).toBe(200);
+      for (const field of ['primary_color', 'on_primary_color', 'background_color', 'text_color', 'bot_bubble_color']) {
+        expect(ok.body).toMatch(new RegExp(`<span id="contrast-${field}" class="contrast-issues" hx-swap-oob="true" role="status"></span>`));
+      }
+      const bad = await postForm(
+        app,
+        session,
+        '/admin/chat-design/check',
+        designForm({ text_color: '#aaaaaa', primary_color: 'azul' }),
+      );
+      expect(bad.statusCode).toBe(200);
+      expect(bad.body).toMatch(/id="contrast-text_color"[^>]*>El texto del chat sobre el fondo tiene un contraste de 2,\d{2}:1; el mínimo es 4,5:1/);
+      expect(bad.body).toMatch(/id="contrast-primary_color"[^>]*>Indica un color opaco en formato #RRGGBB/);
+      expect(await designRow(t.db)).toBeUndefined();
+    });
+
+    it('POST /check multipart con un fichero responde igual y no guarda la imagen', async () => {
+      await start();
+      const res = await postDesign(
+        app,
+        session,
+        designForm({ text_color: '#aaaaaa' }),
+        [{ name: 'logo', bytes: loadImageFixture('valid.png') }],
+        { url: '/admin/chat-design/check' },
+      );
+      expect(res.statusCode).toBe(200);
+      expect(res.body).toContain('El texto del chat sobre el fondo tiene un contraste de');
+      expect(await designRow(t.db)).toBeUndefined();
+      expect(await designImages(t.db)).toEqual({});
+    });
+
+    it('campos inventados para el aviso o la privacidad no tienen efecto (US2-5)', async () => {
+      await start({ webChat: WEB_ON });
+      const res = await postDesign(
+        app,
+        session,
+        designForm({ ...GREEN_FORM, privacy_notice: '', hide_privacy: '1', notice_text: 'Nada' }),
+      );
+      expect(res.statusCode).toBe(303);
+      const frame = await app.inject({ method: 'GET', url: '/chat/frame' });
+      expect(frame.body).toContain('Estás hablando con el asistente automático de Peluquería Tijeras');
+      expect(frame.body).toContain('Política de privacidad');
+      expect(frame.body).not.toContain('Nada');
     });
   });
 

@@ -13,8 +13,12 @@
       enctype="multipart/form-data" hx-boost="false">
   <%~ include('/partials/csrf', { token: it.layout.csrf }) %>
 
-  <fieldset class="design-colors">
+  <% /* Contraste en vivo (FR-020): solo viajan los cinco colores y el token, nunca las imágenes. */ %>
+  <fieldset class="design-colors" hx-post="/admin/chat-design/check" hx-trigger="input delay:300ms"
+            hx-params="primary_color,on_primary_color,background_color,text_color,bot_bubble_color,_csrf"
+            hx-encoding="application/x-www-form-urlencoded" hx-swap="none">
     <legend>Colores</legend>
+    <p class="hint">El texto tiene que leerse bien: cada pareja de colores necesita un contraste de 4,5:1 como mínimo. Si no llega, no se puede guardar.</p>
     <% [
       ['primary_color', 'Color principal', 'Botón flotante, mensajes del cliente, botón Enviar y enlaces'],
       ['on_primary_color', 'Texto sobre el principal', 'Icono del botón, texto de los mensajes del cliente y de Enviar'],

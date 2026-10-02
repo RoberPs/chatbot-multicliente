@@ -217,3 +217,16 @@ body {
   background: var(--chat-bg);
   color: var(--chat-fg);
 }
+[data-palette] .composer textarea::placeholder {
+  color: var(--chat-muted);
+  opacity: 1;
+}
+/* Foco visible con el color del texto: cumple 4,5:1 con el fondo y con los mensajes del bot. */
+[data-palette] :focus-visible {
+  outline: 2px solid var(--chat-focus);
+  outline-offset: 2px;
+}
+/* La franja de derivación (005) conserva su amarillo y su borde; el texto, fijo y legible. */
+[data-palette] .handoff {
+  color: #1d2330;
+}

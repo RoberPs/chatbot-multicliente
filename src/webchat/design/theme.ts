@@ -6,6 +6,7 @@
  * atributo. Así un diseño que solo cambia el nombre se ve como hoy salvo el nombre.
  */
 import { createHash } from 'node:crypto';
+import { contrastRatio, meets, MIN_TEXT_CONTRAST, MIN_UI_CONTRAST, mix } from './contrast.js';
 import {
   COLOR_FIELDS,
   DEFAULT_PLACEHOLDER,
@@ -83,7 +84,28 @@ export interface Theme {
 export const hasCustomPalette = (o: ChatDesignOptions): boolean =>
   COLOR_FIELDS.some((field) => o[field] !== ORIGINAL_DESIGN[field]);
 
-/** Tokens de los colores (vacío con la paleta original). */
+/** Pasos de la mezcla del texto hacia el fondo: 0, 0,05, 0,10… */
+const MIX_STEPS = Array.from({ length: 21 }, (_, i) => i / 20);
+
+/**
+ * El texto mezclado hacia el fondo con el mayor `t` (≤ `maxT`) que sigue cumpliendo `min`
+ * frente al fondo. Como texto/fondo ya cumple 4,5:1 al guardar, `t = 0` siempre vale: nunca
+ * falla con un diseño guardable (R4).
+ */
+function derived(text: string, background: string, maxT: number, min: number): string {
+  let best = text;
+  for (const t of MIX_STEPS) {
+    if (t > maxT + 1e-9) break;
+    const candidate = mix(text, background, t);
+    if (meets(contrastRatio(candidate, background), min)) best = candidate;
+  }
+  return best;
+}
+
+/**
+ * Tokens de los colores (vacío con la paleta original, R3). Con paleta propia se derivan el
+ * atenuado, el borde del campo, las líneas y el foco (R4, FR-019a).
+ */
 function paletteTokens(o: ChatDesignOptions): Theme['tokens'] {
   if (!hasCustomPalette(o)) return {};
   return {
@@ -92,6 +114,10 @@ function paletteTokens(o: ChatDesignOptions): Theme['tokens'] {
     '--chat-bg': o.backgroundColor,
     '--chat-fg': o.textColor,
     '--chat-bot-bg': o.botBubbleColor,
+    '--chat-muted': derived(o.textColor, o.backgroundColor, 0.6, MIN_TEXT_CONTRAST),
+    '--chat-line': mix(o.textColor, o.backgroundColor, 0.8),
+    '--chat-field-border': derived(o.textColor, o.backgroundColor, 0.8, MIN_UI_CONTRAST),
+    '--chat-focus': o.textColor,
   };
 }
 

@@ -9,7 +9,9 @@ import { eq } from 'drizzle-orm';
 import type { DbOrTx } from '../../conversation/repositories/customer.js';
 import { chatDesign } from '../../db/schema.js';
 import { touch } from '../../db/timestamps.js';
+import { contrastFailures } from './contrast.js';
 import {
+  COLOR_FIELDS,
   ORIGINAL_DESIGN,
   originalResolved,
   type ChatDesignOptions,
@@ -52,6 +54,12 @@ export function resolveChatDesign(row: ChatDesignRow | null): ResolvedChatDesign
     if (parsed.success) options[key] = parsed.data;
     else unsupported.push(key);
   }
+  // Si con lo leído alguna pareja no cumple (un núcleo posterior más exigente), toda la paleta
+  // vuelve a la original: nunca se sirve un chat ilegible (R13).
+  if (contrastFailures(options as unknown as ChatDesignOptions).length > 0) {
+    for (const field of COLOR_FIELDS) options[field] = ORIGINAL_DESIGN[field];
+    unsupported.push('palette');
+  }
   return {
     saved: true,
     options: options as unknown as ChatDesignOptions,
@@ -87,6 +95,10 @@ const rowValues = (o: ChatDesignOptions) => ({
  * seguidos gana el último (FR-017). No toca `web_chat_settings` (FR-014).
  */
 export async function saveChatDesign(tx: DbOrTx, options: ChatDesignOptions): Promise<void> {
+  // Red de seguridad: solo llega aquí un diseño validado con `validateChatDesign`.
+  if (contrastFailures(options).length > 0) {
+    throw new Error('Diseño sin validar: hay parejas de colores sin contraste suficiente');
+  }
   const values = rowValues(options);
   await tx
     .insert(chatDesign)

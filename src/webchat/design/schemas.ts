@@ -7,12 +7,16 @@
  * valida a la vez y se devuelven todos los errores por campo (FR-011a).
  */
 import { z } from 'zod';
+import { contrastFailures } from './contrast.js';
 import {
+  COLOR_FIELDS,
   ORIGINAL_DESIGN,
   POSITIONS,
   SHAPES,
   SIZES,
   type ChatDesignOptions,
+  type ColorField,
+  type Hex,
 } from './defaults.js';
 
 export const COLOR_MESSAGE = 'Indica un color opaco en formato #RRGGBB';
@@ -220,4 +224,41 @@ export function previewOptions(input: Record<string, unknown>): ChatDesignOption
     if (parsed.success) options[option] = parsed.data;
   }
   return options as unknown as ChatDesignOptions;
+}
+
+/** Colores del formulario que se pueden leer (los mal escritos ya tienen su propio error). */
+function formColors(input: Record<string, unknown>): Partial<Record<ColorField, Hex>> {
+  const colors: Partial<Record<ColorField, Hex>> = {};
+  for (const option of COLOR_FIELDS) {
+    const raw = formValue(option)(input[FORM_FIELD_OF[option]]);
+    const parsed = hexColor.safeParse(raw);
+    if (parsed.success) colors[option] = parsed.data;
+  }
+  return colors;
+}
+
+/**
+ * Errores de contraste del formulario (FR-019, FR-020). Cada pareja se marca en los dos colores
+ * que la forman, así sale junto al control que el operador esté cambiando.
+ */
+export function contrastIssues(input: Record<string, unknown>): DesignIssue[] {
+  return contrastFailures(formColors(input)).flatMap((failure) =>
+    [failure.pair.fg, failure.pair.bg].map(
+      (option): DesignIssue => ({
+        field: FORM_FIELD_OF[option],
+        message: failure.message,
+        reason: 'contrast',
+      }),
+    ),
+  );
+}
+
+/** Opciones, textos y contraste del formulario, con todos los errores a la vez (FR-011a). */
+export function validateChatDesign(input: unknown): DesignValidation {
+  const body = typeof input === 'object' && input !== null ? (input as Record<string, unknown>) : {};
+  const base = validateChatDesignOptions(body);
+  const contrast = contrastIssues(body);
+  if (base.ok && contrast.length === 0) return base;
+  const issues = [...(base.ok ? [] : base.issues), ...contrast];
+  return { ok: false, issues, errors: issuesToErrors(issues) };
 }

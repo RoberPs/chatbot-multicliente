@@ -12,7 +12,8 @@ import { readFileSync } from 'node:fs';
 import { sql } from 'drizzle-orm';
 import type { FastifyInstance } from 'fastify';
 import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
-import { createTestBot, type TestBot } from '../helpers/bot.js';
+import { modelPrice, modelUsage, usageSettings, webUsageDay } from '../../src/db/schema.js';
+import { createTestBot, TEST_LLM_MODEL, type TestBot } from '../helpers/bot.js';
 import { GREEN_PALETTE, seedChatDesign } from '../helpers/chat-design.js';
 import { createTestDatabase, type TestDatabase } from '../helpers/db.js';
 
@@ -183,6 +184,130 @@ describe('diseño del chat web: frame con diseño (US1)', () => {
       expect(css.body).toBe('');
     } finally {
       await t.db.execute(sql`alter table chat_design_roto rename to chat_design`);
+    }
+  });
+});
+
+describe('diseño del chat web: elementos obligatorios con cualquier diseño (US2, Principios IV y V)', () => {
+  let t: TestDatabase;
+  let bot: TestBot | null = null;
+
+  beforeAll(async () => {
+    t = await createTestDatabase();
+  });
+  afterAll(async () => {
+    await t.close();
+  });
+  afterEach(async () => {
+    await bot?.close();
+    bot = null;
+  });
+
+  /** El diseño más exigente: nombre y bienvenida al máximo, forma redondeada y paleta propia. */
+  const EXTREME = {
+    ...GREEN_PALETTE,
+    shape: 'round' as const,
+    chatName: 'N'.repeat(40),
+    welcomeText: `${'Bienvenida larga. '.repeat(15)}\nSegunda línea\nTercera línea`.slice(0, 280),
+    sendLabel: 'E'.repeat(20),
+  };
+
+  const frame = (app: FastifyInstance) => app.inject({ method: 'GET', url: '/chat/frame' });
+
+  /** Aviso, privacidad (antes del primer mensaje), campo, Enviar y cerrar. */
+  function expectRequiredElements(body: string) {
+    const notice = body.indexOf('Estás hablando con el asistente automático de Peluquería Tijeras');
+    const privacy = body.indexOf('>Política de privacidad</a>');
+    const firstMessage = body.indexOf('<li class=');
+    expect(notice).toBeGreaterThan(-1);
+    expect(privacy).toBeGreaterThan(-1);
+    expect(firstMessage).toBeGreaterThan(-1);
+    expect(notice).toBeLessThan(firstMessage);
+    expect(privacy).toBeLessThan(firstMessage);
+    expect(body).toContain('se borran a los 30 días');
+    expect(body).toMatch(/<textarea id="chat-text"/);
+    expect(body).toMatch(/<button type="submit">[^<\s][^<]*<\/button>/);
+    expect(body).toContain('id="chat-close"');
+    expect(body).toContain('aria-label="Cerrar el chat"');
+    expect(body).toContain('id="chat-toggle"');
+    expect(body).toContain('Abrir el chat');
+    // Franja de derivación de la 005.
+    expect(body).toContain('<p id="chat-handoff" class="handoff" role="status" hidden></p>');
+  }
+
+  it('con los valores más extremos siguen el aviso, la privacidad, el campo, Enviar y cerrar (US2-4, US2-6)', async () => {
+    bot = await createTestBot(t, { webChat: WEB_ON });
+    await seedChatDesign(t.db, EXTREME);
+    const res = await frame(bot.app);
+    expectRequiredElements(res.body);
+    expect(res.body).toContain(`<h1>${'N'.repeat(40)}</h1>`);
+  });
+
+  it('la franja de derivación sigue en frame.js y frame.css', async () => {
+    bot = await createTestBot(t, { webChat: WEB_ON });
+    const js = await bot.app.inject({ method: 'GET', url: '/chat/assets/frame.js' });
+    const css = await bot.app.inject({ method: 'GET', url: '/chat/assets/frame.css' });
+    expect(js.body).toContain('handoffBar.textContent');
+    expect(css.body).toContain('.handoff {');
+    expect(css.body).toContain('#fff6d6');
+  });
+
+  const UNAVAILABLE = 'Ahora mismo el chat no está disponible.';
+  const CONTACT = 'Para hablar con una persona de Peluquería Tijeras';
+
+  it('no disponible con diseño: desactivado, en preparación, tope de uso y tope de gasto (US2-7)', async () => {
+    const cases: Array<{ name: string; opts: Parameters<typeof createTestBot>[1]; reach?: (b: TestBot) => Promise<void> }> = [
+      { name: 'desactivado', opts: {} },
+      { name: 'en preparación', opts: { webChat: WEB_ON, activate: false } },
+      {
+        name: 'tope de uso',
+        opts: { webChat: WEB_ON },
+        reach: async (b) => {
+          await t.db.insert(webUsageDay).values({ day: '2026-09-24', replies: 200 });
+          await b.setWebChat({ dailyCap: 200 });
+        },
+      },
+      {
+        name: 'tope de gasto',
+        opts: { webChat: WEB_ON },
+        reach: async () => {
+          await t.db.insert(modelPrice).values({
+            model: TEST_LLM_MODEL,
+            inputMicrosPerMtok: 3_000_000n,
+            outputMicrosPerMtok: 0n,
+            cacheWriteMicrosPerMtok: 0n,
+            cacheReadMicrosPerMtok: 0n,
+          });
+          await t.db.update(usageSettings).set({ capEnabled: true, monthlyCapCents: 1 });
+          await t.db.insert(modelUsage).values({
+            at: new Date('2026-09-24T08:00:00Z'),
+            day: '2026-09-24',
+            channel: 'playground',
+            purpose: 'reply',
+            model: TEST_LLM_MODEL,
+            calls: 1,
+            inputTokens: 1,
+            outputTokens: 1,
+            cacheWriteTokens: 0,
+            cacheReadTokens: 0,
+            costPico: 10_000_000_000n,
+            currency: 'USD',
+          });
+        },
+      },
+    ];
+    for (const c of cases) {
+      const b = await createTestBot(t, c.opts);
+      bot = b;
+      await seedChatDesign(t.db, EXTREME);
+      await c.reach?.(b);
+      const res = await frame(b.app);
+      expect([c.name, res.body.includes(UNAVAILABLE)]).toEqual([c.name, true]);
+      expect([c.name, res.body.includes(CONTACT)]).toEqual([c.name, true]);
+      expect([c.name, res.body.includes('id="chat-close"')]).toEqual([c.name, true]);
+      expect(res.body).toContain('data-palette="custom"');
+      await b.close();
+      bot = null;
     }
   });
 });

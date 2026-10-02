@@ -17,6 +17,7 @@ import { withTransaction } from '../../db/client.js';
 import { WEB_MESSAGE_MAX_CHARS } from '../../channels/web/api.js';
 import { renderDesignCss } from '../../webchat/design/css.js';
 import {
+  COLOR_FIELDS,
   DEFAULT_PLACEHOLDER,
   DEFAULT_SEND_LABEL,
   defaultChatName,
@@ -25,8 +26,12 @@ import {
 } from '../../webchat/design/defaults.js';
 import { chatDesignSaved } from '../../webchat/design/log.js';
 import {
+  COLOR_MESSAGE,
+  contrastIssues,
+  FORM_FIELD_OF,
+  hexColor,
   previewOptions,
-  validateChatDesignOptions,
+  validateChatDesign,
   type DesignIssue,
 } from '../../webchat/design/schemas.js';
 import { readChatDesign, saveChatDesign } from '../../webchat/design/store.js';
@@ -168,7 +173,7 @@ export async function chatDesignRoutes(app: FastifyInstance): Promise<void> {
 
     upload.post('/chat-design', { bodyLimit: BODY_LIMIT }, async (request, reply) => {
       const body = (request.body ?? {}) as Record<string, unknown>;
-      const result = validateChatDesignOptions(body);
+      const result = validateChatDesign(body);
       if (!result.ok) {
         chatDesignSaved(request.log, {
           outcome: 'rejected',
@@ -191,7 +196,27 @@ export async function chatDesignRoutes(app: FastifyInstance): Promise<void> {
       });
       return savedResponse(request, reply, '/admin/chat-design', SAVED_MESSAGE);
     });
+
+    upload.post('/chat-design/check', { bodyLimit: BODY_LIMIT }, contrastCheck);
   });
+
+  /**
+   * Contraste en vivo (FR-020): avisos por control de color, sin guardar nada. Acepta
+   * urlencoded y multipart; si llega algún fichero, se ignora.
+   */
+  async function contrastCheck(request: FastifyRequest, reply: FastifyReply) {
+    const body = (request.body ?? {}) as Record<string, unknown>;
+    const fields = COLOR_FIELDS.map((option) => FORM_FIELD_OF[option]);
+    const messages: Record<string, string[]> = {};
+    for (const field of fields) {
+      if (!hexColor.safeParse(echo(body[field])).success) messages[field] = [COLOR_MESSAGE];
+    }
+    for (const issue of contrastIssues(body)) {
+      (messages[issue.field] ??= []).push(issue.message);
+    }
+    const html = await reply.viewAsync('partials/contrast-issues', { fields, messages });
+    return reply.code(200).type('text/html; charset=utf-8').send(html);
+  }
 
   /** Datos de las parciales del chat para la vista previa. */
   async function previewData(design: ResolvedChatDesign) {

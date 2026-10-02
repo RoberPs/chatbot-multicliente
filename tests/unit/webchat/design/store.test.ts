@@ -74,3 +74,15 @@ describe('resolveChatDesign', () => {
     expect(resolved.options.sendLabel).toBe('Mandar');
   });
 });
+
+describe('resolveChatDesign: contraste de lo guardado (R13)', () => {
+  it('si alguna pareja ya no cumple, toda la paleta vuelve a la original', () => {
+    const resolved = resolveChatDesign(row({ textColor: '#aaaaaa', shape: 'soft' }));
+    expect(resolved.options.primaryColor).toBe(ORIGINAL_DESIGN.primaryColor);
+    expect(resolved.options.botBubbleColor).toBe(ORIGINAL_DESIGN.botBubbleColor);
+    expect(resolved.options.textColor).toBe(ORIGINAL_DESIGN.textColor);
+    expect(resolved.unsupported).toContain('palette');
+    // El resto del diseño se aplica.
+    expect(resolved.options.shape).toBe('soft');
+  });
+});
