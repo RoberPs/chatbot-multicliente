@@ -54,7 +54,7 @@ Orden de cada intento:
 3. Retardo global: `min(5 000 ms, 250 ms × max(0, fallos_15min − 5))`, **salvo** cookie de
    navegador conocido válida.
 4. Cola de verificación: 2 simultáneas; hasta 50 esperando; cola llena → 429 «Demasiados intentos.
-   Inténtalo en unos segundos.» sin verificar. Con cookie de navegador conocido: delante en la cola
+   Inténtalo en unos segundos.» sin verificar y sin contar como fallo. Con cookie de navegador conocido: delante en la cola
    y nunca rechazado por cola llena.
 5. Verificación Argon2id siempre + comparación del usuario en tiempo constante; error único
    «Usuario o contraseña incorrectos» (401).

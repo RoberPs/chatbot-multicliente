@@ -207,7 +207,10 @@ ritmo de intentos del atacante queda limitado.
 
 1. **Given** más fallos recientes que el antiguo límite global, **When** el operador introduce la
    credencial correcta desde una dirección que no ha superado su límite propio, **Then** entra al
-   panel tras un retardo no mayor que el máximo.
+   panel tras un retardo no mayor que el máximo si usa un navegador desde el que ya entró antes
+   (navegador conocido); desde un navegador nuevo entra en cuanto la cola de verificaciones tiene
+   hueco, y si está llena recibe «Demasiados intentos. Inténtalo en unos segundos.» sin que cuente
+   como fallo.
 2. **Given** fallos recientes, **When** llega cualquier intento de login, **Then** se aplica un
    retardo que crece con el número de fallos recientes hasta un máximo, y vuelve a cero cuando dejan
    de producirse fallos durante la ventana.
@@ -458,15 +461,18 @@ valor.
 - **FR-019**: La ruta de imágenes del diseño MUST comprobar que la versión pedida es la vigente antes
   de leer la imagen guardada.
 - **FR-020**: Todos los límites por dirección MUST agrupar las direcciones IPv6 por su bloque /64.
-- **FR-021**: Las conexiones a la base de datos MUST tener un máximo, y toda consulta MUST tener una
-  duración máxima, de forma que una saturación de rutas públicas no deje sin servicio al panel ni a
-  WhatsApp.
+- **FR-021**: Las conexiones a la base de datos MUST tener un máximo, y toda consulta hecha al
+  atender una petición, un mensaje o una tarea periódica MUST tener una duración máxima, de forma
+  que una saturación de rutas públicas no deje sin servicio al panel ni a WhatsApp. Las
+  migraciones, las copias y su verificación, que ejecuta el operador, quedan fuera de esa duración
+  máxima.
 
 **Login del operador**
 
 - **FR-022**: El límite global de fallos del login MUST NOT impedir la entrada con la credencial
   correcta. En su lugar, cada intento MUST esperar un retardo que crece con los fallos recientes de
-  toda la instancia, hasta un máximo.
+  toda la instancia, hasta un máximo. Un intento rechazado por la cola llena (FR-023) no cuenta
+  como fallo.
 - **FR-023**: El número de verificaciones de contraseña simultáneas MUST estar limitado.
 - **FR-024**: Se MUST mantener el límite de intentos por dirección, la verificación en tiempo
   constante y el mensaje de error único del login actual.
@@ -553,7 +559,9 @@ valor.
   (o desde un mismo bloque IPv6) no impide que el panel y WhatsApp sigan respondiendo en menos de 2
   segundos.
 - **SC-005**: Durante un ataque de fallos de login desde muchas direcciones, el operador entra con la
-  credencial correcta en menos de 30 segundos.
+  credencial correcta en menos de 30 segundos desde un navegador en el que ya entró, y en menos de
+  30 segundos desde uno nuevo mientras el ataque no supere la capacidad de la cola (2
+  verificaciones simultáneas y 50 en espera).
 - **SC-006**: Con el proveedor de mensajería o el servidor de correo sin responder, ninguna llamada
   queda abierta más que su plazo y la instancia sigue atendiendo los demás canales.
 - **SC-007**: Validar y previsualizar un fichero de configuración en su tamaño máximo tarda menos de

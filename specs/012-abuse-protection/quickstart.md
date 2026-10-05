@@ -78,7 +78,9 @@ pnpm test login            # retardo creciente, cola de 2 + 50, cookie de navega
 ```
 
 Integración: 200 fallos desde 50 direcciones simuladas; el operador entra con la credencial correcta
-en < 30 s desde un navegador nuevo y al instante con la cookie de navegador conocido (SC-005).
+al instante con la cookie de navegador conocido, aunque la cola esté llena, y en < 30 s desde un
+navegador nuevo mientras la cola tenga hueco; con la cola llena, el navegador nuevo recibe 429 sin
+que cuente como fallo (SC-005).
 
 ### 6. Proveedores lentos y lotes que fallan (US5)
 

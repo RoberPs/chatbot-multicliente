@@ -133,7 +133,9 @@ Las referencias `Rn` las usan el plan, el modelo de datos y los contratos.
   2. **Reenvío agrupado** (FR-014): la derivación guarda `last_notice_at`. Si el procesador encuentra
      pendientes y no han pasado `forward_interval_minutes` desde el último aviso de esa derivación,
      **no** reenvía: deja los mensajes `pending` y pone `conversation.process_after =
-     last_notice_at + intervalo`. Al vencer, un solo reenvío con todo lo acumulado.
+     last_notice_at + intervalo`. Al vencer, un solo reenvío con todo lo acumulado. La alerta de
+     inicio y cada recordatorio también ponen `last_notice_at`; un recordatorio no espera al
+     intervalo, pero lo reinicia.
   3. **Tope diario de avisos** (FR-014, FR-015): cada aviso (alerta, reenvío o recordatorio; **uno
      por aviso**, salgan por una o por dos vías) reserva plaza en `handoff_day.notices` igual que en
      1. Sin plaza: no se envía, `notices_held + 1`, evento `business_notices_held` una vez al día,
@@ -293,8 +295,11 @@ Las referencias `Rn` las usan el plan, el modelo de datos y los contratos.
   - `botSchema` las aplica solo con `NODE_ENV=production`; el mensaje nombra la variable y la regla
     sin el valor. Fuera de producción, el arranque registra `weak_secrets` con la lista de
     variables y reglas y sigue.
-  - `instance:check` ya traduce las incidencias de `checkEnv`; deja de calcular la calidad por su
-    cuenta para no duplicarlas, y da el mismo veredicto que el arranque (FR-035).
+  - `instance:check` deja de calcular la calidad por su cuenta y usa `checkSecrets` en sus dos
+    perfiles: en `production`, errores con el mismo veredicto que el arranque (FR-035); en
+    `testing`, avisos (como hoy). `reused` sustituye a las reglas de coincidencia que había
+    (`backup_key_equals_session`, `health_secret_equals_*`, `secret_reused_within`). La regla del
+    formato de `OPERATOR_PASSWORD_HASH` sigue siendo propia de la 007.
 - **Rationale**: hoy la calidad solo la mira `instance:check`; una instancia arrancada sin pasarla,
   o actualizada con secretos antiguos, funciona con secretos débiles.
 
