@@ -75,10 +75,12 @@ const srcDir = fileURLToPath(new URL('../..', import.meta.url));
 /** Aviso del panel por cada campo guardado que no se ha podido aplicar (R13). */
 const UNSUPPORTED_MESSAGES: Record<string, string> = {
   primaryColor: 'El color principal guardado ya no se admite; el chat usa el original',
-  onPrimaryColor: 'El color del texto sobre el principal guardado ya no se admite; el chat usa el original',
+  onPrimaryColor:
+    'El color del texto sobre el principal guardado ya no se admite; el chat usa el original',
   backgroundColor: 'El fondo del chat guardado ya no se admite; el chat usa el original',
   textColor: 'El color del texto guardado ya no se admite; el chat usa el original',
-  botBubbleColor: 'El fondo de los mensajes del bot guardado ya no se admite; el chat usa el original',
+  botBubbleColor:
+    'El fondo de los mensajes del bot guardado ya no se admite; el chat usa el original',
   palette: 'Los colores guardados ya no tienen contraste suficiente; el chat usa los originales',
   shape: 'La forma guardada ya no se admite; el chat usa la original',
   position: 'La posición guardada ya no se admite; el chat usa la original',
@@ -177,6 +179,18 @@ export async function chatDesignRoutes(app: FastifyInstance): Promise<void> {
         ? `${errors[issue.field]} · ${issue.message}`
         : issue.message;
     }
+    // Resumen: cada mensaje una sola vez, aunque una pareja de contraste marque sus dos campos.
+    const summary: Record<string, string> = {};
+    const seen = new Set<string>();
+    for (const issue of extra.issues ?? []) {
+      if (seen.has(issue.message)) continue;
+      seen.add(issue.message);
+      const fields = (extra.issues ?? [])
+        .filter((other) => other.message === issue.message)
+        .map((other) => other.field);
+      const field = fields.find((f) => summary[f] === undefined) ?? issue.field;
+      summary[field] = summary[field] ? `${summary[field]} · ${issue.message}` : issue.message;
+    }
     return renderPage(
       request,
       reply,
@@ -186,6 +200,7 @@ export async function chatDesignRoutes(app: FastifyInstance): Promise<void> {
         title: TITLE,
         values: extra.values ?? formValues(design.options),
         errors,
+        summary,
         ...(extra.general ? { general: extra.general } : {}),
         saved: design.saved,
         images: design.images,
@@ -266,7 +281,7 @@ export async function chatDesignRoutes(app: FastifyInstance): Promise<void> {
           ),
         );
         // Un fichero elegido no se puede volver a poner en el campo: se pide de nuevo (R8).
-        const reselect = SLOTS.filter((slot) => changes[slot]?.kind === 'replace');
+        const reselect = SLOTS.filter((slot) => changes[slot].kind === 'replace');
         return renderForm(
           request,
           reply,
@@ -279,7 +294,10 @@ export async function chatDesignRoutes(app: FastifyInstance): Promise<void> {
       chatDesignSaved(request.log, {
         outcome: 'saved',
         images: Object.fromEntries(
-          SLOTS.map((slot) => [slot, imageOutcome(result.images[slot], before.images[slot] !== undefined)]),
+          SLOTS.map((slot) => [
+            slot,
+            imageOutcome(result.images[slot], before.images[slot] !== undefined),
+          ]),
         ) as Record<Slot, ImageOutcome>,
       });
       return savedResponse(request, reply, '/admin/chat-design', SAVED_MESSAGE);

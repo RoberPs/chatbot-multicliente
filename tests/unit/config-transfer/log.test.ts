@@ -206,9 +206,9 @@ describe('diseño del chat en los registros (011)', () => {
       outcome: 'will_apply',
     });
     const text = JSON.stringify(lines);
-    const design = withDesign.document.chatDesign!;
-    for (const secret of [design.chatName!, design.welcomeText!, design.primaryColor, design.images.logo!.data.slice(0, 20)]) {
-      expect(text).not.toContain(secret);
-    }
+    const design = withDesign.document.chatDesign;
+    if (!design?.chatName || !design.welcomeText || !design.images.logo) throw new Error('fixture');
+    const secrets = [design.chatName, design.welcomeText, design.primaryColor, design.images.logo.data.slice(0, 20)];
+    for (const secret of secrets) expect(text).not.toContain(secret);
   });
 });

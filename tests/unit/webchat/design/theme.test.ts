@@ -76,7 +76,12 @@ describe('computeTheme', () => {
       sendLabel: 'Enviar',
     });
     const custom = computeTheme(
-      design({ chatName: 'Recepción', welcomeText: 'Hola', placeholder: 'Pregunta', sendLabel: 'Ir' }),
+      design({
+        chatName: 'Recepción',
+        welcomeText: 'Hola',
+        placeholder: 'Pregunta',
+        sendLabel: 'Ir',
+      }),
       BUSINESS,
     );
     expect(custom.texts).toEqual({
@@ -122,7 +127,8 @@ describe('colores derivados (R4, FR-019a)', () => {
   it('toda paleta guardable produce derivados que cumplen 4,5:1 y 3:1', () => {
     const rand = prng(20261002);
     const channel = (lo: number, hi: number) => lo + rand() * (hi - lo);
-    const color = (lo: number, hi: number) => hex(channel(lo, hi), channel(lo, hi), channel(lo, hi));
+    const color = (lo: number, hi: number) =>
+      hex(channel(lo, hi), channel(lo, hi), channel(lo, hi));
     let checked = 0;
     for (let i = 0; i < 5000; i++) {
       const dark = rand() < 0.3;
@@ -170,8 +176,12 @@ describe('posición y tamaño (R5, R6)', () => {
     expect(computeTheme(design({ position: 'left' }), BUSINESS).htmlAttrs).toEqual({
       'data-position': 'left',
     });
-    expect(computeTheme(design({ size: 'small' }), BUSINESS).htmlAttrs).toEqual({ 'data-size': 'small' });
-    expect(computeTheme(design({ size: 'large' }), BUSINESS).htmlAttrs).toEqual({ 'data-size': 'large' });
+    expect(computeTheme(design({ size: 'small' }), BUSINESS).htmlAttrs).toEqual({
+      'data-size': 'small',
+    });
+    expect(computeTheme(design({ size: 'large' }), BUSINESS).htmlAttrs).toEqual({
+      'data-size': 'large',
+    });
   });
 
   it('derecha y mediano son el original: sin atributos ni tokens', () => {

@@ -94,14 +94,14 @@ describe('copia previa a las migraciones', () => {
     expect(error).toBeInstanceOf(MigrationBlockedError);
     expect(error).toMatchObject({
       failure: 'backup_not_configured',
-      pending: ['0004_handoff', '0005_config_transfer', '0006_usage'],
+      pending: ['0004_handoff', '0005_config_transfer', '0006_usage', '0007_chat_design'],
     });
     expect(await tableSnapshot(old.url)).toEqual(before);
     expect(logger.events('migration_blocked')).toEqual([
       {
         channel: 'backup',
         event: 'migration_blocked',
-        pending: ['0004_handoff', '0005_config_transfer', '0006_usage'],
+        pending: ['0004_handoff', '0005_config_transfer', '0006_usage', '0007_chat_design'],
         failure: 'backup_not_configured',
       },
     ]);
@@ -118,7 +118,7 @@ describe('copia previa a las migraciones', () => {
     expect(error).toBeInstanceOf(MigrationBlockedError);
     expect((error as MigrationBlockedError).failure).toBe('dir_missing');
     expect((error as Error).message).toBe(
-      'No se aplican las migraciones pendientes (0004_handoff, 0005_config_transfer, 0006_usage): no se pudo hacer la copia previa (dir_missing). El esquema no ha cambiado.',
+      'No se aplican las migraciones pendientes (0004_handoff, 0005_config_transfer, 0006_usage, 0007_chat_design): no se pudo hacer la copia previa (dir_missing). El esquema no ha cambiado.',
     );
     expect(await tableSnapshot(old.url)).toEqual(before);
   });
@@ -156,7 +156,7 @@ describe('copia previa a las migraciones', () => {
       );
       expect(error).toBeInstanceOf(MigrationFailedError);
       const [file = ''] = await files('rota-01__');
-      expect(file).toMatch(/^rota-01__0006_usage__\d{8}T\d{6}Z__premigration\.cbak$/);
+      expect(file).toMatch(/^rota-01__0007_chat_design__\d{8}T\d{6}Z__premigration\.cbak$/);
       expect((error as Error).message).toContain(`Copia previa: ${file}.`);
       expect(logger.events('migration_failed')).toEqual([
         {
@@ -192,6 +192,7 @@ describe('copia previa a las migraciones', () => {
       '0004_handoff',
       '0005_config_transfer',
       '0006_usage',
+      '0007_chat_design',
     ]);
     expect(await tableSnapshot(previousCore.url)).toEqual(before);
 

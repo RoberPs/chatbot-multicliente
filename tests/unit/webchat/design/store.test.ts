@@ -99,7 +99,10 @@ describe('resolveChatDesign: imágenes (R13)', () => {
   });
 
   it('cada imagen válida da su URL por huella', () => {
-    const resolved = resolveChatDesign(row(), [meta('logo'), meta('icon', { mimeType: 'image/webp' })]);
+    const resolved = resolveChatDesign(row(), [
+      meta('logo'),
+      meta('icon', { mimeType: 'image/webp' }),
+    ]);
     expect(resolved.images.logo?.url).toBe(`/chat/design/logo/${'a'.repeat(16)}.png`);
     expect(resolved.images.icon?.url).toBe(`/chat/design/icon/${'a'.repeat(16)}.webp`);
     expect(resolved.images.avatar).toBeUndefined();

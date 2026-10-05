@@ -6,7 +6,11 @@
 import { crc32, deflateSync } from 'node:zlib';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { readChatDesignDocument } from '../../../src/config-transfer/read.js';
-import { exportConfig, previewImport, readPreImport } from '../../../src/config-transfer/service.js';
+import {
+  exportConfig,
+  previewImport,
+  readPreImport,
+} from '../../../src/config-transfer/service.js';
 import { withReadSnapshot, type Db } from '../../../src/db/client.js';
 import { ORIGINAL_DESIGN } from '../../../src/webchat/design/defaults.js';
 import { MAX_IMAGE_BYTES, validateDesignImage } from '../../../src/webchat/design/images.js';
@@ -33,7 +37,11 @@ const designOf = (db: Db) => withReadSnapshot(db, (tx) => readChatDesignDocument
 
 /** Exporta la configuración de `db` como un fichero subido. */
 async function exported(db: Db) {
-  const { content } = await exportConfig(db, { includeAlerts: false, instanceId: 'origen-01', now });
+  const { content } = await exportConfig(db, {
+    includeAlerts: false,
+    instanceId: 'origen-01',
+    now,
+  });
   return { content, source: importSource(Buffer.from(content)) };
 }
 
@@ -100,9 +108,16 @@ describe('diseño del chat en la exportación e importación', () => {
 
   it('reimportar el mismo fichero no muestra cambios de diseño ni escribe nada (SC-008)', async () => {
     await seedFullBusiness(origin.deps);
-    await seedChatDesignWithImages(origin.db, { logo: 'metadata.png', icon: 'valid.webp' }, GREEN_PALETTE);
+    await seedChatDesignWithImages(
+      origin.db,
+      { logo: 'metadata.png', icon: 'valid.webp' },
+      GREEN_PALETTE,
+    );
     const { source } = await exported(origin.db);
-    const preview = await previewImport(origin.db, source, { includeAlerts: false, instanceId: 'origen-01' });
+    const preview = await previewImport(origin.db, source, {
+      includeAlerts: false,
+      instanceId: 'origen-01',
+    });
     expect(preview.sections.find((s) => s.section === 'chatDesign')).toBeUndefined();
 
     const rowBefore = await designRow(origin.db);
@@ -125,7 +140,11 @@ describe('diseño del chat en la exportación e importación', () => {
 
   it('importar la configuración anterior restaura el diseño previo (FR-038)', async () => {
     await seedFullBusiness(target.deps);
-    await seedChatDesignWithImages(target.db, { logo: 'valid.png' }, { shape: 'square', chatName: 'Previo' });
+    await seedChatDesignWithImages(
+      target.db,
+      { logo: 'valid.png' },
+      { shape: 'square', chatName: 'Previo' },
+    );
     const previous = await designOf(target.db);
 
     await seedFullBusiness(origin.deps);

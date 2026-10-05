@@ -63,7 +63,8 @@ describe('validateDesignImage', () => {
     const original = loadImageFixture('metadata.png');
     for (const chunk of ['tEXt', 'iTXt', 'eXIf', 'tIME']) expect(has(original, chunk)).toBe(true);
     const image = accepted('metadata.png');
-    for (const chunk of ['tEXt', 'iTXt', 'eXIf', 'tIME']) expect(has(image.bytes, chunk)).toBe(false);
+    for (const chunk of ['tEXt', 'iTXt', 'eXIf', 'tIME'])
+      expect(has(image.bytes, chunk)).toBe(false);
     expect(image.bytes.equals(loadImageFixture('valid.png'))).toBe(true);
     expect(validateDesignImage({ bytes: image.bytes, truncated: false }).ok).toBe(true);
   });
@@ -96,7 +97,13 @@ describe('validateDesignImage', () => {
   });
 
   it('normalizar dos veces da los mismos bytes (SC-008)', () => {
-    for (const name of ['metadata.png', 'metadata.jpg', 'metadata.webp', 'animated.png', 'valid.webp']) {
+    for (const name of [
+      'metadata.png',
+      'metadata.jpg',
+      'metadata.webp',
+      'animated.png',
+      'valid.webp',
+    ]) {
       const once = accepted(name);
       const twice = validateDesignImage({ bytes: once.bytes, truncated: false });
       if (!twice.ok) throw new Error(name);

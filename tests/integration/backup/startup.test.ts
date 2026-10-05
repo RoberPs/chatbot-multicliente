@@ -97,7 +97,7 @@ describe('arranque de la instancia', () => {
       {
         channel: 'backup',
         event: 'migration_blocked',
-        pending: ['0004_handoff', '0005_config_transfer', '0006_usage'],
+        pending: ['0004_handoff', '0005_config_transfer', '0006_usage', '0007_chat_design'],
         failure: 'backup_not_configured',
       },
     ]);

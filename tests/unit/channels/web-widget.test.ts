@@ -138,7 +138,8 @@ describe('widget.js: tamaño y posición del diseño (011, R6)', () => {
   /** Como `runWidget`, pero el estilo del iframe anota el orden en que se cambia. */
   function runRecording() {
     const writes: Array<[string, string]> = [];
-    const style = new Proxy({} as Record<string, string>, {
+    const target: Record<string, string> = {};
+    const style = new Proxy(target, {
       set(target, key: string, value: string) {
         writes.push([key, value]);
         target[key] = value;

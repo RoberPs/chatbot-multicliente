@@ -281,14 +281,15 @@ vuelven a los originales y las URL de las imágenes dan `404` (quickstart §7).
 **Purpose**: copias de seguridad, no regresión, neutralidad de sector, documentación y validación
 manual.
 
-- [ ] T092 [P] Ampliar `tests/integration/backup/backup-restore.test.ts`: copia con un diseño con imágenes, borrar el diseño, restaurar: fila e imágenes vuelven con los mismos bytes; `db:verify` pasa (Edge case 006, FR-028)
-- [ ] T093 [P] Comprobar que `tests/integration/sector-neutrality.test.ts` recorre `src/webchat/design/`, `src/channels/web/views/partials/` y las vistas nuevas del panel, y que la conversación de ejemplo de la vista previa no contiene nombres de sector (FR-044); ampliarlo si no los cubre
-- [ ] T094 [P] Añadir en `tests/contract/admin/chat-design.test.ts` la comprobación de seguridad de la vista previa y del panel: textos con `<script>`, `{{ }}` y `"><img onerror>` salen escapados en el formulario, en la vista previa y en el frame; `preview.css` con valores maliciosos en la consulta no contiene ese texto (FR-040, SC-010)
-- [ ] T095 Ejecutar `pnpm test` completo y confirmar que siguen pasando sin cambios los tests de la 004 (`tests/contract/web-chat*.test.ts`), la 005, la 008 y la 010 (FR-043, SC-006); corregir en el código de esta feature, no en esos tests
-- [ ] T096 Ejecutar `pnpm lint && pnpm typecheck` y corregir lo que aparezca
-- [ ] T097 Recorrer la lista manual de [quickstart.md](quickstart.md) (§1–§8 y registros) en Chrome, Firefox y Safari (o WebKit), en escritorio y a 360×640, y anotar el resultado (SC-002, SC-004, R15)
-- [ ] T098 Avisar al usuario y actualizar `README.md` con el estado de la feature 011 (sección "Diseño del chat" del panel, formato de configuración v2) (CLAUDE.md)
-- [ ] T099 Actualizar `docs/operacion-multicliente.md`: tabla de specs realizadas (9.1) con la 011 y su fecha, orden de propuestas pendientes (9.2), marcar como hecha la propuesta de personalizar el aspecto del chat y actualizar las secciones de operación afectadas (formato v2 en exportación e importación; el diseño viaja en las copias) (CLAUDE.md)
+- [X] T092 [P] Ampliar `tests/integration/backup/backup-restore.test.ts`: copia con un diseño con imágenes, borrar el diseño, restaurar: fila e imágenes vuelven con los mismos bytes; `db:verify` pasa (Edge case 006, FR-028)
+- [X] T093 [P] Comprobar que `tests/integration/sector-neutrality.test.ts` recorre `src/webchat/design/`, `src/channels/web/views/partials/` y las vistas nuevas del panel, y que la conversación de ejemplo de la vista previa no contiene nombres de sector (FR-044); ampliarlo si no los cubre
+- [X] T094 [P] Añadir en `tests/contract/admin/chat-design.test.ts` la comprobación de seguridad de la vista previa y del panel: textos con `<script>`, `{{ }}` y `"><img onerror>` salen escapados en el formulario, en la vista previa y en el frame; `preview.css` con valores maliciosos en la consulta no contiene ese texto (FR-040, SC-010)
+- [X] T095 Ejecutar `pnpm test` completo y confirmar que siguen pasando sin cambios los tests de la 004 (`tests/contract/web-chat*.test.ts`), la 005, la 008 y la 010 (FR-043, SC-006); corregir en el código de esta feature, no en esos tests
+- [X] T096 Ejecutar `pnpm lint && pnpm typecheck` y corregir lo que aparezca
+- [X] T097 Recorrer la lista manual de [quickstart.md](quickstart.md) (§1–§8 y registros) en Chrome, Firefox y Safari (o WebKit), en escritorio y a 360×640, y anotar el resultado (SC-002, SC-004, R15)
+  - Resultado (2026-10-05): recorrida por el operador hasta §8 contra la instancia local. Hallazgo: el resumen de errores del guardado repetía cada pareja de contraste (una vez por cada campo de la pareja); corregido para listar cada mensaje una vez, con test en `tests/contract/admin/chat-design.test.ts`. El rechazo de colores por debajo de 4,5:1 (p. ej. `#af6e3d`, 4,10:1 sobre blanco) es el comportamiento esperado (FR-019, FR-020). Las copias siguen siendo solo desde la terminal (006); el estado visible en el panel queda como propuesta P7 en `docs/operacion-multicliente.md`.
+- [X] T098 Avisar al usuario y actualizar `README.md` con el estado de la feature 011 (sección "Diseño del chat" del panel, formato de configuración v2) (CLAUDE.md)
+- [X] T099 Actualizar `docs/operacion-multicliente.md`: tabla de specs realizadas (9.1) con la 011 y su fecha, orden de propuestas pendientes (9.2), marcar como hecha la propuesta de personalizar el aspecto del chat y actualizar las secciones de operación afectadas (formato v2 en exportación e importación; el diseño viaja en las copias) (CLAUDE.md)
 
 ---
 

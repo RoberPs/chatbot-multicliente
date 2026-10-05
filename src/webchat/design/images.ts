@@ -47,9 +47,7 @@ export interface ImageUpload {
 
 /** Cambio de un hueco al guardar desde el panel. */
 export type ImageChange =
-  | { kind: 'keep' }
-  | { kind: 'remove' }
-  | { kind: 'replace'; upload: ImageUpload };
+  { kind: 'keep' } | { kind: 'remove' } | { kind: 'replace'; upload: ImageUpload };
 
 export type ImageResult = { ok: true; image: DesignImage } | { ok: false; message: string };
 
@@ -120,7 +118,8 @@ function parsePng(bytes: Buffer): Parsed {
 // --- JPEG ---------------------------------------------------------------------------------
 
 /** Marcadores SOFn con las dimensiones (todos los C0–CF salvo DHT, JPG y DAC). */
-const isSof = (m: number): boolean => m >= 0xc0 && m <= 0xcf && m !== 0xc4 && m !== 0xc8 && m !== 0xcc;
+const isSof = (m: number): boolean =>
+  m >= 0xc0 && m <= 0xcf && m !== 0xc4 && m !== 0xc8 && m !== 0xcc;
 /** APP1–APP15 (EXIF, XMP, IPTC, ICC…) y COM: se quitan. APP0 (JFIF) se conserva. */
 const isJpegMetadata = (m: number): boolean => (m >= 0xe1 && m <= 0xef) || m === 0xfe;
 const isRst = (m: number): boolean => m >= 0xd0 && m <= 0xd7;

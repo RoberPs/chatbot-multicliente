@@ -78,7 +78,9 @@ describe('textos', () => {
   });
 
   it('admite emojis y texto con marcas, que se pintan escapados', () => {
-    expect(textSchema('chatName').parse('Hola 👋 <b>x</b> {{ y }}')).toBe('Hola 👋 <b>x</b> {{ y }}');
+    expect(textSchema('chatName').parse('Hola 👋 <b>x</b> {{ y }}')).toBe(
+      'Hola 👋 <b>x</b> {{ y }}',
+    );
   });
 });
 
@@ -99,7 +101,8 @@ describe('validateChatDesignOptions', () => {
       __proto__: { x: 1 },
     });
     expect(result.ok).toBe(true);
-    if (result.ok) expect(Object.keys(result.options).sort()).toEqual(Object.keys(ORIGINAL_DESIGN).sort());
+    if (result.ok)
+      expect(Object.keys(result.options).sort()).toEqual(Object.keys(ORIGINAL_DESIGN).sort());
   });
 
   it('devuelve todos los errores a la vez, cada uno en su campo', () => {
@@ -127,10 +130,30 @@ describe('validateChatDesignOptions', () => {
 describe('validateChatDesign: contraste (FR-019, FR-020)', () => {
   const cases: Array<[string, Record<string, string>, string, string]> = [
     // [pareja, colores, campo marcado, inicio del mensaje]
-    ['texto sobre el principal', { on_primary_color: '#3b6fc4' }, 'on_primary_color', 'El texto sobre el color principal'],
-    ['texto sobre el fondo', { text_color: '#aaaaaa' }, 'text_color', 'El texto del chat sobre el fondo'],
-    ['texto sobre los mensajes del bot', { bot_bubble_color: '#4a5060', primary_color: '#0b3d91' }, 'bot_bubble_color', 'El texto sobre los mensajes del bot'],
-    ['principal sobre el fondo', { primary_color: '#ff8800' }, 'primary_color', 'El color principal frente al fondo del chat'],
+    [
+      'texto sobre el principal',
+      { on_primary_color: '#3b6fc4' },
+      'on_primary_color',
+      'El texto sobre el color principal',
+    ],
+    [
+      'texto sobre el fondo',
+      { text_color: '#aaaaaa' },
+      'text_color',
+      'El texto del chat sobre el fondo',
+    ],
+    [
+      'texto sobre los mensajes del bot',
+      { bot_bubble_color: '#4a5060', primary_color: '#0b3d91' },
+      'bot_bubble_color',
+      'El texto sobre los mensajes del bot',
+    ],
+    [
+      'principal sobre el fondo',
+      { primary_color: '#ff8800' },
+      'primary_color',
+      'El color principal frente al fondo del chat',
+    ],
   ];
 
   it.each(cases)('rechaza la pareja %s con su razón y el mínimo', (_name, colors, field, start) => {
@@ -145,7 +168,11 @@ describe('validateChatDesign: contraste (FR-019, FR-020)', () => {
 
   it('el principal frente a los mensajes del bot se marca en el principal', () => {
     // Fondo blanco (cumple) y burbuja del bot casi del color principal.
-    const result = validateChatDesign({ ...FORM, bot_bubble_color: '#c9d8f0', text_color: '#000000' });
+    const result = validateChatDesign({
+      ...FORM,
+      bot_bubble_color: '#c9d8f0',
+      text_color: '#000000',
+    });
     expect(result.ok).toBe(false);
     if (result.ok) return;
     expect(result.errors.primary_color).toContain(
@@ -160,7 +187,11 @@ describe('validateChatDesign: contraste (FR-019, FR-020)', () => {
   });
 
   it('devuelve a la vez los errores de contraste y los de texto', () => {
-    const result = validateChatDesign({ ...FORM, text_color: '#aaaaaa', chat_name: 'x'.repeat(41) });
+    const result = validateChatDesign({
+      ...FORM,
+      text_color: '#aaaaaa',
+      chat_name: 'x'.repeat(41),
+    });
     if (result.ok) throw new Error('debería fallar');
     expect(result.errors.text_color).toContain('contraste');
     expect(result.errors.chat_name).toBe('Máximo 40 caracteres');

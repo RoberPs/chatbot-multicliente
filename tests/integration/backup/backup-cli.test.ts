@@ -34,7 +34,7 @@ describe('pnpm db:backup', () => {
     expect(await main(['--json'], io)).toBe(0);
     expect(io.stdout).toHaveLength(1);
     const report = JSON.parse(io.stdout[0] ?? '{}') as Record<string, unknown>;
-    expect(report).toMatchObject({ ok: true, reason: 'manual', schema: '0006_usage' });
+    expect(report).toMatchObject({ ok: true, reason: 'manual', schema: '0007_chat_design' });
     expect(await readdir(dir.path)).toEqual([report.file]);
     expect(io.all()).not.toContain(TEST_KEY);
   });
@@ -43,9 +43,9 @@ describe('pnpm db:backup', () => {
     const io = testIO(cliEnv(test.url, dir.path));
     expect(await main([], io)).toBe(0);
     const [first, second, third] = io.stdout;
-    expect(first).toMatch(/^Copia creada: test-01__0006_usage__\d{8}T\d{6}Z__manual\.cbak$/);
+    expect(first).toMatch(/^Copia creada: test-01__0007_chat_design__\d{8}T\d{6}Z__manual\.cbak$/);
     expect(second).toMatch(
-      /Tamaño: [\d,]+ (B|KB|MB) · Esquema: 0006_usage · Núcleo: \d+\.\d+\.\d+ · \d{4}-\d{2}-\d{2} \d{2}:\d{2} \(Europe\/Madrid\)/,
+      /Tamaño: [\d,]+ (B|KB|MB) · Esquema: 0007_chat_design · Núcleo: \d+\.\d+\.\d+ · \d{4}-\d{2}-\d{2} \d{2}:\d{2} \(Europe\/Madrid\)/,
     );
     expect(third).toContain('business 1');
     expect(third).toContain('conversation 3');

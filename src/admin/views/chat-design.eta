@@ -5,7 +5,7 @@
     <% it.unsupported.forEach(function (message) { %><p><%= message %></p><% }) %>
   </div>
 <% } %>
-<%~ include('/partials/general-error', { errors: it.errors, general: it.general, blocking: it.blocking, h: it.h }) %>
+<%~ include('/partials/general-error', { errors: it.summary, general: it.general, blocking: it.blocking, h: it.h }) %>
 <p class="hint">Colores, forma, textos e imágenes del chat de tu web. Se aplican en la siguiente carga del chat, sin tocar el fragmento que pegaste. El aviso de asistente automático y el enlace de privacidad se muestran siempre.</p>
 
 <div class="chat-design">

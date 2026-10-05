@@ -71,7 +71,11 @@ describe('Diseño del chat (/admin/chat-design)', () => {
   describe('sesión y CSRF', () => {
     it('sin sesión: 302 al login (o 401 + HX-Redirect) y no guarda nada (US1-8)', async () => {
       await start();
-      for (const url of ['/admin/chat-design', '/admin/chat-design/preview', '/admin/chat-design/preview.css']) {
+      for (const url of [
+        '/admin/chat-design',
+        '/admin/chat-design/preview',
+        '/admin/chat-design/preview.css',
+      ]) {
         const res = await app.inject({ method: 'GET', url });
         expect([url, res.statusCode, res.headers.location]).toEqual([url, 302, '/admin/login']);
       }
@@ -102,7 +106,11 @@ describe('Diseño del chat (/admin/chat-design)', () => {
         payload: encodeForm(designForm(GREEN_FORM)),
       });
       expect(res.statusCode).toBe(403);
-      const multipart = await postDesign(app, { ...session, csrf: 'no-vale' }, designForm(GREEN_FORM));
+      const multipart = await postDesign(
+        app,
+        { ...session, csrf: 'no-vale' },
+        designForm(GREEN_FORM),
+      );
       expect(multipart.statusCode).toBe(403);
       expect(await designRow(t.db)).toBeUndefined();
     });
@@ -151,7 +159,9 @@ describe('Diseño del chat (/admin/chat-design)', () => {
       });
       const res = await get(app, session, '/admin/chat-design');
       expect(res.body).toContain('El tamaño guardado ya no se admite; el chat usa el original');
-      expect(res.body.indexOf('ya no se admite')).toBeLessThan(res.body.indexOf('id="chat-design-form"'));
+      expect(res.body.indexOf('ya no se admite')).toBeLessThan(
+        res.body.indexOf('id="chat-design-form"'),
+      );
     });
   });
 
@@ -194,7 +204,12 @@ describe('Diseño del chat (/admin/chat-design)', () => {
       const res = await postDesign(
         app,
         session,
-        designForm({ ...GREEN_FORM, chat_name: 'x'.repeat(41), size: 'huge', placeholder: 'Pregunta' }),
+        designForm({
+          ...GREEN_FORM,
+          chat_name: 'x'.repeat(41),
+          size: 'huge',
+          placeholder: 'Pregunta',
+        }),
       );
       expect(res.statusCode).toBe(422);
       expect(hasFieldError(res.body, 'Máximo 40 caracteres')).toBe(true);
@@ -233,9 +248,22 @@ describe('Diseño del chat (/admin/chat-design)', () => {
 
     it('sin JavaScript también: un urlencoded con contraste insuficiente se rechaza (US2-3)', async () => {
       await start();
-      const res = await postForm(app, session, '/admin/chat-design', designForm({ primary_color: '#ff8800' }));
+      const res = await postForm(
+        app,
+        session,
+        '/admin/chat-design',
+        designForm({ primary_color: '#ff8800' }),
+      );
       expect(res.statusCode).toBe(422);
-      expect(res.body).toContain('El color principal frente al fondo del chat tiene un contraste de');
+      expect(res.body).toContain(
+        'El color principal frente al fondo del chat tiene un contraste de',
+      );
+      // El resumen lista cada pareja una sola vez, aunque marque sus dos campos.
+      const summary = /<ul class="error-summary">([\s\S]*?)<\/ul>/.exec(res.body)?.[1] ?? '';
+      const items = [...summary.matchAll(/<li[^>]*>([^<]*)<\/li>/g)].map((m) => m[1] ?? '');
+      expect(items.length).toBeGreaterThan(1);
+      expect(items.every((item) => !item.includes(' · '))).toBe(true);
+      expect(new Set(items).size).toBe(items.length);
       expect(await designRow(t.db)).toBeUndefined();
     });
 
@@ -243,8 +271,18 @@ describe('Diseño del chat (/admin/chat-design)', () => {
       await start();
       const ok = await postForm(app, session, '/admin/chat-design/check', designForm(GREEN_FORM));
       expect(ok.statusCode).toBe(200);
-      for (const field of ['primary_color', 'on_primary_color', 'background_color', 'text_color', 'bot_bubble_color']) {
-        expect(ok.body).toMatch(new RegExp(`<span id="contrast-${field}" class="contrast-issues" hx-swap-oob="true" role="status"></span>`));
+      for (const field of [
+        'primary_color',
+        'on_primary_color',
+        'background_color',
+        'text_color',
+        'bot_bubble_color',
+      ]) {
+        expect(ok.body).toMatch(
+          new RegExp(
+            `<span id="contrast-${field}" class="contrast-issues" hx-swap-oob="true" role="status"></span>`,
+          ),
+        );
       }
       const bad = await postForm(
         app,
@@ -253,8 +291,12 @@ describe('Diseño del chat (/admin/chat-design)', () => {
         designForm({ text_color: '#aaaaaa', primary_color: 'azul' }),
       );
       expect(bad.statusCode).toBe(200);
-      expect(bad.body).toMatch(/id="contrast-text_color"[^>]*>El texto del chat sobre el fondo tiene un contraste de 2,\d{2}:1; el mínimo es 4,5:1/);
-      expect(bad.body).toMatch(/id="contrast-primary_color"[^>]*>Indica un color opaco en formato #RRGGBB/);
+      expect(bad.body).toMatch(
+        /id="contrast-text_color"[^>]*>El texto del chat sobre el fondo tiene un contraste de 2,\d{2}:1; el mínimo es 4,5:1/,
+      );
+      expect(bad.body).toMatch(
+        /id="contrast-primary_color"[^>]*>Indica un color opaco en formato #RRGGBB/,
+      );
       expect(await designRow(t.db)).toBeUndefined();
     });
 
@@ -282,7 +324,9 @@ describe('Diseño del chat (/admin/chat-design)', () => {
       );
       expect(res.statusCode).toBe(303);
       const frame = await app.inject({ method: 'GET', url: '/chat/frame' });
-      expect(frame.body).toContain('Estás hablando con el asistente automático de Peluquería Tijeras');
+      expect(frame.body).toContain(
+        'Estás hablando con el asistente automático de Peluquería Tijeras',
+      );
       expect(frame.body).toContain('Política de privacidad');
       expect(frame.body).not.toContain('Nada');
     });
@@ -293,8 +337,18 @@ describe('Diseño del chat (/admin/chat-design)', () => {
       await start();
       const res = await postDesign(app, session, designForm(GREEN_FORM), [
         { name: 'logo', bytes: loadImageFixture('metadata.png') },
-        { name: 'avatar', bytes: loadImageFixture('valid.jpg'), filename: 'foto.jpg', type: 'image/jpeg' },
-        { name: 'icon', bytes: loadImageFixture('valid.webp'), filename: 'icono.webp', type: 'image/webp' },
+        {
+          name: 'avatar',
+          bytes: loadImageFixture('valid.jpg'),
+          filename: 'foto.jpg',
+          type: 'image/jpeg',
+        },
+        {
+          name: 'icon',
+          bytes: loadImageFixture('valid.webp'),
+          filename: 'icono.webp',
+          type: 'image/webp',
+        },
       ]);
       expect(res.statusCode).toBe(303);
       const images = await designImages(t.db);
@@ -308,25 +362,43 @@ describe('Diseño del chat (/admin/chat-design)', () => {
     it.each([
       ['un SVG renombrado', 'svg-renamed.png', 'Formato no admitido: solo PNG, JPEG o WebP'],
       ['más de 256 KB (llega cortado)', 'too-big.png', 'La imagen supera el máximo de 256 KB'],
-      ['2000 × 2000 px', 'too-large-dims.png', 'La imagen debe medir entre 16 y 1024 px de ancho y de alto'],
-    ])('con %s junto a colores válidos → 422 con el error en su campo y nada guardado', async (_name, file, message) => {
-      await start();
-      const res = await postDesign(app, session, designForm({ ...GREEN_FORM, chat_name: 'Nuevo' }), [
-        { name: 'logo', bytes: loadImageFixture('valid.png') },
-        { name: 'icon', bytes: loadImageFixture(file) },
-      ]);
-      expect(res.statusCode).toBe(422);
-      // El error está en el campo del icono, no en el del logo.
-      const iconBlock = res.body.slice(res.body.indexOf('id="icon"'), res.body.indexOf('</fieldset>', res.body.indexOf('id="icon"')));
-      expect(iconBlock).toContain(`class="field-error" role="alert">${message}`);
-      const logoBlock = res.body.slice(res.body.indexOf('id="logo"'), res.body.indexOf('id="avatar"'));
-      expect(logoBlock).not.toContain('class="field-error"');
-      // Las elegidas hay que volver a elegirlas.
-      expect(logoBlock).toContain('Vuelve a elegir la imagen');
-      expect(iconBlock).toContain('Vuelve a elegir la imagen');
-      expect(await designRow(t.db)).toBeUndefined();
-      expect(await designImages(t.db)).toEqual({});
-    });
+      [
+        '2000 × 2000 px',
+        'too-large-dims.png',
+        'La imagen debe medir entre 16 y 1024 px de ancho y de alto',
+      ],
+    ])(
+      'con %s junto a colores válidos → 422 con el error en su campo y nada guardado',
+      async (_name, file, message) => {
+        await start();
+        const res = await postDesign(
+          app,
+          session,
+          designForm({ ...GREEN_FORM, chat_name: 'Nuevo' }),
+          [
+            { name: 'logo', bytes: loadImageFixture('valid.png') },
+            { name: 'icon', bytes: loadImageFixture(file) },
+          ],
+        );
+        expect(res.statusCode).toBe(422);
+        // El error está en el campo del icono, no en el del logo.
+        const iconBlock = res.body.slice(
+          res.body.indexOf('id="icon"'),
+          res.body.indexOf('</fieldset>', res.body.indexOf('id="icon"')),
+        );
+        expect(iconBlock).toContain(`class="field-error" role="alert">${message}`);
+        const logoBlock = res.body.slice(
+          res.body.indexOf('id="logo"'),
+          res.body.indexOf('id="avatar"'),
+        );
+        expect(logoBlock).not.toContain('class="field-error"');
+        // Las elegidas hay que volver a elegirlas.
+        expect(logoBlock).toContain('Vuelve a elegir la imagen');
+        expect(iconBlock).toContain('Vuelve a elegir la imagen');
+        expect(await designRow(t.db)).toBeUndefined();
+        expect(await designImages(t.db)).toEqual({});
+      },
+    );
 
     it('"Quitar" solo aparece si hay imagen guardada', async () => {
       await start();
@@ -429,6 +501,59 @@ describe('Diseño del chat (/admin/chat-design)', () => {
     });
   });
 
+  describe('seguridad de los textos y de la hoja (FR-040, SC-010)', () => {
+    const EVIL = {
+      chat_name: '"><img src=x onerror=alert(1)>',
+      welcome_text: '<script>alert(1)</script> {{ it.secreto }}',
+      placeholder: '"><script>alert(2)</script>',
+      send_label: '<b>{{x}}</b>',
+    };
+
+    const expectEscaped = (html: string) => {
+      expect(html).not.toContain('<img src=x');
+      expect(html).not.toContain('<script>alert');
+      expect(html).not.toContain('<b>{{x}}</b>');
+    };
+
+    it('salen escapados en el formulario, en la vista previa y en el frame', async () => {
+      await start({ webChat: WEB_ON });
+      const saved = await postDesign(app, session, designForm({ ...GREEN_FORM, ...EVIL }));
+      expect(saved.statusCode).toBe(303);
+
+      const form = await get(app, session, '/admin/chat-design');
+      expect(form.body).toContain('value="&quot;&gt;&lt;img src=x onerror=alert(1)&gt;"');
+      expect(form.body).toContain('&lt;script&gt;alert(1)&lt;/script&gt; {{ it.secreto }}');
+      const formMain = form.body.slice(form.body.indexOf('<main'));
+      expect(formMain).not.toContain('<img src=x');
+      expect(formMain).not.toContain('<script>alert');
+
+      const preview = await get(app, session, '/admin/chat-design/preview?view=open');
+      expectEscaped(preview.body);
+      expect(preview.body).toContain('&lt;b&gt;{{x}}&lt;/b&gt;');
+
+      const frame = await app.inject({ method: 'GET', url: '/chat/frame' });
+      expectEscaped(frame.body);
+      expect(frame.body).toContain('{{ it.secreto }}');
+    });
+
+    it('preview.css con valores maliciosos en la consulta no los contiene', async () => {
+      await start();
+      const evil = encodeURIComponent(
+        '#fff;} body{background:url(https://ajeno.example/x)} </style><script>',
+      );
+      const res = await get(
+        app,
+        session,
+        `/admin/chat-design/preview.css?primary_color=${evil}&shape=${evil}&size=${evil}&position=${evil}&text_color=%230b6e4f`,
+      );
+      expect(res.statusCode).toBe(200);
+      expect(res.body).not.toContain('ajeno');
+      expect(res.body).not.toContain('script');
+      expect(res.body).not.toContain('body');
+      expect((res.body.match(/\{/g) ?? []).length).toBeLessThanOrEqual(1);
+    });
+  });
+
   describe('vista previa', () => {
     const counts = async () => {
       const rows = await t.db.execute<{ n: string }>(sql`
@@ -450,7 +575,9 @@ describe('Diseño del chat (/admin/chat-design)', () => {
       expect(res.body).toContain('/chat/assets/frame.css');
       expect(res.body).toContain('id="chat-design-css"');
       expect(res.body).toContain('class="panel-head"');
-      expect(res.body).toContain('Estás hablando con el asistente automático de Peluquería Tijeras');
+      expect(res.body).toContain(
+        'Estás hablando con el asistente automático de Peluquería Tijeras',
+      );
       expect(res.body).toContain('<li class="welcome">Bienvenida</li>');
       expect(res.body).toContain('Conversación de ejemplo');
       expect(res.body).toContain('data-sample');
@@ -489,7 +616,11 @@ describe('Diseño del chat (/admin/chat-design)', () => {
       expect(res.headers['cache-control']).toBe('no-store');
       expect(res.body).toContain('--chat-accent: #ff0000;');
       expect(res.body).toContain('--chat-radius-panel: 6px;');
-      const bad = await get(app, session, '/admin/chat-design/preview.css?primary_color=rojo&shape=x');
+      const bad = await get(
+        app,
+        session,
+        '/admin/chat-design/preview.css?primary_color=rojo&shape=x',
+      );
       expect(bad.statusCode).toBe(200);
       expect(bad.body).toBe('');
     });

@@ -21,7 +21,8 @@ const design = (over: Partial<ChatDesignOptions> = {}): ResolvedChatDesign => ({
 const css = (over: Partial<ChatDesignOptions> = {}) =>
   renderDesignCss(computeTheme(design(over), 'Negocio'));
 
-const VALUE = /^(#[0-9a-f]{6}|0|\d+px|50%|url\(\/chat\/design\/avatar\/[0-9a-f]{16}\.(png|jpg|webp)\))$/;
+const VALUE =
+  /^(#[0-9a-f]{6}|0|\d+px|50%|url\(\/chat\/design\/avatar\/[0-9a-f]{16}\.(png|jpg|webp)\))$/;
 
 describe('renderDesignCss', () => {
   it('sin tokens, cadena vacía', () => {

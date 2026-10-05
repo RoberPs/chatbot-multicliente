@@ -48,8 +48,8 @@ describe('copia de un esquema anterior', () => {
     });
     expect(report).toMatchObject({
       schema: '0003_map_url',
-      installedSchema: '0006_usage',
-      pendingMigrations: ['0004_handoff', '0005_config_transfer', '0006_usage'],
+      installedSchema: '0007_chat_design',
+      pendingMigrations: ['0004_handoff', '0005_config_transfer', '0006_usage', '0007_chat_design'],
       expiredConversations: 0,
     });
 
@@ -59,6 +59,7 @@ describe('copia de un esquema anterior', () => {
         '0004_handoff',
         '0005_config_transfer',
         '0006_usage',
+        '0007_chat_design',
       ]);
       for (const table of ['handoff', 'handoff_notice', 'handoff_alerts']) {
         const r = await client.query<{ t: string | null }>(`select to_regclass($1)::text as t`, [

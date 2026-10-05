@@ -156,7 +156,11 @@ export async function readDesignImageBytes(
   const [row] = await tx.select().from(chatDesignImage).where(eq(chatDesignImage.slot, slot));
   if (!row) return null;
   const checked = validateDesignImage({ bytes: row.bytes, truncated: false });
-  if (!checked.ok || checked.image.sha256 !== row.sha256 || checked.image.mimeType !== row.mimeType) {
+  if (
+    !checked.ok ||
+    checked.image.sha256 !== row.sha256 ||
+    checked.image.mimeType !== row.mimeType
+  ) {
     return null;
   }
   return { bytes: row.bytes, mimeType: checked.image.mimeType, sha256: row.sha256 };

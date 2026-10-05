@@ -63,11 +63,16 @@ describe('imágenes del diseño', () => {
     const rowBefore = await designRow(t.db);
     const imagesBefore = await designImages(t.db);
 
-    const res = await postDesign(app, session, designForm({ ...GREEN_FORM, chat_name: 'Después' }), [
-      { name: 'logo', bytes: loadImageFixture('valid.jpg'), type: 'image/jpeg' },
-      { name: 'avatar', bytes: loadImageFixture('valid.webp'), type: 'image/webp' },
-      { name: 'icon', bytes: loadImageFixture('html-renamed.png') },
-    ]);
+    const res = await postDesign(
+      app,
+      session,
+      designForm({ ...GREEN_FORM, chat_name: 'Después' }),
+      [
+        { name: 'logo', bytes: loadImageFixture('valid.jpg'), type: 'image/jpeg' },
+        { name: 'avatar', bytes: loadImageFixture('valid.webp'), type: 'image/webp' },
+        { name: 'icon', bytes: loadImageFixture('html-renamed.png') },
+      ],
+    );
     expect(res.statusCode).toBe(422);
     expect(await designRow(t.db)).toEqual(rowBefore);
     expect(await designImages(t.db)).toEqual(imagesBefore);
@@ -83,12 +88,9 @@ describe('imágenes del diseño', () => {
     const before = await urls();
     const kept = (await designImages(t.db)).icon;
 
-    const res = await postDesign(
-      app,
-      session,
-      designForm({ avatar_remove: '1' }),
-      [{ name: 'logo', bytes: loadImageFixture('animated.png') }],
-    );
+    const res = await postDesign(app, session, designForm({ avatar_remove: '1' }), [
+      { name: 'logo', bytes: loadImageFixture('animated.png') },
+    ]);
     expect(res.statusCode).toBe(303);
     const after = await urls();
     const images = await designImages(t.db);
@@ -114,13 +116,21 @@ describe('imágenes del diseño', () => {
       { name: 'icon', bytes: loadImageFixture('metadata.webp'), type: 'image/webp' },
     ]);
     const images = await designImages(t.db);
-    for (const marker of ['tEXt', 'iTXt', 'eXIf', 'tIME', 'Exif', 'Photoshop', 'Comentario', 'EXIF', 'XMP ']) {
+    for (const marker of [
+      'tEXt',
+      'iTXt',
+      'eXIf',
+      'tIME',
+      'Exif',
+      'Photoshop',
+      'Comentario',
+      'EXIF',
+      'XMP ',
+    ]) {
       for (const slot of ['logo', 'avatar', 'icon']) {
-        expect([slot, marker, images[slot]?.bytes.includes(Buffer.from(marker, 'latin1'))]).toEqual([
-          slot,
-          marker,
-          false,
-        ]);
+        expect([slot, marker, images[slot]?.bytes.includes(Buffer.from(marker, 'latin1'))]).toEqual(
+          [slot, marker, false],
+        );
       }
     }
   });
@@ -142,7 +152,10 @@ describe('restaurar el aspecto original (US6)', () => {
   });
 
   const ORIGIN = 'https://negocio.example';
-  const frame004 = readFileSync(new URL('../../fixtures/web-chat/frame-004.html', import.meta.url), 'utf8');
+  const frame004 = readFileSync(
+    new URL('../../fixtures/web-chat/frame-004.html', import.meta.url),
+    'utf8',
+  );
   const normalize = (html: string) => html.replace(/>\s+</g, '><').replace(/\s+/g, ' ').trim();
 
   it('borra la fila y las imágenes en cascada; las URL dan 404 y el frame vuelve a ser el de la 004', async () => {

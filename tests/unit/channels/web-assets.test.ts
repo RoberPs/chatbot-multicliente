@@ -83,7 +83,7 @@ describe('frame.js: tamaño y posición en chat:resize (011, R6)', () => {
       documentElement: { dataset },
     };
     const parent = { postMessage: (message: unknown) => posted.push(message) };
-    const window = { parent, localStorage: null, setInterval, clearInterval, fetch: () => Promise.reject() };
+    const window = { parent, localStorage: null, setInterval, clearInterval, fetch: () => Promise.reject(new Error('sin red')) };
     runInNewContext(readFileSync(`${assetsDir}/frame.js`, 'utf8'), { window, document });
     return posted;
   }

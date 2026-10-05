@@ -39,10 +39,7 @@ const fixture = (name: string): string =>
 
 /** Espacio en blanco normalizado (ver la cabecera del fichero). */
 const normalize = (html: string): string =>
-  html
-    .replace(/>\s+</g, '><')
-    .replace(/\s+/g, ' ')
-    .trim();
+  html.replace(/>\s+</g, '><').replace(/\s+/g, ' ').trim();
 
 describe('diseño del chat web: frame sin diseño', () => {
   let t: TestDatabase;
@@ -153,7 +150,9 @@ describe('diseño del chat web: frame con diseño (US1)', () => {
     const before = await frame(bot.app);
     await seedChatDesign(t.db, { ...GREEN_PALETTE, shape: 'square' });
     const after = await frame(bot.app);
-    expect(after.headers['content-security-policy']).toBe(before.headers['content-security-policy']);
+    expect(after.headers['content-security-policy']).toBe(
+      before.headers['content-security-policy'],
+    );
     expect(after.headers['cache-control']).toBe('no-store');
     expect(after.headers['x-frame-options']).toBeUndefined();
   });
@@ -266,7 +265,11 @@ describe('diseño del chat web: elementos obligatorios con cualquier diseño (US
   const CONTACT = 'Para hablar con una persona de Peluquería Tijeras';
 
   it('no disponible con diseño: desactivado, en preparación, tope de uso y tope de gasto (US2-7)', async () => {
-    const cases: Array<{ name: string; opts: Parameters<typeof createTestBot>[1]; reach?: (b: TestBot) => Promise<void> }> = [
+    const cases: Array<{
+      name: string;
+      opts: Parameters<typeof createTestBot>[1];
+      reach?: (b: TestBot) => Promise<void>;
+    }> = [
       { name: 'desactivado', opts: {} },
       { name: 'en preparación', opts: { webChat: WEB_ON, activate: false } },
       {
@@ -352,12 +355,20 @@ describe('diseño del chat web: imágenes (US3)', () => {
     const icon = imageUrl('icon', must(images.icon));
     const logo = imageUrl('logo', must(images.logo));
     // El botón conserva aria-expanded y su etiqueta; el emoji sigue en el HTML (oculto por CSS).
-    const toggle = res.body.slice(res.body.indexOf('<button id="chat-toggle"'), res.body.indexOf('</button>'));
+    const toggle = res.body.slice(
+      res.body.indexOf('<button id="chat-toggle"'),
+      res.body.indexOf('</button>'),
+    );
     expect(toggle).toContain('aria-expanded="false"');
     expect(toggle).toContain(`<img class="design-icon" src="${icon}" alt="">`);
-    expect(toggle.indexOf('design-icon')).toBeLessThan(toggle.indexOf('<span aria-hidden="true">💬</span>'));
+    expect(toggle.indexOf('design-icon')).toBeLessThan(
+      toggle.indexOf('<span aria-hidden="true">💬</span>'),
+    );
     expect(toggle).toContain('<span class="sr-only">Abrir el chat</span>');
-    const head = res.body.slice(res.body.indexOf('<header class="panel-head">'), res.body.indexOf('</header>'));
+    const head = res.body.slice(
+      res.body.indexOf('<header class="panel-head">'),
+      res.body.indexOf('</header>'),
+    );
     expect(head).toContain(`<img class="design-logo" src="${logo}" alt="">`);
     expect(head.indexOf('design-logo')).toBeLessThan(head.indexOf('<h1>'));
   });
@@ -461,7 +472,9 @@ describe('diseño del chat web: imágenes (US3)', () => {
       },
     );
     const res = await frame(bot.app);
-    const notice = res.body.indexOf('Estás hablando con el asistente automático de Peluquería Tijeras');
+    const notice = res.body.indexOf(
+      'Estás hablando con el asistente automático de Peluquería Tijeras',
+    );
     const privacy = res.body.indexOf('>Política de privacidad</a>');
     const welcome = res.body.indexOf('<li class="welcome">');
     expect(notice).toBeGreaterThan(-1);
@@ -511,7 +524,13 @@ describe('diseño del chat web: posición y tamaño (US4)', () => {
     bot = await createTestBot(t);
     const session = await login(bot.app);
     const page = await get(bot.app, session, '/admin/chat-design');
-    for (const label of ['Abajo a la derecha', 'Abajo a la izquierda', 'Pequeño', 'Mediano', 'Grande']) {
+    for (const label of [
+      'Abajo a la derecha',
+      'Abajo a la izquierda',
+      'Pequeño',
+      'Mediano',
+      'Grande',
+    ]) {
       expect(page.body).toContain(label);
     }
     expect(page.body).toMatch(/name="position" value="right"[^>]*checked/);

@@ -408,7 +408,7 @@ describe('reglas de cada sección (una prueba por regla)', () => {
 describe('sección chatDesign (011, contracts/config-file-chat-design.md)', () => {
   const withDesign = (change: (design: Json) => void = () => undefined): Json => {
     const file = load('v2-chat-design.json');
-    change(file.chatDesign);
+    change(file.chatDesign as Json);
     return file;
   };
   const png = () => readFileSync(join(FIXTURES, '..', 'images', 'valid.png')).toString('base64');
@@ -455,14 +455,16 @@ describe('sección chatDesign (011, contracts/config-file-chat-design.md)', () =
     const issues = issuesOf(
       withDesign((d) => {
         d.textColor = '#aaaaaa';
-        d.images.icon = { type: 'image/png', data: d.images.icon.data };
+        d.images.icon = { type: 'image/png', data: d.images.icon.data as string };
         d.images.avatar = { type: 'image/jpeg', data: 'no es base64!' };
         d.images.logo = { type: 'image/png', data: Buffer.alloc(300 * 1024, 1).toString('base64') };
         d.size = 'huge';
         d.welcomeText = 'x'.repeat(300);
       }),
     );
-    const byField = Object.fromEntries(issues.map((i) => [i.field, i.message]));
+    const byField: Record<string, string> = Object.fromEntries(
+      issues.map((i): [string, string] => [i.field ?? '', i.message]),
+    );
     expect(issues.every((i) => i.section === 'chatDesign' && i.sectionLabel === 'Diseño del chat')).toBe(true);
     expect(byField).toEqual({
       textColor: expect.stringMatching(

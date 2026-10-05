@@ -14,6 +14,7 @@ Estados: especificada → planificada → en implementación → completada (o a
 | 008 | Exportar e importar la configuración del negocio | Núcleo | Completada | `008-config-export-import` | [spec](specs/008-config-export-import/spec.md) · [plan](specs/008-config-export-import/plan.md) · [tareas](specs/008-config-export-import/tasks.md) | 2026-10-01  |
 | 009 | Versión visible y actualización escalonada | Núcleo (operación) | Completada | `009-version-health-rollout` | [spec](specs/009-version-health-rollout/spec.md) · [plan](specs/009-version-health-rollout/plan.md) · [tareas](specs/009-version-health-rollout/tasks.md) | 2026-10-01  |
 | 010 | Consumo y coste por instancia | Núcleo | Completada | `010-usage-cost-cap` | [spec](specs/010-usage-cost-cap/spec.md) · [plan](specs/010-usage-cost-cap/plan.md) · [tareas](specs/010-usage-cost-cap/tasks.md) | 2026-10-01  |
+| 011 | Diseño del chat web | Núcleo | Completada | `011-chat-design` | [spec](specs/011-chat-design/spec.md) · [plan](specs/011-chat-design/plan.md) · [tareas](specs/011-chat-design/tasks.md) | 2026-10-05  |
 
 ---
 
@@ -59,6 +60,12 @@ derivación, por canal y sin guardar textos ni datos del cliente. El panel muest
 coste estimado con los precios que configura el operador, y un **tope mensual de gasto** opcional
 hace que, al alcanzarse, el bot responda en WhatsApp y en el chat web solo con el contacto del
 negocio, sin dejar de derivar a una persona.
+
+El operador **personaliza el aspecto del chat web** (feature 011): colores, forma, posición,
+tamaño, nombre, bienvenida, textos e imágenes, con vista previa en vivo. Se aplica en la
+siguiente carga del chat sin tocar el fragmento pegado en la web, nunca deja el texto ilegible y
+siempre conserva el aviso de asistente automático, el enlace de privacidad y la salida a una
+persona.
 
 ## Requisitos
 
@@ -127,6 +134,29 @@ El fragmento solo añade un iframe servido por la instancia; el navegador impide
 webs que no estén en la lista (`frame-ancestors`). Desactivar el chat tiene efecto en la
 siguiente petición: los visitantes pasan a ver "no disponible" con el contacto del negocio.
 
+## Diseño del chat
+
+La sección **Diseño del chat** del panel (`/admin/chat-design`, feature 011) cambia el aspecto del
+chat web de la instancia. Sin diseño guardado, el chat se ve exactamente como siempre.
+
+- **Colores**: principal, texto sobre el principal, fondo, texto y fondo de los mensajes del bot.
+  Cada pareja de colores necesita un contraste de 4,5:1; el panel lo avisa mientras se edita y no
+  deja guardar un diseño ilegible (tampoco sin JavaScript).
+- **Forma** (recta, suave, redondeada), **posición** (abajo a la derecha o a la izquierda) y
+  **tamaño** del chat abierto (pequeño, mediano, grande; en móvil nunca sale de la pantalla).
+- **Textos**: nombre del chat, bienvenida, texto de ayuda del campo y botón Enviar. Se muestran
+  tal cual y el asistente no los usa para responder.
+- **Imágenes**: logo, avatar e icono del botón. PNG, JPEG o WebP de hasta 256 KB y 16–1024 px; se
+  validan por su contenido y se guardan sin metadatos (ubicación, cámara) en la BD de la instancia.
+- **Vista previa** con una conversación de ejemplo: los cambios se ven antes de guardar, sin
+  crear conversaciones ni contar para los topes.
+- **Restaurar el aspecto original** borra el diseño y sus imágenes, con confirmación.
+
+Lo guardado se aplica en la siguiente carga del chat (el frame no se guarda en caché), sin cambiar
+la activación ni la configuración del chat web. El diseño viaja en la exportación de la
+configuración y entra en las copias de seguridad. Comprobación de punta a punta:
+[specs/011-chat-design/quickstart.md](specs/011-chat-design/quickstart.md).
+
 ## Derivación al negocio
 
 En `http://localhost:3000/admin/handoffs` se configuran los destinos de los avisos: un WhatsApp,
@@ -185,12 +215,14 @@ seguridad. Guía de validación manual:
 La página **Exportar e importar** del panel (`/admin/config`, feature 008) lleva la configuración del
 negocio de una instancia a otra (por ejemplo, de pruebas a producción):
 
-- **Exportar**: descarga un JSON versionado con datos del negocio, horarios, servicios, recursos,
-  preguntas, políticas, tono, derivación y chat web. Nunca incluye conversaciones, clientes ni
+- **Exportar**: descarga un JSON versionado (formato 2 desde la feature 011) con datos del
+  negocio, horarios, servicios, recursos, preguntas, políticas, tono, derivación, chat web y diseño
+  del chat (con sus imágenes en base64). Nunca incluye conversaciones, clientes ni
   secretos; los destinos de avisos solo van si se marca la casilla.
 - **Importar**: valida el fichero (se rechaza entero, con la lista de errores, si algo falla), muestra
   una vista previa por sección y se aplica al confirmar, en una transacción. No cambia el estado del
-  negocio ni activa el chat web, y respeta los avisos críticos.
+  negocio ni activa el chat web, y respeta los avisos críticos. Los ficheros del formato 1 se siguen
+  importando: como no traen diseño, el destino vuelve al aspecto original del chat.
 - **Deshacer**: se guarda la configuración anterior a la última importación, descargable desde la
   misma página y entra en las copias de seguridad.
 
@@ -366,6 +398,7 @@ src/
 │                  los enlaces públicos de derivación (`/handoff/*`) y `GET /health`
 ├── health/        salud y versión sin HTTP: versión del núcleo, informe, secreto, ciclo de vida
 ├── webchat/       dominio del chat web sin HTTP: configuración, disponibilidad, topes, sesión
+│                  y diseño (design/: colores, contraste, tema, imágenes)
 ├── usage/         consumo del modelo sin HTTP: registro, importes exactos, precios, resumen,
 │                  tope mensual de gasto y retención
 ├── mail/          adaptador de email (avisos de derivación por SMTP)

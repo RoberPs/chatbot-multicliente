@@ -99,7 +99,7 @@ function canonicalDocument(doc: ConfigDocument, includeAlerts: boolean) {
       monthlyCap: webChat.monthlyCap,
     },
     // Un documento de la versión 1 (sin la sección) se reproduce tal cual.
-    ...(doc.chatDesign === undefined
+    ...((doc as Partial<ConfigDocument>).chatDesign === undefined
       ? {}
       : { chatDesign: doc.chatDesign && chatDesign(doc.chatDesign) }),
     ...(includeAlerts && doc.alertDestinations

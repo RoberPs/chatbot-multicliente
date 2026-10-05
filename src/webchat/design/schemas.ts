@@ -50,16 +50,14 @@ const HEX = /^#[0-9a-f]{6}$/i;
 const CONTROL = /[\u0000-\u0009\u000b-\u001f\u007f-\u009f]/;
 
 /** Color `#rrggbb` opaco, normalizado a minúsculas; sin alfa ni nombres (FR-006). */
-export const hexColor = z
-  .string({ error: COLOR_MESSAGE })
-  .transform((raw, ctx) => {
-    const value = raw.trim();
-    if (!HEX.test(value)) {
-      ctx.addIssue({ code: 'custom', message: COLOR_MESSAGE });
-      return z.NEVER;
-    }
-    return value.toLowerCase();
-  });
+export const hexColor = z.string({ error: COLOR_MESSAGE }).transform((raw, ctx) => {
+  const value = raw.trim();
+  if (!HEX.test(value)) {
+    ctx.addIssue({ code: 'custom', message: COLOR_MESSAGE });
+    return z.NEVER;
+  }
+  return value.toLowerCase();
+});
 
 export const shapeSchema = z.enum(SHAPES, { error: OPTION_MESSAGE });
 export const positionSchema = z.enum(POSITIONS, { error: OPTION_MESSAGE });
@@ -161,22 +159,20 @@ export const chatDesignFormSchema = z
     placeholder: formField('placeholder', textSchema('placeholder')),
     send_label: formField('sendLabel', textSchema('sendLabel')),
   })
-  .transform(
-    (f): ChatDesignOptions => ({
-      primaryColor: f.primary_color,
-      onPrimaryColor: f.on_primary_color,
-      backgroundColor: f.background_color,
-      textColor: f.text_color,
-      botBubbleColor: f.bot_bubble_color,
-      shape: f.shape,
-      position: f.position,
-      size: f.size,
-      chatName: f.chat_name,
-      welcomeText: f.welcome_text,
-      placeholder: f.placeholder,
-      sendLabel: f.send_label,
-    }),
-  );
+  .transform((f): ChatDesignOptions => ({
+    primaryColor: f.primary_color,
+    onPrimaryColor: f.on_primary_color,
+    backgroundColor: f.background_color,
+    textColor: f.text_color,
+    botBubbleColor: f.bot_bubble_color,
+    shape: f.shape,
+    position: f.position,
+    size: f.size,
+    chatName: f.chat_name,
+    welcomeText: f.welcome_text,
+    placeholder: f.placeholder,
+    sendLabel: f.send_label,
+  }));
 
 /** Motivo de un error, para el registro `chat_design_saved` (R12). */
 export type IssueReason = 'option' | 'text' | 'contrast' | 'image';
@@ -253,19 +249,18 @@ function formColors(input: Record<string, unknown>): Partial<Record<ColorField, 
  */
 export function contrastIssues(input: Record<string, unknown>): DesignIssue[] {
   return contrastFailures(formColors(input)).flatMap((failure) =>
-    [failure.pair.fg, failure.pair.bg].map(
-      (option): DesignIssue => ({
-        field: FORM_FIELD_OF[option],
-        message: failure.message,
-        reason: 'contrast',
-      }),
-    ),
+    [failure.pair.fg, failure.pair.bg].map((option): DesignIssue => ({
+      field: FORM_FIELD_OF[option],
+      message: failure.message,
+      reason: 'contrast',
+    })),
   );
 }
 
 /** Opciones, textos y contraste del formulario, con todos los errores a la vez (FR-011a). */
 export function validateChatDesign(input: unknown): DesignValidation {
-  const body = typeof input === 'object' && input !== null ? (input as Record<string, unknown>) : {};
+  const body =
+    typeof input === 'object' && input !== null ? (input as Record<string, unknown>) : {};
   const base = validateChatDesignOptions(body);
   const contrast = contrastIssues(body);
   if (base.ok && contrast.length === 0) return base;
@@ -275,9 +270,7 @@ export function validateChatDesign(input: unknown): DesignValidation {
 
 /** Cambio de un hueco ya validado: la imagen nueva sale normalizada (R7). */
 export type ValidImageChange =
-  | { kind: 'keep' }
-  | { kind: 'remove' }
-  | { kind: 'replace'; image: DesignImage };
+  { kind: 'keep' } | { kind: 'remove' } | { kind: 'replace'; image: DesignImage };
 
 export type FullDesignValidation =
   | { ok: true; options: ChatDesignOptions; images: Record<Slot, ValidImageChange> }

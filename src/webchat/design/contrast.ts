@@ -67,7 +67,11 @@ export const CONTRAST_PAIRS: readonly ContrastPair[] = [
   { fg: 'onPrimaryColor', bg: 'primaryColor', label: 'El texto sobre el color principal' },
   { fg: 'textColor', bg: 'backgroundColor', label: 'El texto del chat sobre el fondo' },
   { fg: 'textColor', bg: 'botBubbleColor', label: 'El texto sobre los mensajes del bot' },
-  { fg: 'primaryColor', bg: 'backgroundColor', label: 'El color principal frente al fondo del chat' },
+  {
+    fg: 'primaryColor',
+    bg: 'backgroundColor',
+    label: 'El color principal frente al fondo del chat',
+  },
   {
     fg: 'primaryColor',
     bg: 'botBubbleColor',

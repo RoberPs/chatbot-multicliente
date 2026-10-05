@@ -118,7 +118,13 @@
 
   function applyImages(f, doc) {
     var head = doc.querySelector('.panel-head');
-    placeImage(doc, head, 'design-logo', imageUrl(f, 'logo'), head ? head.querySelector('h1') : null);
+    placeImage(
+      doc,
+      head,
+      'design-logo',
+      imageUrl(f, 'logo'),
+      head ? head.querySelector('h1') : null,
+    );
     placeImage(doc, doc.getElementById('chat-toggle'), 'design-icon', imageUrl(f, 'icon'), null);
     var avatar = imageUrl(f, 'avatar');
     var root = doc.documentElement;
@@ -224,7 +230,11 @@
   document.addEventListener(
     'load',
     function (event) {
-      if (event.target && event.target.classList && event.target.classList.contains('chat-preview')) {
+      if (
+        event.target &&
+        event.target.classList &&
+        event.target.classList.contains('chat-preview')
+      ) {
         schedule();
       }
     },

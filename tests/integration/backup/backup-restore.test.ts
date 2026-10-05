@@ -6,11 +6,12 @@ import { join } from 'node:path';
 import { eq } from 'drizzle-orm';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { installedSchema } from '../../../src/backup/schema-version.js';
-import { restoreBackup, createBackup } from '../../../src/backup/service.js';
+import { restoreBackup, createBackup, verifyBackup } from '../../../src/backup/service.js';
 import { createRetention } from '../../../src/conversation/retention.js';
 import { silentActivityLog } from '../../../src/conversation/activity-log.js';
 import {
   business,
+  chatDesign,
   configPreImport,
   conversation,
   customer,
@@ -33,6 +34,12 @@ import {
   withClient,
   type TempDir,
 } from '../../helpers/backup.js';
+import {
+  designImages,
+  designRow,
+  GREEN_PALETTE,
+  seedChatDesignWithImages,
+} from '../../helpers/chat-design.js';
 import { createTestDatabase, type TestDatabase } from '../../helpers/db.js';
 
 let dir: TempDir;
@@ -117,8 +124,8 @@ describe.each(allFixtures.map((f) => [f.sector, f] as const))(
         file: backup.file,
         sourceInstance: config.instanceId,
         crossInstance: false,
-        schema: '0006_usage',
-        installedSchema: '0006_usage',
+        schema: '0007_chat_design',
+        installedSchema: '0007_chat_design',
         pendingMigrations: [],
         expiredConversations: seeded.expiredConversations,
       });
@@ -202,8 +209,8 @@ describe('consumo y coste (010, FR-025)', () => {
     expect(await test.db.select().from(usageSettings)).toEqual([
       expect.objectContaining({ currency: 'EUR', capEnabled: true, monthlyCapCents: 2500 }),
     ]);
-    // 0006_usage se reaplica y su hash es el del núcleo instalado.
-    expect(report).toMatchObject({ schema: '0006_usage', installedSchema: '0006_usage' });
+    // 0007_chat_design se reaplica y su hash es el del núcleo instalado.
+    expect(report).toMatchObject({ schema: '0007_chat_design', installedSchema: '0007_chat_design' });
     const applied = await withClient(test.url, async (client) => {
       const r = await client.query<{ hash: string }>(
         'select hash from drizzle.__drizzle_migrations order by created_at desc limit 1',
@@ -232,5 +239,38 @@ describe('secuencias', () => {
     await next();
     await restoreBackup({ databaseUrl: test.url, file: join(dir.path, backup.file), config });
     expect(await next()).toBe(expected);
+  });
+});
+
+describe('copia y restauración con diseño del chat (011, FR-028)', () => {
+  it('la fila y las imágenes vuelven con los mismos bytes, y la copia se verifica', async () => {
+    const test = await createTestDatabase();
+    opened.push(test);
+    const clock = testClock('2026-10-02T10:15:00.000Z');
+    await seedChatDesignWithImages(
+      test.db,
+      { logo: 'valid.png', avatar: 'valid.jpg', icon: 'animated.webp' },
+      { ...GREEN_PALETTE, shape: 'soft', chatName: 'Recepción' },
+    );
+    const rowBefore = await designRow(test.db);
+    const imagesBefore = await designImages(test.db);
+
+    const config = testBackupConfig({ dir: dir.path, instanceId: 'diseno-01' });
+    const backup = await createBackup({ databaseUrl: test.url, config, reason: 'manual', clock });
+
+    // Restaurar el aspecto original después de la copia.
+    await test.db.delete(chatDesign);
+    expect(await designRow(test.db)).toBeUndefined();
+
+    await restoreBackup({ databaseUrl: test.url, file: join(dir.path, backup.file), config, clock });
+    expect(await designRow(test.db)).toEqual(rowBefore);
+    const imagesAfter = await designImages(test.db);
+    for (const slot of ['logo', 'avatar', 'icon']) {
+      expect(imagesAfter[slot]?.bytes.equals(imagesBefore[slot]?.bytes ?? Buffer.alloc(0))).toBe(true);
+      expect(imagesAfter[slot]?.sha256).toBe(imagesBefore[slot]?.sha256);
+    }
+
+    const verified = await verifyBackup({ file: join(dir.path, backup.file), config, clock });
+    expect(verified.restorable).toBe(true);
   });
 });

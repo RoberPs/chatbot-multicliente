@@ -40,12 +40,14 @@ export const CSS_TOKENS = [
 export type CssToken = (typeof CSS_TOKENS)[number];
 
 /** Radios por forma: panel, burbujas, botones y campo, botón flotante (R5). */
-export const SHAPE_RADII: Record<Shape, { panel: string; bubble: string; control: string; toggle: string }> =
-  {
-    square: { panel: '0', bubble: '0', control: '0', toggle: '0' },
-    soft: { panel: '6px', bubble: '6px', control: '4px', toggle: '12px' },
-    round: { panel: '12px', bubble: '10px', control: '8px', toggle: '50%' },
-  };
+export const SHAPE_RADII: Record<
+  Shape,
+  { panel: string; bubble: string; control: string; toggle: string }
+> = {
+  square: { panel: '0', bubble: '0', control: '0', toggle: '0' },
+  soft: { panel: '6px', bubble: '6px', control: '4px', toggle: '12px' },
+  round: { panel: '12px', bubble: '10px', control: '8px', toggle: '50%' },
+};
 
 /** Tamaño del chat abierto (R5). El fragmento tiene su propia copia de esta tabla. */
 export const SIZE_TABLE: Record<Size, { width: number; height: number }> = {

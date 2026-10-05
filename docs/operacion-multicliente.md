@@ -237,6 +237,12 @@ cumple las reglas de calidad o coincide con otra instancia, `instance:check` lo 
 5. Pasa el negocio a activo.
 6. Chat web: webs permitidas, enlace de privacidad, topes diarios y mensuales acordes a lo
    contratado, y activar. Entrega al cliente el fragmento `<script>`.
+   Si el cliente quiere el chat con su imagen, **Diseño del chat** (011): colores, forma, posición,
+   tamaño, nombre, bienvenida, textos y logo, avatar e icono, con vista previa. Es opcional (sin
+   diseño el chat tiene el aspecto original), se aplica en la siguiente carga sin tocar el
+   fragmento y viaja en el fichero de configuración. Tras actualizar el núcleo a la 011, los
+   navegadores que tengan `widget.js` en caché ven la esquina y el tamaño originales hasta una
+   hora después; los colores y textos se ven al momento.
 7. WhatsApp: registra en Meta el webhook `https://…/webhooks/whatsapp` con el `WHATSAPP_VERIFY_TOKEN`
    y envía un mensaje de prueba.
 
@@ -248,7 +254,9 @@ cumple las reglas de calidad o coincide con otra instancia, `instance:check` lo 
    conviene si son los definitivos. Por defecto no se incluyen.
 2. En el panel de producción, **Importar** → elige el fichero. Si no es válido (ilegible, de otra
    herramienta, de una versión futura, con reglas incumplidas o de más de 5 MB) se rechaza con la
-   lista completa de errores y no cambia nada.
+   lista completa de errores y no cambia nada. Desde la 011 el formato es el **2** e incluye el
+   diseño del chat con sus imágenes; un fichero del formato 1 se sigue importando como "sin
+   diseño", así que el destino vuelve al aspecto original del chat (la vista previa lo avisa).
 3. Revisa la **vista previa**: qué se añade, cambia y elimina por sección, los avisos resultantes y
    si se aplicará. Si el negocio está activo y el resultado dejaría un aviso crítico, o el chat web
    activado perdería webs permitidas o enlace de privacidad, la importación se bloquea.
@@ -616,7 +624,7 @@ Todas son de **núcleo**: genéricas, sin nombres de cliente ni de sector.
 
 ### 9.1 Specs ya realizadas
 
-Estado tomado del [README](../README.md) a 2026-10-01.
+Estado tomado del [README](../README.md) a 2026-10-05.
 
 | Nº | Feature | Estado | Qué aporta a la operación multicliente |
 |---|---|---|---|
@@ -630,6 +638,7 @@ Estado tomado del [README](../README.md) a 2026-10-01.
 | 008 | Exportar e importar la configuración del negocio | Completada (2026-10-01) | **Era la propuesta P2**: fichero JSON versionado, importación con vista previa y confirmación transaccional, deshacer con la configuración anterior ([sección 2.6](#26-configuración-del-negocio-en-el-panel-de-producción)) |
 | 009 | Versión visible y actualización escalonada | Completada (2026-10-01) | **Era la propuesta P6**: `GET /health` con dos niveles (`HEALTH_SECRET`), versión en el pie del panel, `pnpm instance:versions` e `instance:health-secret`, y procedimiento de publicación por tandas con vuelta atrás ([sección 5](#5-actualizar-el-núcleo)) |
 | 010 | Consumo y coste por instancia | Completada (2026-10-01) | **Era la propuesta P4**: consumo del modelo por canal sin textos, pantalla **Consumo** con precios por modelo y moneda de coste, tope mensual de gasto con salida a una persona, y su estado en `/health` y en `instance:versions` ([sección 4.1](#41-consumo-precios-y-tope-en-el-panel-010)) |
+| 011 | Diseño del chat web | Completada (2026-10-05) | No venía de ninguna propuesta de esta sección. Cada cliente tiene su chat con su imagen sin despliegue ni cambiar el fragmento: sección **Diseño del chat** del panel, contraste mínimo garantizado, aviso de asistente automático y salida a una persona siempre presentes, formato 2 del fichero de configuración con el diseño y sus imágenes ([sección 2.6](#26-configuración-del-negocio-en-el-panel-de-producción)) |
 
 Todas están completadas. Quedan aplazadas la evaluación de audios de la 002 (T083), que se hace
 antes de activar los audios en una instancia, y el ensayo de la guía de publicación de la 009 con
@@ -645,7 +654,8 @@ orden de las pendientes).
 
 | Orden | Id | Propuesta | Prioridad | Depende de | Cuándo |
 |---|---|---|---|---|---|
-| 1 | P5 | Puntos de extensión del núcleo | Baja | — | Solo cuando llegue la primera petición que no quepa en la configuración |
+| 1 | P7 | Estado de las copias de seguridad, visible | Media | P3 (006), P6 (009) | Antes de tener varias instancias en producción sin revisar sus registros a diario |
+| 2 | P5 | Puntos de extensión del núcleo | Baja | — | Solo cuando llegue la primera petición que no quepa en la configuración |
 | — | P4 | Consumo y coste por instancia | — | — | **Hecha** (feature 010) |
 | — | P6 | Versión visible y actualización escalonada | — | — | **Hecha** (feature 009) |
 | — | P1 | Aprovisionamiento de instancias | — | — | **Hecha** (feature 007) |
@@ -665,7 +675,9 @@ Por qué este orden:
 4. **P4** (hecha) cuando el consumo empezó a facturarse y creció el riesgo de gasto. El límite de
    gasto del workspace de Anthropic de cada cliente ([sección 4](#4-coste-de-la-api)) sigue como
    última red de seguridad, por encima del tope de la instancia.
-5. **P5** no se adelanta: se diseña a partir de un caso real.
+5. **P7** antes que P5 porque es pequeña y cierra un hueco real: hoy una copia que falla solo
+   deja rastro en los registros, y nadie lo ve hasta que hace falta restaurar.
+6. **P5** no se adelanta: se diseña a partir de un caso real.
 
 ### P1. Aprovisionamiento de instancias
 
@@ -773,6 +785,34 @@ Por qué este orden:
   > Medir y mostrar en el panel el consumo del modelo por instancia y canal (tokens y coste
   > estimado, sin guardar textos) y permitir un tope mensual de gasto que, al alcanzarse, hace que
   > el bot dé el contacto del negocio en todos los canales. Ámbito: núcleo.
+
+### P7. Estado de las copias de seguridad, visible
+
+- **Ámbito**: núcleo (operación).
+- **Problema**: la instancia hace la copia diaria y la previa a cada migración (006), pero su
+  resultado solo queda en los registros (`backup_created`, `backup_failed`, `backup_disabled`).
+  Una copia que falla en silencio, o una instancia sin `BACKUP_DIR` o `BACKUP_KEY`, no se nota
+  hasta que hace falta restaurar.
+- **Decisión de partida**: el panel **muestra** el estado, pero no hace ni restaura copias.
+  Las copias siguen siendo automáticas (servidor) y la restauración sigue en la terminal con la
+  instancia parada (006): restaurar desde la propia aplicación no es posible en marcha, el panel
+  puede no funcionar justo cuando hace falta, y descargar una copia por una sesión web expondría
+  todos los datos de la instancia.
+- **Alcance esperado**:
+  - Línea de solo lectura en el panel: fecha y resultado de la última copia, y aviso si no hay
+    copia correcta en las últimas 24 h o si las copias están desactivadas por falta de
+    configuración. Sin rutas de fichero, claves ni datos de la copia.
+  - El mismo estado en el nivel protegido de `GET /health` (009) y en `pnpm instance:versions`,
+    para ver todas las instancias de un vistazo y poder vigilarlo desde fuera.
+  - El estado se obtiene de lo que la instancia ya sabe (las copias de `BACKUP_DIR` y el
+    resultado del último intento), sin guardar nada nuevo que no viaje en las copias.
+  - Sin acciones nuevas en el panel: ni "hacer copia ahora", ni descargar, ni restaurar.
+- **Texto para `/speckit-specify`**:
+  > Mostrar al operador el estado de las copias de seguridad de la instancia, en solo lectura:
+  > fecha y resultado de la última copia, y un aviso si no hay ninguna correcta en las últimas
+  > 24 horas o si las copias están desactivadas. Debe verse en el panel, en el nivel protegido
+  > de /health y en instance:versions. El panel no hace, descarga ni restaura copias; eso sigue
+  > siendo automático o desde la terminal. Ámbito: núcleo.
 
 ### P5. Puntos de extensión del núcleo
 
