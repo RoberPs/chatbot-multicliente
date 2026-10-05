@@ -1,8 +1,8 @@
 # Operación multicliente: cómo se reutiliza el chatbot con seguridad
 
 Guía para el desarrollador y operador del producto. Explica qué es común y qué es de cada cliente,
-cómo se da de alta un cliente nuevo, cómo se actualiza el núcleo sin romper a nadie y qué specs
-faltan para que todo esto deje de hacerse a mano.
+cómo se da de alta un cliente nuevo, cómo se actualiza el núcleo sin romper a nadie, qué specs
+faltan para que todo esto deje de hacerse a mano y cómo se audita la seguridad antes de publicar.
 
 Documentos de referencia: [constitución](../.specify/memory/constitution.md) (reglas de producto) y
 [README](../README.md) (estado, variables de entorno y comandos).
@@ -647,15 +647,17 @@ una persona que no haya participado (SC-006).
 ### 9.2 Orden de ejecución
 
 Una spec cada vez, en este orden (`/speckit-specify` → plan → tasks → implement). Los números
-definitivos los asigna `/speckit-specify`; si no se cuela otra feature, serán 008, 009…
+definitivos los asigna `/speckit-specify`; si no se cuela otra feature, serán 012, 013…
 
 Al terminar una spec, actualiza esta sección y la 9.1 (estado, feature que cubre cada propuesta y
 orden de las pendientes).
 
 | Orden | Id | Propuesta | Prioridad | Depende de | Cuándo |
 |---|---|---|---|---|---|
-| 1 | P7 | Estado de las copias de seguridad, visible | Media | P3 (006), P6 (009) | Antes de tener varias instancias en producción sin revisar sus registros a diario |
-| 2 | P5 | Puntos de extensión del núcleo | Baja | — | Solo cuando llegue la primera petición que no quepa en la configuración |
+| 1 | P8 | Protección frente a abuso y saturación | **Bloqueante** | P4 (010), 005 | Antes de la primera publicación en producción |
+| 2 | P9 | Requisitos de despliegue seguro | **Bloqueante** | P1 (007) | Antes de la primera publicación en producción |
+| 3 | P7 | Estado de las copias de seguridad, visible | Media | P3 (006), P6 (009) | Antes de tener varias instancias en producción sin revisar sus registros a diario |
+| 4 | P5 | Puntos de extensión del núcleo | Baja | — | Solo cuando llegue la primera petición que no quepa en la configuración |
 | — | P4 | Consumo y coste por instancia | — | — | **Hecha** (feature 010) |
 | — | P6 | Versión visible y actualización escalonada | — | — | **Hecha** (feature 009) |
 | — | P1 | Aprovisionamiento de instancias | — | — | **Hecha** (feature 007) |
@@ -675,9 +677,86 @@ Por qué este orden:
 4. **P4** (hecha) cuando el consumo empezó a facturarse y creció el riesgo de gasto. El límite de
    gasto del workspace de Anthropic de cada cliente ([sección 4](#4-coste-de-la-api)) sigue como
    última red de seguridad, por encima del tope de la instancia.
-5. **P7** antes que P5 porque es pequeña y cierra un hueco real: hoy una copia que falla solo
+5. **P8 y P9** antes que todo lo pendiente: salen de la auditoría completa del 2026-10-05
+   ([sección 11.6](#116-registro-de-auditorías)) y sin ellas la instancia no es apta para
+   producción. P8 primero porque sus fallos se explotan desde Internet sin credenciales; P9 es
+   sobre todo comprobación y documentación.
+6. **P7** antes que P5 porque es pequeña y cierra un hueco real: hoy una copia que falla solo
    deja rastro en los registros, y nadie lo ve hasta que hace falta restaurar.
-6. **P5** no se adelanta: se diseña a partir de un caso real.
+7. **P5** no se adelanta: se diseña a partir de un caso real.
+
+### P8. Protección frente a abuso y saturación
+
+- **Ámbito**: núcleo.
+- **Origen**: auditoría completa del 2026-10-05 ([sección 11.6](#116-registro-de-auditorías)).
+  Todos los puntos están comprobados en el código.
+- **Problema**: no hay fallos que den acceso a datos o al panel, pero un anónimo puede hacer
+  gastar dinero al negocio o dejar la instancia sin servicio, y el operador puede quedarse sin
+  acceso al panel justo cuando lo necesita para cortar el abuso.
+- **Alcance**:
+  - **Tope de gasto obligatorio**: una instancia de producción no atiende clientes con el tope
+    desactivado o sin precio para `LLM_MODEL`; el tope falla cerrado (si no se puede calcular el
+    coste, se limita por número de llamadas). Tope diario de respuestas también en WhatsApp.
+  - **Whisper dentro del tope**: comprobar el tope antes de transcribir y registrar su consumo.
+  - **Derivaciones**: los reenvíos al negocio cuentan para los topes; límite por instancia de
+    derivaciones nuevas y de avisos por derivación y periodo, con reenvíos agrupados; las URL y el
+    texto del cliente en los avisos van claramente delimitados.
+  - **Rutas públicas**: límite de peticiones en `/chat/frame`, `/chat/design.css` y
+    `/chat/design/*`; la ruta de imágenes compara el hash antes de leer los bytes; IPv6 agrupado
+    por /64 en los límites por IP; pool de BD con máximo y `statement_timeout`.
+  - **Login**: el límite global de fallos no impide entrar con la credencial correcta (retardo
+    creciente en lugar de bloqueo).
+  - **Llamadas salientes**: plazo en todas las llamadas a Meta (envío, metadatos y descarga de
+    audio).
+  - **Lotes que fallan**: reintentos con contador y espera creciente, sin repetir avisos.
+  - **Importación de configuración**: listas con máximo, errores limitados y deduplicación lineal.
+  - **Verificador de enlaces**: el bot no puede mostrar un enlace que el verificador no haya
+    visto (mismo patrón en `grounding.ts`, `links.js` y `message-links.ts`).
+  - **Registros**: los errores se registran sin datos (`name`, `code`), y `hub.verify_token` no
+    aparece en el registro de peticiones.
+  - **Arranque en producción**: falla con secretos débiles o de ejemplo, o sin `BACKUP_KEY` o
+    `HEALTH_SECRET`.
+- **Fuera de alcance**: retos anti-bot en el chat web (se valora solo si los límites no bastan).
+- **Texto para `/speckit-specify`**:
+  > Proteger cada instancia frente al abuso y la saturación antes de publicarla: el tope de gasto
+  > pasa a ser obligatorio en producción y falla cerrado, cubre también la transcripción de audios
+  > y tiene tope diario en WhatsApp; los reenvíos de una derivación al negocio cuentan para los
+  > topes y tienen su propio límite; las rutas públicas del chat web tienen límite de peticiones;
+  > el bloqueo del login no impide entrar al operador con la credencial correcta; las llamadas
+  > salientes tienen plazo; los lotes que fallan se reintentan con espera; la importación de
+  > configuración limita su tamaño y su coste; el bot no muestra enlaces que no haya verificado;
+  > los registros no guardan datos de errores ni tokens; y la instancia no arranca en producción
+  > con secretos débiles o sin copias. Ámbito: núcleo.
+
+### P9. Requisitos de despliegue seguro
+
+- **Ámbito**: núcleo (operación y documentación).
+- **Origen**: auditoría completa del 2026-10-05 (agente de infraestructura).
+- **Problema**: la aplicación ya hace bien lo que le toca, pero su seguridad en producción depende
+  de requisitos del despliegue que hoy no se comprueban o ni siquiera están documentados.
+- **Alcance**:
+  - `pnpm instance:check` pasa de aviso a error (no apto) en producción cuando: `TRUST_PROXY` está
+    vacío con `PUBLIC_BASE_URL` en https; `DATABASE_URL`, `BACKUP_VERIFY_URL` o
+    `INSTANCE_DB_ADMIN_URL` apuntan a un host no local sin `sslmode=verify-full`; falta
+    `PUBLIC_BASE_URL`.
+  - `HEALTHCHECK` en la imagen sobre `GET /health`, con periodo de gracia para las migraciones.
+  - Imagen base fijada por digest y `packageManager` con hash; `.npmrc` con `save-exact` y
+    `onlyBuiltDependencies`; `.gitignore` con `*.pem`, `*.key` y `*.p12`.
+  - `db:verify`: borra las BD `verify_*` huérfanas y les revoca `CONNECT` a `PUBLIC`.
+  - Sección 2.5 de este documento con una receta de producción: proxy que sustituye (no añade)
+    `X-Forwarded-For`, puerto 3000 solo en `127.0.0.1` o red interna, TLS hacia PostgreSQL,
+    `--env-file` con permisos 0600, contenedor `--read-only` con `--cap-drop=ALL` y
+    `no-new-privileges`, volumen de copias con dueño UID 1000 y modo 0700, servidor de
+    verificación separado del de producción, y CI con `pnpm audit --prod`, escaneo de la imagen y
+    las herramientas de la [sección 11.2](#112-agentes-y-para-qué-sirve-cada-uno).
+- **Texto para `/speckit-specify`**:
+  > Hacer que el despliegue seguro se compruebe y no dependa de la memoria del operador:
+  > instance:check marca como no apto en producción un proxy sin TRUST_PROXY, las conexiones a
+  > PostgreSQL remotas sin TLS verificado y la falta de PUBLIC_BASE_URL; la imagen tiene
+  > healthcheck y base fijada por digest; la verificación de copias limpia sus bases temporales;
+  > y la guía de operación incluye la receta de producción (proxy, red, TLS, permisos, contenedor
+  > endurecido e integración continua con escaneo de dependencias, secretos e imagen). Ámbito:
+  > núcleo.
 
 ### P1. Aprovisionamiento de instancias
 
@@ -851,3 +930,133 @@ Por qué este orden:
    volumen persistente para `BACKUP_DIR`; una copia se comprueba restaurándola, cada mes.
 7. Lo que no cabe en la configuración se resuelve con una spec, primero de núcleo si es genérico y
    de extensión solo si es realmente particular.
+8. Nada sale a producción sin la auditoría de seguridad de la [sección 11](#11-auditoría-de-seguridad):
+   la de la feature al cerrarla, y la completa antes de la primera publicación y de cada versión
+   mayor.
+
+---
+
+## 11. Auditoría de seguridad
+
+Proceso para auditar la seguridad con agentes de Claude Code. Está escrito para reutilizarlo tal
+cual en otros proyectos: solo cambian las rutas del alcance y el reparto por zonas.
+
+### 11.1 Cuándo se hace
+
+| Momento | Tipo | Alcance |
+|---|---|---|
+| Al cerrar cada feature, antes de fusionarla | De feature | Solo los commits de la feature |
+| Antes de la primera publicación en producción | Completa | Todo el repositorio, más infraestructura y dependencias |
+| Antes de una versión mayor, o cada 6 meses | Completa | Igual que la anterior |
+| Tras tocar autenticación, cifrado, secretos o subida de ficheros | De feature con foco | Los commits del cambio, con los agentes de ese tema |
+
+Una auditoría de feature **no** sirve para dar el visto bueno a la salida a producción: solo dice
+que la feature no introduce fallos. Para publicar hace falta la completa.
+
+### 11.2 Agentes y para qué sirve cada uno
+
+Son agentes de solo lectura: no modifican nada y entregan un informe con hallazgos priorizados.
+
+| Agente | Modelo | Qué revisa |
+|---|---|---|
+| `security-secrets` | Sonnet | Claves, tokens y contraseñas en el código y en el historial de git (con gitleaks), `.env`, logs que filtren secretos, qué arrastran las exportaciones |
+| `security-code-vulns` | Sonnet | OWASP Top 10: validación de entrada, subida de ficheros, deserialización, prototype pollution, condiciones de carrera, consumo de recursos, valores por defecto inseguros |
+| `security-auth-crypto` | Opus | Sesiones, cookies, CSRF, autorización e IDOR, hash de contraseñas, algoritmos y uso del cifrado, comparaciones en tiempo constante, límites de peticiones, cabeceras de seguridad, CORS |
+| `security-injection` | Opus | Recorrido de los datos no fiables hasta sumideros peligrosos: SQL, XSS, inyección CSS, comandos, path traversal, SSRF, logs, plantillas, `postMessage` |
+| `security-infrastructure` | Sonnet | Dockerfile, compose, CI/CD, puertos expuestos, usuario del contenedor, red y TLS |
+| `security-supply-chain` | Sonnet | Dependencias y lockfile: CVE conocidas, scripts de instalación, versiones sin fijar, typosquatting |
+| `/security-review` | (el de la sesión) | Revisión de los cambios pendientes de la rama con criterio estricto: solo fallos explotables con alta confianza, sin saturación ni límites de peticiones. Sirve de segunda opinión y de filtro de falsos positivos |
+
+Por qué esos modelos: Opus en los dos temas que exigen seguir flujos de datos entre ficheros y
+razonar sobre criptografía; Sonnet en los que son sobre todo búsqueda de patrones y lectura de
+configuración.
+
+**Herramientas gratuitas que ejecutan los agentes.** Los agentes no se quedan en leer código:
+lanzan escáneres de código abierto y después comprueban a mano lo que señalan, porque la mayoría
+de sus avisos son falsos positivos (en la auditoría completa, los 8 de gitleaks y los 3 de semgrep
+lo fueron). Conviene tenerlas instaladas y llevarlas también a la CI, sin depender de los agentes:
+
+| Herramienta | Qué audita | Uso | Lo ejecuta |
+|---|---|---|---|
+| [gitleaks](https://github.com/gitleaks/gitleaks) | Secretos en el código **y en todo el historial de git**, incluidos ficheros ya borrados | `gitleaks detect --source . -v` (historial) o `gitleaks dir .` (solo los ficheros) | `security-secrets` |
+| [semgrep](https://semgrep.dev) | Patrones inseguros en el código fuente (criptografía mal usada, `postMessage('*')`, inyecciones) | `semgrep scan --config auto src/` | `security-code-vulns`, `security-injection` |
+| [osv-scanner](https://github.com/google/osv-scanner) | Vulnerabilidades conocidas (CVE/GHSA) de las dependencias leyendo el lockfile (`pnpm-lock.yaml`), producción y desarrollo | `osv-scanner scan --lockfile pnpm-lock.yaml` | `security-supply-chain` |
+
+Además, `pnpm audit --prod` (incluido en pnpm, sin instalar nada) da la lista de CVE solo de las
+dependencias que llegan a producción; `pnpm audit` sin `--prod` incluye las de desarrollo. Si
+`pnpm audit` y osv-scanner discrepan, manda la ruta real: una CVE en una dependencia de desarrollo
+que `pnpm prune --prod` deja fuera de la imagen no bloquea la salida.
+
+### 11.3 Proceso
+
+1. **Fijar el alcance.**
+   - De feature: el diff contra `main` puede arrastrar features anteriores sin fusionar. Se toma la
+     base del primer commit de la feature:
+     ```bash
+     FIRST=$(git log --format=%h --grep='^011' --reverse | head -1)
+     git diff --stat "$FIRST^"..HEAD -- src scripts
+     ```
+   - Completa: `src/`, scripts, Dockerfile, compose, CI y lockfile.
+2. **Lanzar los agentes en paralelo y en segundo plano**, cada uno con un prompt que incluya:
+   - el alcance exacto (rango de commits o carpetas);
+   - los ficheros clave y el contexto de seguridad que ya existe (cómo se autentica, qué cifra,
+     qué rutas son públicas), para que no lo redescubra;
+   - los puntos concretos que preocupan en ese cambio;
+   - "solo lectura", respuesta en español, hallazgos con severidad, `fichero:línea`, escenario de
+     explotación concreto y remediación, y falsos positivos descartados de forma explícita.
+3. **Leer cada informe al llegar** y no darlo por bueno: los hallazgos son la opinión de un modelo.
+4. **Pasar `/security-review`** sobre el mismo alcance. Necesita `origin/HEAD`: si el repositorio no
+   tiene remoto, falla y la revisión se hace a mano con el mismo criterio estricto.
+5. **Comprobar en el código** cada hallazgo de severidad media o superior antes de aceptarlo (leer
+   las líneas citadas, buscar si hay mitigaciones en otro sitio, mirar si la spec lo decidió así).
+6. **Consolidar** en una sola tabla: hallazgos comprobados, severidad, qué agentes lo marcaron,
+   lo confirmado como correcto y lo que queda fuera del alcance para revisarlo aparte.
+7. **Corregir** con una spec de núcleo (`/speckit-specify`), nunca a mano fuera del flujo.
+
+### 11.4 Criterio de severidad y de salida a producción
+
+| Severidad | Significado | ¿Bloquea la salida? |
+|---|---|---|
+| Crítica | Explotable sin autenticación con impacto grave (datos, ejecución, toma de cuentas) | Sí |
+| Alta | Explotable con condiciones razonables, o con sesión y gran impacto | Sí |
+| Media | Saturación de rutas públicas, endurecimiento importante, fallo con mitigación parcial | Sí en rutas públicas; si no, se planifica |
+| Baja / Info | Higiene, defensa en profundidad, impacto solo visual | No; se anota |
+
+Una decisión tomada en la spec (por ejemplo, aceptar imágenes animadas) no es un hallazgo: si se
+quiere cambiar, se reabre la spec.
+
+### 11.5 Auditoría completa: reparto en profundidad
+
+Con un solo agente por tema sobre todo el código, el agente tiende a quedarse en la superficie.
+En la completa, los dos agentes Opus se dividen por zonas y cada uno recibe la lista de carpetas
+de su zona. Tamaño de `src/` en esta fecha: 272 ficheros, unas 34.000 líneas.
+
+| Agente | Modelo | Zona | Tokens (aprox.) | Tiempo |
+|---|---|---|---|---|
+| `security-infrastructure` | Sonnet | Dockerfile, compose, `scripts/`, copias y su volumen | 40–80k | 2–4 min |
+| `security-supply-chain` | Sonnet | `package.json`, `pnpm-lock.yaml` (498 paquetes), `pnpm audit` | 40–80k | 2–4 min |
+| `security-secrets` | Sonnet | Todo el repositorio e historial de git | 50–100k | 2–4 min |
+| `security-code-vulns` | Sonnet | Todo `src/` | 150–300k | 5–10 min |
+| `security-auth-crypto` A | Opus | Panel y operación: `admin`, `app.ts`, `config`, `cli`, `provisioning`, `backup`, `health` | 150–250k | 5–10 min |
+| `security-auth-crypto` B | Opus | Canales y derivación: `channels`, `webchat`, `handoff`, `mail`, `usage` | 150–250k | 5–10 min |
+| `security-injection` A | Opus | Entrada pública y bot: `channels`, `webchat`, `conversation`, `llm` (incluida la inyección de prompt), `knowledge`, `speech`, `handoff`, `mail` | 150–250k | 5–10 min |
+| `security-injection` B | Opus | Panel y operación: `admin`, `config-transfer`, `db`, `cli`, `provisioning`, `backup` | 150–250k | 5–10 min |
+
+**Total:** entre 0,9 y 1,6 millones de tokens. En paralelo, unos 10–15 minutos de reloj, más la
+consolidación. Las cifras de tokens son orientativas; los agentes Opus pesan más que el resto. Con
+una suscripción, descuenta del cupo de uso.
+
+Referencias reales:
+
+- Auditoría de feature de la 011 (unas 5.300 líneas en 40 ficheros): 4 agentes, unos 280k tokens
+  en total, entre 1 y 2,5 minutos cada uno.
+- Auditoría completa del 2026-10-05 con este reparto: 8 agentes, unos 960k tokens en total (de 23k
+  en supply-chain a 278k en code-vulns), y unos 10 minutos de reloj hasta que terminó el último.
+  Los agentes Opus por zonas tardaron de 5,5 a 10 minutos cada uno.
+
+### 11.6 Registro de auditorías
+
+| Fecha | Tipo | Alcance | Resultado |
+|---|---|---|---|
+| 2026-10-05 | De feature | 011, `59d8c30..HEAD` | Sin hallazgos críticos ni altos. 1 media: la ruta pública de imágenes del diseño lee y revalida la imagen antes de comprobar el hash, sin límite de peticiones. 4 bajas: límite de 8 MB en el guardado del diseño, caracteres Unicode de dirección en los textos, bloques PNG desconocidos y SOF duplicados en JPEG, error completo en el log. Fuera de alcance: AES-GCM sin longitud de etiqueta fijada (`src/handoff/tokens.ts`, copias), clave fija de test detectada por gitleaks, `.gitignore` sin `*.pem` ni `*.key` |
+| 2026-10-05 | Completa | Todo el repositorio, infraestructura, dependencias e historial de git (8 agentes, sección 11.5) | **No apta todavía para producción.** Sin vulnerabilidades críticas ni de toma de control o fuga de datos: XSS, SQL, comandos, CSRF, sesiones, firma del webhook, cifrado y secretos, correctos. Bloqueantes de abuso y disponibilidad (comprobados en el código): tope de gasto desactivado por defecto y sin exigir; los reenvíos de una derivación no cuentan para ningún tope (avisos y plantillas de pago sin límite, con texto del atacante); rutas públicas del chat sin límite de peticiones; el límite global del login deja fuera al operador; llamadas a Meta sin plazo; Whisper fuera del tope de gasto. Además: importación con coste cuadrático, enlaces que el verificador no ve, errores completos y `hub.verify_token` en los logs, y requisitos de despliegue sin documentar (TLS hacia PostgreSQL, puerto 3000, `TRUST_PROXY`, healthcheck, BD de verificación). El aviso de semgrep sobre AES-GCM resultó no explotable. Dependencias de producción sin CVE conocidas |
