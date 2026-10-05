@@ -37,6 +37,26 @@ imagen y receta de producción) es una feature aparte.
 Fuera de producción (desarrollo, pruebas) los requisitos marcados «en producción» no se exigen,
 para no entorpecer el trabajo en local.
 
+## Clarifications
+
+### Session 2026-10-05
+
+- Q: Cuando una instancia de producción no tiene tope de gasto activo (o su modelo no tiene precio),
+  ¿qué debe pasar? → A: Arranca; es un aviso crítico que impide activar el negocio, y si el negocio
+  ya estaba activo los clientes finales reciben solo el contacto hasta que se configure el tope.
+- Q: ¿Qué recibe un cliente final que pide hablar con una persona cuando la instancia ya alcanzó su
+  máximo de derivaciones nuevas del día? → A: El contacto del negocio para llamarle o escribirle él;
+  el negocio no recibe aviso y el panel muestra cuántas peticiones se quedaron sin aviso.
+- Q: ¿Puede el operador cambiar desde el panel los límites de las derivaciones? → A: Sí, junto al
+  tope de gasto y al de WhatsApp, con valores por defecto genéricos y un mínimo y un máximo que
+  impiden anularlos; no viajan en la exportación.
+- Q: Si una instancia ya en producción tiene un secreto que ahora se considera débil, ¿qué pasa al
+  actualizarla? → A: No arranca, como una nueva; la guía de publicación pide pasar `instance:check`
+  antes de cada tanda y rotar los secretos que fallen.
+- Q: ¿Cómo aparecen en los avisos al negocio las direcciones web que escribió el cliente final? →
+  A: Dentro del texto marcado como del cliente y desactivadas para que no sean pulsables (sin
+  protocolo y con los puntos marcados, p. ej. `ejemplo[.]com`).
+
 ## User Scenarios & Testing *(mandatory)*
 
 ### User Story 1 - El gasto de una instancia en producción siempre está acotado (Priority: P1)
@@ -125,14 +145,15 @@ cliente final recibe directamente el contacto del negocio.
    reenviarse hasta que pasa la ventana y recibe el aviso de límite una sola vez.
 4. **Given** la instancia ha alcanzado el máximo de derivaciones nuevas del día, **When** otro
    cliente final pide hablar con una persona, **Then** el negocio no recibe aviso, y el cliente final
-   recibe el contacto del negocio para que lo llame o le escriba directamente (Principio V).
+   recibe el contacto del negocio para que lo llame o le escriba directamente (Principio V), y el
+   panel muestra cuántas peticiones del día se quedaron sin aviso.
 5. **Given** la instancia ha alcanzado el máximo diario de avisos al negocio, **When** se generaría
    otro aviso, reenvío o recordatorio, **Then** no se envía, queda un evento en el registro de
    actividad (una sola vez al día) y el panel muestra un aviso con el número de avisos retenidos.
 6. **Given** un aviso al negocio con texto del cliente final, **When** el negocio lo lee por
-   WhatsApp o por email, **Then** el texto y las direcciones web que escribió el cliente aparecen
-   delimitados y marcados como escritos por el cliente, y las direcciones no se presentan como
-   enlaces del sistema.
+   WhatsApp o por email, **Then** el texto que escribió el cliente aparece delimitado y marcado
+   como escrito por el cliente, y sus direcciones web se ven desactivadas (por ejemplo,
+   `ejemplo[.]com`) y no se pueden pulsar.
 
 ---
 
@@ -346,6 +367,10 @@ valor.
   derivación nueva.
 - **Varias instancias detrás del mismo proxy**: cada instancia aplica sus límites por su cuenta; la
   dirección del cliente final depende de la configuración del proxy (P9).
+- **Instancia ya publicada con un secreto que ahora es débil**: al actualizarla no arranca, igual que
+  una nueva. La guía de publicación por tandas pide pasar la comprobación previa al despliegue antes
+  de cada tanda y rotar los secretos que fallen; si se actualiza sin hacerlo, la vuelta atrás
+  (feature 009) devuelve la versión anterior hasta rotarlos.
 - **Retardo del login y reinicio de la instancia**: el contador de fallos se pierde al reiniciar; se
   acepta, porque el límite por dirección y el retardo vuelven a crecer con el ataque.
 - **Lote abandonado y mensaje nuevo del mismo cliente**: el mensaje nuevo empieza un lote nuevo con
@@ -407,7 +432,8 @@ valor.
   límite de mensajes por cliente que ya aplica el bot, igual que sin derivación.
 - **FR-013**: El sistema MUST limitar el número de derivaciones nuevas por instancia y día local.
   Alcanzado el límite, una petición de hablar con una persona MUST responderse con el contacto del
-  negocio sin avisar al negocio, y MUST quedar un evento de actividad una vez al día.
+  negocio sin avisar al negocio, y MUST quedar un evento de actividad una vez al día. El panel MUST
+  mostrar cuántas peticiones del día se quedaron sin aviso por este límite.
 - **FR-014**: El sistema MUST limitar el número de avisos al negocio (avisos de derivación,
   reenvíos y recordatorios, por cualquier vía) por derivación y periodo, y por instancia y día. Los
   mensajes del cliente final que lleguen durante un periodo MUST agruparse en un solo reenvío.
@@ -415,10 +441,15 @@ valor.
   siguiente reenvío permitido de esa derivación y se ven en el panel. El panel MUST mostrar un aviso
   cuando haya avisos retenidos por el límite diario de la instancia.
 - **FR-016**: En los avisos al negocio, el texto escrito por el cliente final y las direcciones web
-  que contenga MUST ir delimitados y marcados como escritos por el cliente, y las direcciones MUST
-  NOT presentarse como enlaces del sistema.
-- **FR-017**: Los límites de FR-013 y FR-014 MUST tener valores por defecto genéricos y válidos para
-  cualquier sector, documentados en la guía de operación.
+  que contenga MUST ir delimitados y marcados como escritos por el cliente («El cliente escribió:
+  …»). Las direcciones web y de correo MUST desactivarse para que no sean pulsables en ningún
+  programa de correo ni en WhatsApp (sin protocolo y con los puntos marcados, por ejemplo
+  `ejemplo[.]com`), conservando lo bastante para que el negocio sepa qué escribió el cliente.
+- **FR-017**: El operador MUST poder cambiar en el panel, junto al tope de gasto y al tope diario de
+  WhatsApp, los límites de FR-013 y FR-014. Tienen valores por defecto genéricos y válidos para
+  cualquier sector, documentados en la guía de operación, y un mínimo y un máximo que impiden
+  anularlos; los cambios se validan, se aplican en una transacción y valen desde el siguiente
+  mensaje.
 
 **Rutas públicas**
 
@@ -499,7 +530,8 @@ valor.
   transcripción.
 - **Ajustes de consumo** (feature 010, ampliado): añade el tope diario de respuestas de WhatsApp.
 - **Límites de derivación**: máximo de derivaciones nuevas por día, de avisos por derivación y
-  periodo, y de avisos por instancia y día.
+  periodo, y de avisos por instancia y día. Ajustes de la instancia editables en el panel, con
+  mínimo y máximo; no viajan en la exportación.
 - **Estado de protección** (calculado, no guardado): si la instancia está en producción sin tope o
   sin precio, si el gasto no se puede leer, qué topes están alcanzados hoy y cuántos avisos al
   negocio hay retenidos.
@@ -533,6 +565,9 @@ valor.
 - **SC-010**: El 100 % de los casos de secreto débil, de ejemplo, repetido o ausente de la batería de
   pruebas impiden el arranque en producción, y la comprobación previa al despliegue da el mismo
   resultado en todos.
+- **SC-011**: En una batería de mensajes de cliente con direcciones web y de correo en distintas
+  formas, el 0 % aparece como una dirección completa con protocolo o sin desactivar en los avisos
+  al negocio, por WhatsApp o por email.
 
 ## Assumptions
 
@@ -545,9 +580,8 @@ valor.
   encima del tope de la instancia.
 - Los límites por defecto son genéricos y orientativos (se fijan en el plan): por ejemplo, del orden
   de 20 derivaciones nuevas al día por instancia, un reenvío agrupado como mucho cada 15 minutos por
-  derivación, y un tope diario de WhatsApp del mismo orden que el del chat web (feature 004). Los
-  límites de derivación no se editan en el panel en esta feature; el tope diario de WhatsApp sí,
-  como el del chat web.
+  derivación, y un tope diario de WhatsApp del mismo orden que el del chat web (feature 004). Todos
+  se editan en el panel dentro de su mínimo y su máximo (FR-009, FR-017).
 - El retardo máximo del login es de unos segundos (bastante menor que el objetivo de SC-005); el
   contador de fallos vive en memoria de la instancia, como hoy.
 - El coste de las plantillas de WhatsApp no se estima en dinero: se acota por número de avisos.
@@ -557,4 +591,5 @@ valor.
   ejemplo de `.env.example` y de la documentación, caracteres repetidos, coincidencia con otro
   secreto); la contraseña del operador ya se guarda como hash y su fortaleza no se comprueba aquí.
 - Las instancias que ya están en producción se actualizan siguiendo la guía de publicación por
-  tandas (feature 009); la guía de operación se actualiza para pedir configurar el tope antes.
+  tandas (feature 009); la guía de operación se actualiza para pedir, antes de cada tanda,
+  configurar el tope y pasar la comprobación previa al despliegue para rotar los secretos débiles.

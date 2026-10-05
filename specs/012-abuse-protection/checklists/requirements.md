@@ -35,13 +35,11 @@
   IPv6 /64, plazo de las consultas a la base de datos, registro de peticiones). Se describen como
   comportamiento observable, sin fijar librerías ni mecanismos; los valores concretos (límites,
   plazos, retardo máximo, reglas de «secreto débil») se fijan en el plan.
-- Decisiones tomadas sin marcador de aclaración (candidatas para `/speckit-clarify` si se quieren
-  revisar):
-  - Tope obligatorio en producción como aviso crítico que impide activar el negocio y, con el
-    negocio ya activo, respuesta con el contacto (fallo cerrado) en lugar de impedir el arranque.
-  - «Se limita por número de llamadas» = los topes diarios de respuestas de cada canal cuentan
-    también las respuestas sin coste conocido y no se pueden desactivar en producción.
-  - Límites de derivación con valores fijos genéricos (no editables en el panel en esta feature);
-    tope diario de WhatsApp editable, como el del chat web.
-  - Al alcanzar el límite de derivaciones nuevas, el cliente final recibe el contacto del negocio
-    (Principio V) sin aviso al negocio.
+- Decisiones confirmadas en `/speckit-clarify` (sesión 2026-10-05, ver «Clarifications» en la
+  spec): tope obligatorio como aviso crítico con fallo cerrado; contacto del negocio sin aviso al
+  alcanzar el límite de derivaciones nuevas; límites de derivación editables en el panel con mínimo
+  y máximo; secretos débiles impiden arrancar también a las instancias ya publicadas; direcciones
+  del cliente desactivadas en los avisos al negocio.
+- Decisión sin confirmar: «se limita por número de llamadas» = los topes diarios de respuestas de
+  cada canal cuentan también las respuestas sin coste conocido y no se pueden desactivar en
+  producción.
