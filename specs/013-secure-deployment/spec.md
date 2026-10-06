@@ -48,6 +48,7 @@ local. Cualquier otro host es **remoto**, también los de una red privada.
 - Q: ¿Cómo sabe `db:verify` la antigüedad de una base temporal para decidir si está huérfana? → A: La marca de tiempo de creación va en el nombre (`verify_<UTC yyyymmddhhmmss>_<aleatorio>`); las del formato antiguo `verify_<16 hex>` son huérfanas si no tienen conexiones abiertas.
 - Q: Con un certificado de autoridad privada, ¿cómo recibe la instancia esa autoridad para `verify-full`? → A: Con `sslrootcert=<ruta>` en la propia URL, apuntando a un fichero montado en solo lectura; sin él se usan las autoridades públicas; `instance:check` no exige `sslrootcert`.
 - Q: ¿Debe `instance:db` negarse siempre a conectar con un servidor remoto sin `verify-full`, también para instancias de pruebas? → A: Sí, siempre y sin opción de escape; la alternativa es `--print-sql`.
+- Q: (Encontrado al implementar.) Con una IP en la URL, `pg` no pasa la dirección a TLS y Node compara el certificado con `localhost`, así que `verify-full` no comprueba el nombre. ¿Cuenta como TLS verificado? → A: No. Una URL remota cuyo host es una IP literal (IPv4 o IPv6) no cuenta como TLS verificado aunque lleve `verify-full`; `instance:check` lo señala con su propio código (`database_tls_ip_host`, mismas severidades que FR-003) y `instance:db` se niega a conectar. La URL debe usar el nombre del servidor que figura en su certificado.
 
 ## User Scenarios & Testing *(mandatory)*
 
@@ -235,7 +236,9 @@ sin preguntar nada.
   `DATABASE_URL`, `BACKUP_VERIFY_URL` o `INSTANCE_DB_ADMIN_URL` (las dos últimas solo si están en
   el fichero) apuntan a un host remoto y la URL no exige TLS con verificación completa del
   certificado y del nombre del servidor (`sslmode=verify-full`). La regla no exige
-  `sslrootcert` (sin él valen las autoridades públicas).
+  `sslrootcert` (sin él valen las autoridades públicas). Con un host remoto que es una IP literal,
+  `verify-full` no cuenta como TLS verificado (la librería no comprueba el nombre con una IP): es
+  un error propio, `database_tls_ip_host`, que pide el nombre del certificado.
 - **FR-004**: Una conexión a un host local MUST NOT dar error por falta de TLS. Se mantiene la
   advertencia actual de base de datos en localhost en producción.
 - **FR-005**: En el perfil de pruebas, las reglas de FR-001 y FR-003 MUST informarse como

@@ -419,7 +419,10 @@ async function adminUrlFrom(io: InstanceIO): Promise<string> {
   }
   const target = parseAdminUrl(url);
   if (target === null) throw new ProvisioningError('admin_url_invalid');
-  if (!target.local && !target.verifiedTls) throw new ProvisioningError('admin_url_tls_required');
+  if (!target.local && !target.verifiedTls) {
+    // Con una IP, `verify-full` no comprueba el nombre del certificado.
+    throw new ProvisioningError(target.ipHost ? 'admin_url_ip_host' : 'admin_url_tls_required');
+  }
   return url;
 }
 

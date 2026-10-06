@@ -103,6 +103,8 @@ export interface AdminTarget {
   /** Clasificación común (`classifyDatabaseUrl`). */
   local: boolean;
   verifiedTls: boolean;
+  /** Host IP con `verify-full`: no se comprueba el nombre del certificado. */
+  ipHost: boolean;
 }
 
 /** Servidor, puerto, TLS y clasificación de la URL de administración, o `null` si no es válida. */
@@ -124,6 +126,7 @@ export function parseAdminUrl(adminUrl: string): AdminTarget | null {
     sslrootcert: c.caFile,
     local: c.local,
     verifiedTls: c.verifiedTls,
+    ipHost: c.ipHost && c.verifyFull,
   };
 }
 

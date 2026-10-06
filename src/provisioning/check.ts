@@ -11,6 +11,7 @@
  */
 import {
   classifyDatabaseUrl,
+  isVerifyFullOnIp,
   requiresVerifiedTls,
   type DatabaseUrlClassification,
 } from '../config/database-url.js';
@@ -212,7 +213,10 @@ const OPTIONAL_DATABASE_URLS = ['BACKUP_VERIFY_URL', 'INSTANCE_DB_ADMIN_URL'] as
  * del contenedor.
  */
 function deployment(env: EnvMap, profile: Profile, out: Findings): void {
-  const flag = (code: 'trust_proxy_empty' | 'database_tls_required', variable: string) => {
+  const flag = (
+    code: 'trust_proxy_empty' | 'database_tls_required' | 'database_tls_ip_host',
+    variable: string,
+  ) => {
     if (profile === 'production') out.error(code, { variable });
     else out.warning(code, { variable });
   };
@@ -233,7 +237,9 @@ function deployment(env: EnvMap, profile: Profile, out: Findings): void {
     else urls.push([variable, c]);
   }
   for (const [variable, c] of urls) {
-    if (requiresVerifiedTls(c)) flag('database_tls_required', variable);
+    // Con una IP, `verify-full` no comprueba el nombre: código propio, que pide el nombre.
+    if (isVerifyFullOnIp(c)) flag('database_tls_ip_host', variable);
+    else if (requiresVerifiedTls(c)) flag('database_tls_required', variable);
   }
 }
 

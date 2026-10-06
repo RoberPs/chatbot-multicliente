@@ -16,7 +16,7 @@ Estados: especificada → planificada → en implementación → completada (o a
 | 010 | Consumo y coste por instancia | Núcleo | Completada | `010-usage-cost-cap` | [spec](specs/010-usage-cost-cap/spec.md) · [plan](specs/010-usage-cost-cap/plan.md) · [tareas](specs/010-usage-cost-cap/tasks.md) | 2026-10-01  |
 | 011 | Diseño del chat web | Núcleo | Completada | `011-chat-design` | [spec](specs/011-chat-design/spec.md) · [plan](specs/011-chat-design/plan.md) · [tareas](specs/011-chat-design/tasks.md) | 2026-10-05  |
 | 012 | Protección frente a abuso y saturación | Núcleo | Completada | `012-abuse-protection` | [spec](specs/012-abuse-protection/spec.md) · [plan](specs/012-abuse-protection/plan.md) · [tareas](specs/012-abuse-protection/tasks.md) | 2026-10-06  |
-| 013 | Requisitos de despliegue seguro | Núcleo (operación) | Completada (validación de la receta por una persona ajena pendiente, T044b) | `013-secure-deployment` | [spec](specs/013-secure-deployment/spec.md) · [plan](specs/013-secure-deployment/plan.md) · [tareas](specs/013-secure-deployment/tasks.md) | 2026-10-06  |
+| 013 | Requisitos de despliegue seguro | Núcleo (operación) | Completada | `013-secure-deployment` | [spec](specs/013-secure-deployment/spec.md) · [plan](specs/013-secure-deployment/plan.md) · [tareas](specs/013-secure-deployment/tasks.md) | 2026-10-06  |
 
 ---
 
@@ -250,7 +250,8 @@ operador:
 - **`pnpm instance:check`** da NO APTO en producción con `TRUST_PROXY` vacío y `PUBLIC_BASE_URL` en
   `https` (`trust_proxy_empty`) y con cualquier URL de base de datos remota (`DATABASE_URL`,
   `BACKUP_VERIFY_URL`, `INSTANCE_DB_ADMIN_URL`) sin `sslmode=verify-full` en la propia URL
-  (`database_tls_required`). En una instancia de pruebas son advertencias.
+  (`database_tls_required`), o con `verify-full` pero el servidor por IP en lugar de por el nombre
+  de su certificado (`database_tls_ip_host`). En una instancia de pruebas son advertencias.
 - **`pnpm instance:db`** se niega a conectar con un servidor remoto sin TLS verificado; acepta
   `--sslrootcert <ruta del contenedor>` y pone `verify-full` por defecto con `--print-sql --host`
   remoto. `instance:new` escribe `TRUST_PROXY=1`.

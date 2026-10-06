@@ -16,8 +16,15 @@ export type DatabaseUrlClassification =
       kind: 'ok';
       /** `localhost`, `127.0.0.0/8`, `::1` (cualquier forma) o un socket local. */
       local: boolean;
-      /** Un único `sslmode` y vale exactamente `verify-full`. */
+      /**
+       * Un único `sslmode`, vale exactamente `verify-full` y el host no es una IP remota: con una
+       * IP, `pg` no pasa la dirección a TLS y Node compara el certificado con `localhost`.
+       */
       verifiedTls: boolean;
+      /** Un único `sslmode` y vale exactamente `verify-full`, sea cual sea el host. */
+      verifyFull: boolean;
+      /** El host es una IP literal (IPv4 o IPv6). */
+      ipHost: boolean;
       /** Valor de `sslrootcert`: solo para comprobar que se puede leer; nunca se muestra. */
       caFile: string | null;
     };
@@ -79,12 +86,27 @@ export function classifyDatabaseUrl(url: string): DatabaseUrlClassification {
   const host = hostParam ?? decode(parsed.hostname);
   if (host === '') return { kind: 'invalid' };
   const sslmodes = u.searchParams.getAll('sslmode');
+  const local = isLocalHost(host);
+  const ipHost = isIP(host.replace(/^\[|\]$/g, '')) !== 0;
+  const verifyFull = sslmodes.length === 1 && sslmodes[0] === 'verify-full';
   return {
     kind: 'ok',
-    local: isLocalHost(host),
-    verifiedTls: sslmodes.length === 1 && sslmodes[0] === 'verify-full',
+    local,
+    verifiedTls: verifyFull && (local || !ipHost),
+    verifyFull,
+    ipHost,
     caFile: u.searchParams.getAll('sslrootcert').at(-1) ?? null,
   };
+}
+
+/** `verify-full` con una IP remota: pide TLS verificado pero no se comprueba el nombre. */
+export function isVerifyFullOnIp(classification: DatabaseUrlClassification): boolean {
+  return (
+    classification.kind === 'ok' &&
+    !classification.local &&
+    classification.ipHost &&
+    classification.verifyFull
+  );
 }
 
 /** Remota, interpretable y sin TLS verificado: lo que rechazan `instance:check` e `instance:db`. */

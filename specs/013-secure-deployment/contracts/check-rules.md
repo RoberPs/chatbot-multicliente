@@ -8,7 +8,8 @@ Forma de la salida, códigos de salida (0 apto, 1 no apto) y salida `--json` sin
 
 - **Host local**: `localhost`, `127.0.0.0/8`, `::1` (cualquier forma) o socket local. El resto es
   **remoto**, también las IP privadas.
-- **TLS verificado**: la URL lleva un único `sslmode` y vale exactamente `verify-full`. Las
+- **TLS verificado**: la URL lleva un único `sslmode`, vale exactamente `verify-full` y, si el host
+  es remoto, no es una IP literal (con una IP, `pg` no comprueba el nombre del certificado). Las
   variables `PG*` del entorno no cuentan.
 
 ## Reglas de `instance:check`
@@ -20,6 +21,7 @@ Forma de la salida, códigos de salida (0 apto, 1 no apto) y salida `--json` sin
 | `database_tls_required` | `DATABASE_URL` | host remoto sin TLS verificado | error | advertencia |
 | `database_tls_required` | `BACKUP_VERIFY_URL` | presente, host remoto sin TLS verificado | error | advertencia |
 | `database_tls_required` | `INSTANCE_DB_ADMIN_URL` | presente, host remoto sin TLS verificado | error | advertencia |
+| `database_tls_ip_host` | las tres URL de base de datos | host remoto que es una IP literal, con `sslmode=verify-full` | error | advertencia |
 | `database_url_invalid` | `BACKUP_VERIFY_URL` · `INSTANCE_DB_ADMIN_URL` | presente pero no interpretable | error | error |
 | `database_localhost` | `DATABASE_URL` | host local | advertencia (sin cambios) | — |
 
@@ -35,6 +37,7 @@ Forma de la salida, códigos de salida (0 apto, 1 no apto) y salida `--json` sin
 |---|---|---|---|
 | `trust_proxy_empty` | `TRUST_PROXY está vacío y PUBLIC_BASE_URL es https: la instancia no termina TLS, así que hay un proxy delante y sin TRUST_PROXY todos los clientes parecen venir de la misma dirección.` | `está vacío con PUBLIC_BASE_URL en https: hay un proxy delante y la instancia no lo sabe.` | `Indica el número de saltos del proxy (1 si hay uno) o sus IP/CIDR, y comprueba la dirección que ve la instancia (sección 2.5 de la guía).` |
 | `database_tls_required` | `<VAR> apunta a un servidor remoto sin TLS verificado: hace falta sslmode=verify-full en la propia URL (las variables PG* del entorno no cuentan).` | `apunta a un servidor remoto sin sslmode=verify-full en la URL.` | `Añade sslmode=verify-full a la URL y, si la autoridad del certificado no es pública, sslrootcert=<ruta del certificado en el contenedor> (sección 2.5).` |
+| `database_tls_ip_host` | `<VAR> apunta a una IP con sslmode=verify-full: con una IP no se comprueba que el certificado sea de ese servidor.` | `apunta a una IP: con una IP no se comprueba que el certificado sea de ese servidor.` | `Usa en la URL el nombre del servidor que figura en su certificado (sección 2.5).` |
 | `database_url_invalid` | `<VAR> no es una URL de PostgreSQL válida.` | `no es una URL de PostgreSQL válida.` | `Usa el formato postgres://usuario@servidor:puerto/base?sslmode=verify-full.` |
 
 Ningún texto lleva la URL, el host, el usuario, la contraseña, la base ni la ruta de `sslrootcert`
@@ -72,6 +75,13 @@ Texto de `admin_url_tls_required`:
 ```text
 INSTANCE_DB_ADMIN_URL apunta a un servidor remoto sin TLS verificado: por esa conexión viaja la credencial de administración.
 → Añade sslmode=verify-full (y sslrootcert=<ruta> si la autoridad no es pública), o usa --print-sql --host <servidor> --port <puerto> y aplica el SQL tú mismo.
+```
+
+Con una IP remota y `verify-full`, error `admin_url_ip_host` (salida 1, sin conectar):
+
+```text
+INSTANCE_DB_ADMIN_URL apunta a una IP: con una IP no se comprueba que el certificado sea de ese servidor, y por esa conexión viaja la credencial de administración.
+→ Usa el nombre del servidor que figura en su certificado, o usa --print-sql --host <servidor> --port <puerto> y aplica el SQL tú mismo.
 ```
 
 El texto es el mismo tanto si la URL viene de la variable como si se pidió en la terminal.

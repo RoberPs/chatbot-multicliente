@@ -678,6 +678,58 @@ describe('reglas de despliegue seguro (013, contracts/check-rules.md)', () => {
   });
 });
 
+describe('IP literal en la URL de base de datos (aclaración posterior)', () => {
+  const asTesting = (env: EnvMap): InventoryAccess => {
+    const inv = structuredClone(inventory);
+    inv.instances.push(instanceFromEnv(env, { status: 'testing' }));
+    return { ...access, inventory: inv };
+  };
+  const atIp = (host: string) =>
+    `postgres://usuario_remoto:${token(24)}@${host}:5432/base_remota?sslmode=verify-full`;
+
+  for (const variable of ['DATABASE_URL', 'BACKUP_VERIFY_URL', 'INSTANCE_DB_ADMIN_URL']) {
+    it.each(['10.0.0.5', '[fd00::1]'])(
+      `${variable} en %s con verify-full → database_tls_ip_host`,
+      (host) => {
+        const url = atIp(host);
+        const env = fresh({ [variable]: url });
+        const prod = run(env);
+        expect(prod.ok).toBe(false);
+        expect(errorKeys(prod)).toContain(`database_tls_ip_host:${variable}`);
+        expect(errorKeys(prod)).not.toContain(`database_tls_required:${variable}`);
+        expect(prod.errors.find((e) => e.code === 'database_tls_ip_host')).toMatchObject({
+          message: `${variable} apunta a una IP con sslmode=verify-full: con una IP no se comprueba que el certificado sea de ese servidor.`,
+          detail:
+            'apunta a una IP: con una IP no se comprueba que el certificado sea de ese servidor.',
+          action:
+            'Usa en la URL el nombre del servidor que figura en su certificado (sección 2.5).',
+        });
+        expectNoUrlParts(formatCheckResult(prod), url);
+        expectNoUrlParts(checkResultJson(prod), url);
+
+        const testing = run(env, asTesting(env));
+        expect(warningKeys(testing)).toContain(`database_tls_ip_host:${variable}`);
+        expect(errorKeys(testing)).not.toContain(`database_tls_ip_host:${variable}`);
+      },
+    );
+  }
+
+  it('una IP sin verify-full sigue siendo database_tls_required', () => {
+    const result = run(
+      fresh({ DATABASE_URL: atIp('10.0.0.5').replace('?sslmode=verify-full', '') }),
+    );
+    expect(errorKeys(result)).toContain('database_tls_required:DATABASE_URL');
+    expect(errorKeys(result)).not.toContain('database_tls_ip_host:DATABASE_URL');
+  });
+
+  it('una IP local no da hallazgo de TLS', () => {
+    const result = run(fresh({ DATABASE_URL: atIp('127.0.0.1') }));
+    const codes = [...result.errors, ...result.warnings].map((f) => f.code);
+    expect(codes).not.toContain('database_tls_ip_host');
+    expect(codes).not.toContain('database_tls_required');
+  });
+});
+
 describe('formato del resultado', () => {
   it('--json: una línea con los campos del contrato y sin detail', () => {
     const json = checkResultJson(run(fresh({ SESSION_SECRET: demo01.SESSION_SECRET ?? '' })));

@@ -6,6 +6,7 @@ herramientas sustituibles, sin proveedor de hosting ni nombres de cliente o sect
 
 | # | Paso | Ejemplo | Comprobación |
 |---|---|---|---|
+| 0 | Construir la imagen en el servidor desde la etiqueta `vX.Y.Z` (añadido tras implementar: la imagen se construye en el servidor de despliegue) | `git checkout vX.Y.Z && docker build --build-arg CORE_VERSION=X.Y.Z -t chatbot:X.Y.Z .` y `trivy image …` | La etiqueta OCI da `X.Y.Z`, el `Healthcheck` apunta a `dist/src/cli/healthcheck.js` y Trivy no bloquea |
 | 1 | `instance:check` APTO con el entorno definitivo | `pnpm instance:check <fichero>` | Código de salida 0 |
 | 2 | Fichero de entorno con dueño el operador y modo 0600, pasado con `--env-file` | `chown operador: cliente-x.env && chmod 600 cliente-x.env` | `stat -c '%U %a' cliente-x.env` da `operador 600` |
 | 3 | Volumen de copias con dueño UID 1000 y modo 0700 | `install -d -o 1000 -g 1000 -m 700 /srv/chatbot/cliente-x/backups` | `stat -c '%u %a' …` da `1000 700` |

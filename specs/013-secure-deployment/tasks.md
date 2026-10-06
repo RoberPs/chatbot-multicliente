@@ -189,6 +189,17 @@ una persona ajena puede seguirla en una máquina limpia (SC-006, [quickstart §7
 
 ---
 
+## Phase 6b: Ampliación - IP literal en la URL (aclaración posterior a la implementación)
+
+**Purpose**: con una IP en la URL, `pg` no pasa la dirección a TLS y Node compara el certificado
+con `localhost`, así que `verify-full` no comprueba el nombre (spec, Clarifications; FR-003).
+
+- [X] T048 [US1] Ampliar `tests/unit/config/database-url.test.ts`, `tests/unit/provisioning/check.test.ts` y `tests/integration/provisioning/cli-db.test.ts` (deben fallar): `classifyDatabaseUrl` da `verifiedTls: false` e `ipHost: true` con un host remoto IPv4 o IPv6 y `verify-full`, y `ipHost: false` con un nombre; `instance:check` da `database_tls_ip_host` (error en producción, advertencia en pruebas) en las tres variables, sin `database_tls_required` y con los textos de [contracts/check-rules.md](contracts/check-rules.md); un host local IP (`127.0.0.1`, `::1`) no da nada; `instance:db` con `postgres://admin:x@10.0.0.5/postgres?sslmode=verify-full` sale con 1 con `admin_url_ip_host`, sin conectar ni abrir el inventario
+- [X] T049 [US1] En `src/config/database-url.ts` añadir `ipHost` a la clasificación y no contar como `verifiedTls` un host remoto IP; en `src/provisioning/messages.ts` añadir `database_tls_ip_host` y `admin_url_ip_host`; en `src/provisioning/check.ts` y `src/cli/instance.ts` aplicar el código propio antes que `database_tls_required` / `admin_url_tls_required` (hace pasar T048)
+- [X] T050 [US4] Actualizar `docs/operacion-multicliente.md` (§2.3, §2.4 y paso 4 de la §2.5) con la regla nueva
+
+---
+
 ## Phase 7: Polish & Cross-Cutting Concerns
 
 **Purpose**: comprobaciones globales y cierre de la feature.
@@ -197,7 +208,7 @@ una persona ajena puede seguirla en una máquina limpia (SC-006, [quickstart §7
 - [X] T042 [P] Ejecutar `tests/unit/sector-neutrality.test.ts` y `tests/unit/isolation.test.ts`, y comprobar que `src/config/database-url.ts` y `src/backup/verify-names.ts` no importan Fastify ni `pg`
 - [X] T043 Ejecutar `pnpm lint && pnpm typecheck && pnpm test:unit && pnpm test:integration` y dejar todo en verde
 - [X] T044 Recorrer a mano [quickstart.md](quickstart.md) §2–§6 (incluido el script `postinstall` no autorizado en una rama de prueba descartada después y la construcción doble con la misma base, SC-005) y anotar cualquier diferencia como fallo de la implementación o de la receta
-- [ ] T044b **Pendiente del usuario (no la cierra la implementación)**: una persona que no haya trabajado en la feature sigue solo la §2.5 de `docs/operacion-multicliente.md` en una máquina limpia con la imagen de T035 y recorre [quickstart §7](quickstart.md); cada comprobación de [contracts/production-recipe.md](contracts/production-recipe.md) debe cumplirse (en especial, el puerto 3000 no responde desde fuera y la petición 31 con `X-Forwarded-For` falso da 429), y cada duda o pregunta se anota como fallo de la receta y se corrige en T036–T040 antes de T046 (SC-006)
+- [X] T044b **Cerrada por decisión del usuario (2026-10-06)**: el proyecto lo lleva una sola persona, así que no hay nadie ajeno que pueda validar la receta; se valida en el primer despliegue en producción, siguiendo la §2.5 paso a paso. Texto original: una persona que no haya trabajado en la feature sigue solo la §2.5 de `docs/operacion-multicliente.md` en una máquina limpia con la imagen de T035 y recorre [quickstart §7](quickstart.md); cada comprobación de [contracts/production-recipe.md](contracts/production-recipe.md) debe cumplirse (en especial, el puerto 3000 no responde desde fuera y la petición 31 con `X-Forwarded-For` falso da 429), y cada duda o pregunta se anota como fallo de la receta y se corrige en T036–T040 antes de T046 (SC-006)
 - [X] T045 **Avisar al usuario** y, tras su conformidad, actualizar `README.md` con el estado de la feature 013 (requisitos de despliegue seguro: reglas nuevas de `instance:check`, `instance:db` con TLS verificado, limpieza de `db:verify`, `HEALTHCHECK` e imagen fijada, receta §2.5)
 - [X] T046 **Avisar al usuario** y, tras su conformidad, actualizar `docs/operacion-multicliente.md`: fila de la 013 en la tabla de la §9.1 con la fecha de cierre, orden de la §9.2 sin P9 pendiente, propuesta P9 marcada como hecha, y referencia en la §11.6 a los hallazgos de la auditoría del 2026-10-05 que quedan cerrados
 - [X] T047 Revisar el bloque de órdenes de `CLAUDE.md` y añadir `[--sslrootcert <ruta>]` a `pnpm instance:db <id>` si se documentan sus opciones allí

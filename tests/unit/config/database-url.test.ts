@@ -203,3 +203,24 @@ describe('describeDatabaseError (por código, nunca por el texto)', () => {
     expect(describeDatabaseError(original, 'BACKUP_VERIFY_URL')).toBe(original);
   });
 });
+
+describe('classifyDatabaseUrl: IP literal remota (aclaración posterior)', () => {
+  it.each([
+    ['IPv4', base('10.0.0.5', '?sslmode=verify-full')],
+    ['IPv6', base('[fd00::1]', '?sslmode=verify-full')],
+  ])('%s con verify-full no cuenta como TLS verificado', (_name, url) => {
+    const c = classifyDatabaseUrl(url);
+    expect(c).toMatchObject({ kind: 'ok', local: false, verifiedTls: false, ipHost: true });
+    expect(requiresVerifiedTls(c)).toBe(true);
+  });
+
+  it('un nombre no es ipHost y una IP local no requiere TLS', () => {
+    expect(classifyDatabaseUrl(base('db.interna', '?sslmode=verify-full'))).toMatchObject({
+      ipHost: false,
+      verifiedTls: true,
+    });
+    for (const host of ['127.0.0.1', '[::1]']) {
+      expect(requiresVerifiedTls(classifyDatabaseUrl(base(host)))).toBe(false);
+    }
+  });
+});

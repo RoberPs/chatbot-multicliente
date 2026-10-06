@@ -97,6 +97,7 @@ export const CHECK_ERROR_CODES = [
   // 013: en producción; en pruebas, el mismo código sale como advertencia.
   'trust_proxy_empty',
   'database_tls_required',
+  'database_tls_ip_host',
   'database_url_invalid',
 ] as const;
 
@@ -340,6 +341,14 @@ export const CHECK_CATALOG: Record<CheckCode, CatalogEntry> = {
     action: () =>
       'Añade sslmode=verify-full a la URL y, si la autoridad del certificado no es pública, sslrootcert=<ruta del certificado en el contenedor> (sección 2.5).',
   },
+  database_tls_ip_host: {
+    message: (c) =>
+      `${v(c)} apunta a una IP con sslmode=verify-full: con una IP no se comprueba que el certificado sea de ese servidor.`,
+    detail: () =>
+      'apunta a una IP: con una IP no se comprueba que el certificado sea de ese servidor.',
+    action: () =>
+      'Usa en la URL el nombre del servidor que figura en su certificado (sección 2.5).',
+  },
   database_url_invalid: {
     message: (c) => `${v(c)} no es una URL de PostgreSQL válida.`,
     detail: () => 'no es una URL de PostgreSQL válida.',
@@ -539,6 +548,11 @@ const COMMAND_CATALOG = {
     exit: 1,
     message: () =>
       'INSTANCE_DB_ADMIN_URL apunta a un servidor remoto sin TLS verificado: por esa conexión viaja la credencial de administración.\n→ Añade sslmode=verify-full (y sslrootcert=<ruta> si la autoridad no es pública), o usa --print-sql --host <servidor> --port <puerto> y aplica el SQL tú mismo.',
+  },
+  admin_url_ip_host: {
+    exit: 1,
+    message: () =>
+      'INSTANCE_DB_ADMIN_URL apunta a una IP: con una IP no se comprueba que el certificado sea de ese servidor, y por esa conexión viaja la credencial de administración.\n→ Usa el nombre del servidor que figura en su certificado, o usa --print-sql --host <servidor> --port <puerto> y aplica el SQL tú mismo.',
   },
   admin_url_invalid: {
     exit: 2,

@@ -386,3 +386,28 @@ describe('pnpm instance:db con TLS verificado (013, FR-007)', () => {
     expect(await canConnect((await readEnv()).DATABASE_URL ?? '')).toBe(true);
   });
 });
+
+describe('pnpm instance:db con una IP y verify-full (aclaración posterior)', () => {
+  it('se niega con admin_url_ip_host sin conectar ni abrir el inventario', async () => {
+    const url = 'postgres://admin:clave-admin-remota@10.0.0.5:5432/postgres?sslmode=verify-full';
+    const invBefore = await ws.inventoryText();
+    let connected = false;
+    const io = instanceIO(env({ INSTANCE_DB_ADMIN_URL: url }));
+    const deps = testDeps({
+      connectPg: () => {
+        connected = true;
+        return Promise.reject(new Error('no debe conectarse'));
+      },
+    });
+    expect(await main(['db', id], io, deps)).toBe(1);
+    expect(connected).toBe(false);
+    expect(io.stderr.join('\n')).toBe(
+      [
+        'INSTANCE_DB_ADMIN_URL apunta a una IP: con una IP no se comprueba que el certificado sea de ese servidor, y por esa conexión viaja la credencial de administración.',
+        '→ Usa el nombre del servidor que figura en su certificado, o usa --print-sql --host <servidor> --port <puerto> y aplica el SQL tú mismo.',
+      ].join('\n'),
+    );
+    expect(await ws.inventoryText()).toBe(invBefore);
+    expectNoUrlParts(io.all(), url);
+  });
+});

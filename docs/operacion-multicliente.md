@@ -146,7 +146,9 @@ INSTANCE_DB_ADMIN_URL apunta a un servidor remoto sin TLS verificado: por esa co
 → Añade sslmode=verify-full (y sslrootcert=<ruta> si la autoridad no es pública), o usa --print-sql --host <servidor> --port <puerto> y aplica el SQL tú mismo.
 ```
 
-Sale con 1 al instante, sin abrir el inventario ni tocar el entorno. Si la autoridad del
+Sale con 1 al instante, sin abrir el inventario ni tocar el entorno. También se niega
+(`admin_url_ip_host`) si la URL lleva `verify-full` pero el servidor es una **IP**: con una IP no se
+comprueba que el certificado sea de ese servidor. Usa el nombre que figura en su certificado. Si la autoridad del
 certificado no es pública, añade a la URL de administración `sslrootcert=<ruta en tu equipo>`: la
 conexión de prueba con el usuario nuevo usa el mismo `sslmode` y `sslrootcert`.
 
@@ -191,7 +193,7 @@ Referencia de variables del entorno:
 
 | Variable | Valor para el cliente |
 |---|---|
-| `DATABASE_URL` | La escribe `instance:db` (2.3). Con un servidor **remoto** (todo lo que no sea `localhost`, `127.0.0.0/8`, `::1` o un socket local), `sslmode=verify-full` en la propia URL y, si la autoridad del certificado no es pública, `sslrootcert=<ruta en el contenedor>`; si no, error `database_tls_required` en producción. Las variables `PG*` del entorno no cuentan |
+| `DATABASE_URL` | La escribe `instance:db` (2.3). Con un servidor **remoto** (todo lo que no sea `localhost`, `127.0.0.0/8`, `::1` o un socket local), `sslmode=verify-full` en la propia URL y, si la autoridad del certificado no es pública, `sslrootcert=<ruta en el contenedor>`; si no, error `database_tls_required` en producción. El servidor va por su **nombre**, el del certificado: con una IP y `verify-full`, error `database_tls_ip_host` (con una IP no se comprueba el certificado). Las variables `PG*` del entorno no cuentan |
 | `BACKUP_VERIFY_URL` | Servidor donde `db:verify` crea sus bases temporales (por defecto, el de `DATABASE_URL`); usuario con `CREATEDB`, uno solo por servidor ([2.5](#25-despliegue), paso 8). Misma regla de TLS (`database_tls_required`); mal formada, `database_url_invalid` en los dos perfiles |
 | `INSTANCE_DB_ADMIN_URL` | Solo en tu equipo, para `instance:db`; si aparece en un entorno, `instance:check` le aplica la misma regla de TLS y de formato que a `BACKUP_VERIFY_URL` |
 | `OPERATOR_USER` · `OPERATOR_PASSWORD_HASH` | Credencial propia de esta instancia |
@@ -247,6 +249,34 @@ no da lo esperado, **no sigas**. Los ejemplos usan nginx, `docker run` y Trivy; 
 por herramientas equivalentes, siempre que se cumpla la comprobación. En los ejemplos, `operador`
 es el usuario de la máquina que despliega y `cliente-x` el `id` de la instancia.
 
+0. **Construir la imagen en el servidor** (si no la trae ya la integración continua del paso 11).
+   Antes, en tu equipo, `pnpm lint && pnpm typecheck && pnpm test` en verde y la etiqueta Git
+   `vX.Y.Z` creada ([5.1](#51-comprobaciones-previas-en-tu-equipo)). En el servidor, siempre desde
+   la etiqueta y nunca desde una copia con cambios sin publicar:
+
+   ```bash
+   git clone <repositorio> /srv/chatbot/nucleo     # la primera vez; después: git fetch --tags
+   cd /srv/chatbot/nucleo && git checkout vX.Y.Z
+   docker build --build-arg CORE_VERSION=X.Y.Z -t chatbot:X.Y.Z .
+   trivy image --severity HIGH,CRITICAL --ignore-unfixed chatbot:X.Y.Z
+   ```
+
+   - Docker Engine 25 o posterior (`docker version`), para el `--start-interval` del
+     `HEALTHCHECK` (paso 9).
+   - La construcción instala también las dependencias de desarrollo y compila: en un servidor con
+     poca memoria, añade swap o construye con las instancias sin carga.
+   - En la copia del repositorio del servidor **no** hay ficheros de entorno: los de las
+     instancias viven fuera (paso 2), y `.gitignore` excluye `.env*` y las claves.
+   - Si la construcción falla al descargar pnpm con «unable to verify the first certificate», algo
+     intercepta HTTPS en esa máquina (un proxy o un antivirus): construye en otra sin
+     interceptación; no se toca el `Dockerfile`.
+   - Con varios servidores, construye una vez y súbela a un registro privado, para que todos usen
+     exactamente la misma imagen.
+
+   Comprobación: `docker inspect -f '{{ index .Config.Labels "org.opencontainers.image.version" }}' chatbot:X.Y.Z`
+   da `X.Y.Z`; `docker image inspect chatbot:X.Y.Z --format '{{json .Config.Healthcheck}}'` muestra
+   `dist/src/cli/healthcheck.js`; y Trivy no da nada que bloquee (paso 11).
+
 1. **`instance:check` APTO con el entorno definitivo.**
 
    ```bash
@@ -255,7 +285,8 @@ es el usuario de la máquina que despliega y `cliente-x` el `id` de la instancia
 
    Comprobación: `APTO para desplegar.` y `salida 0`. En producción son error, entre otros,
    `TRUST_PROXY` vacío con `PUBLIC_BASE_URL` en `https` (`trust_proxy_empty`) y cualquier URL de
-   base de datos remota sin `sslmode=verify-full` (`database_tls_required`; [2.4](#24-completar-y-validar-pnpm-instancecheck)).
+   base de datos remota sin `sslmode=verify-full` (`database_tls_required`, o `database_tls_ip_host` si el servidor va por IP;
+   [2.4](#24-completar-y-validar-pnpm-instancecheck)).
 
 2. **Fichero de entorno con dueño el operador y modo `0600`**, pasado al contenedor con
    `--env-file` (nunca con `-e VARIABLE=valor`, que queda en el historial de la shell).
@@ -289,7 +320,8 @@ es el usuario de la máquina que despliega y `cliente-x` el `id` de la instancia
 
    Pon en la URL el **nombre** del servidor tal como figura en su certificado, **nunca una IP**:
    con una IP, la librería de PostgreSQL no le pasa la dirección a TLS y el certificado se compara
-   con `localhost`, así que la comprobación del nombre deja de proteger. Las variables `PG*` del
+   con `localhost`, así que la comprobación del nombre deja de proteger. Por eso `instance:check`
+   da error `database_tls_ip_host` e `instance:db` se niega a conectar. Las variables `PG*` del
    entorno no cuentan: la regla mira solo la URL.
 
    Comprobación: `instance:check` sin `database_tls_required` y la instancia arranca. Si el
@@ -947,12 +979,14 @@ Estado tomado del [README](../README.md) a 2026-10-06.
 | 010 | Consumo y coste por instancia | Completada (2026-10-01) | **Era la propuesta P4**: consumo del modelo por canal sin textos, pantalla **Consumo** con precios por modelo y moneda de coste, tope mensual de gasto con salida a una persona, y su estado en `/health` y en `instance:versions` ([sección 4.1](#41-consumo-precios-y-tope-en-el-panel-010)) |
 | 011 | Diseño del chat web | Completada (2026-10-05) | No venía de ninguna propuesta de esta sección. Cada cliente tiene su chat con su imagen sin despliegue ni cambiar el fragmento: sección **Diseño del chat** del panel, contraste mínimo garantizado, aviso de asistente automático y salida a una persona siempre presentes, formato 2 del fichero de configuración con el diseño y sus imágenes ([sección 2.6](#26-configuración-del-negocio-en-el-panel-de-producción)) |
 | 012 | Protección frente a abuso y saturación | Completada (2026-10-06) | **Era la propuesta P8**: tope de gasto obligatorio en producción que falla cerrado, transcripción dentro del tope y tope diario de WhatsApp ([sección 4.1](#41-consumo-precios-y-tope-en-el-panel-010)); límites de derivación con reenvíos agrupados ([sección 4.2](#42-límites-de-derivación-012)); límites por dirección (/64) en las rutas públicas y pool de BD acotado; login con retardo en lugar de bloqueo; plazos en las llamadas salientes y reintentos de lotes; importación acotada; una sola regla de enlaces; registros sin datos y arranque que rechaza secretos débiles ([sección 5.0](#50-antes-de-la-primera-vez-una-vez-por-instancia)) |
-| 013 | Requisitos de despliegue seguro | Completada (2026-10-06; validación de la receta por una persona ajena pendiente, T044b) | **Era la propuesta P9**: `instance:check` da NO APTO en producción con `TRUST_PROXY` vacío y `https` y con URL de base de datos remotas sin `sslmode=verify-full`; `instance:db` se niega a conectar sin TLS verificado (`--sslrootcert`); TLS verificado en todas las conexiones con mensajes sin datos; `db:verify` con bases temporales cerradas a otros usuarios y limpieza de huérfanas; imagen con `HEALTHCHECK`, base fijada por digest y pnpm con hash; receta de producción con comprobaciones ([sección 2.5](#25-despliegue), [2.3](#23-crear-la-base-de-datos-pnpm-instancedb), [2.4](#24-completar-y-validar-pnpm-instancecheck), [5](#5-actualizar-el-núcleo) y [8](#8-copias-de-seguridad-guía-de-validación)) |
+| 013 | Requisitos de despliegue seguro | Completada (2026-10-06) | **Era la propuesta P9**: `instance:check` da NO APTO en producción con `TRUST_PROXY` vacío y `https` y con URL de base de datos remotas sin `sslmode=verify-full`; `instance:db` se niega a conectar sin TLS verificado (`--sslrootcert`); TLS verificado en todas las conexiones con mensajes sin datos; `db:verify` con bases temporales cerradas a otros usuarios y limpieza de huérfanas; imagen con `HEALTHCHECK`, base fijada por digest y pnpm con hash; receta de producción con comprobaciones ([sección 2.5](#25-despliegue), [2.3](#23-crear-la-base-de-datos-pnpm-instancedb), [2.4](#24-completar-y-validar-pnpm-instancecheck), [5](#5-actualizar-el-núcleo) y [8](#8-copias-de-seguridad-guía-de-validación)) |
 
 Todas están completadas. Quedan aplazadas la evaluación de audios de la 002 (T083), que se hace
 antes de activar los audios en una instancia, el ensayo de la guía de publicación de la 009 con
-una persona que no haya participado (SC-006) y el de la receta de producción de la 013 (§2.5,
-T044b, SC-006), que se hace antes de la primera publicación en producción. Además, el canal WhatsApp no está activo en ningún
+una persona que no haya participado (SC-006). La receta de producción de la 013 (§2.5) no la ha
+validado una persona ajena porque el proyecto lo lleva una sola persona (T044b, cerrada por
+decisión del responsable): el primer despliegue en producción es su validación, siguiéndola paso
+a paso y corrigiéndola donde no se cumpla una comprobación. Además, el canal WhatsApp no está activo en ningún
 cliente y ha cambiado con la 012: antes de activarlo en el primer cliente se revisa entero en desarrollo
 con una app de pruebas (ver `WHATSAPP_*` en la [sección 2.4](#24-completar-y-validar-pnpm-instancecheck)),
 incluido el 404 que registra la URL completa cuando WhatsApp no está configurado (desviación del
@@ -1049,7 +1083,8 @@ Por qué este orden:
 ### P9. Requisitos de despliegue seguro
 
 - **Estado**: **hecha** (feature 013, 2026-10-06). La receta de producción está en la
-  [sección 2.5](#25-despliegue); queda que una persona ajena la siga en una máquina limpia (T044b).
+  [sección 2.5](#25-despliegue). No la ha validado una persona ajena (proyecto de una sola
+  persona): se valida en el primer despliegue.
 - **Ámbito**: núcleo (operación y documentación).
 - **Origen**: auditoría completa del 2026-10-05 (agente de infraestructura).
 - **Problema**: la aplicación ya hace bien lo que le toca, pero su seguridad en producción depende
@@ -1379,6 +1414,7 @@ Referencias reales:
 | Fecha | Tipo | Alcance | Resultado |
 |---|---|---|---|
 | 2026-10-05 | De feature | 011, `59d8c30..HEAD` | Sin hallazgos críticos ni altos. 1 media: la ruta pública de imágenes del diseño lee y revalida la imagen antes de comprobar el hash, sin límite de peticiones. 4 bajas: límite de 8 MB en el guardado del diseño, caracteres Unicode de dirección en los textos, bloques PNG desconocidos y SOF duplicados en JPEG, error completo en el log. Fuera de alcance: AES-GCM sin longitud de etiqueta fijada (`src/handoff/tokens.ts`, copias), clave fija de test detectada por gitleaks, `.gitignore` sin `*.pem` ni `*.key` |
+| 2026-10-06 | De feature | 013, cambios de `src/`, `Dockerfile` y configuración desde `cee65c7^` (revisión manual: `/security-review` necesita un remoto) | Sin hallazgos explotables. SQL dinámico de `db:verify` (`DROP`, `CREATE`, `REVOKE`) solo con nombres generados o filtrados por el patrón exacto y citados; ningún mensaje ni registro con URL, host, ruta o nombres del certificado; la sonda de salud solo habla con `127.0.0.1`. Comprobado que una URL que la clasificación da por no válida y `pg` sí acepta nunca acaba en una conexión remota sin TLS (socket local o nombre que no resuelve). Encontrado al implementar y corregido: con una IP en la URL, `verify-full` no comprobaba el nombre del certificado (`pg` no pasa la IP a TLS); ahora es `database_tls_ip_host`. Notas: una `DATABASE_URL` no interpretable no da error en `instance:check` (el esquema del arranque solo exige que no esté vacía); una base `verify_<16 hex>` del formato anterior se borra si no tiene conexiones, aunque sea de una verificación de un núcleo anterior que acaba de empezar (esa verificación fallaría; no se pierden datos) |
 | 2026-10-05 | Completa | Todo el repositorio, infraestructura, dependencias e historial de git (8 agentes, sección 11.5) | **No apta todavía para producción.** Sin vulnerabilidades críticas ni de toma de control o fuga de datos: XSS, SQL, comandos, CSRF, sesiones, firma del webhook, cifrado y secretos, correctos. Bloqueantes de abuso y disponibilidad (comprobados en el código): tope de gasto desactivado por defecto y sin exigir; los reenvíos de una derivación no cuentan para ningún tope (avisos y plantillas de pago sin límite, con texto del atacante); rutas públicas del chat sin límite de peticiones; el límite global del login deja fuera al operador; llamadas a Meta sin plazo; Whisper fuera del tope de gasto. Además: importación con coste cuadrático, enlaces que el verificador no ve, errores completos y `hub.verify_token` en los logs, y requisitos de despliegue sin documentar (TLS hacia PostgreSQL, puerto 3000, `TRUST_PROXY`, healthcheck, BD de verificación). El aviso de semgrep sobre AES-GCM resultó no explotable. Dependencias de producción sin CVE conocidas. **Cerrados**: los bloqueantes de abuso y disponibilidad, con la 012; los requisitos de despliegue (TLS hacia PostgreSQL, puerto 3000, `TRUST_PROXY`, healthcheck, BD de verificación) y `.gitignore` sin `*.pem`/`*.key` (de la auditoría de la 011), con la 013 |
 
 ---
