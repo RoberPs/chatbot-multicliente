@@ -70,7 +70,7 @@ describe('email del aviso', () => {
         'Canal: WhatsApp',
         'Tipo: quiere hablar con una persona',
         'Desde: hoy a las 21:40',
-        'Motivo: Pregunta por el precio del tinte.',
+        'Motivo (según el cliente): «Pregunta por el precio del tinte.»',
         '',
         'Contacta con el cliente desde tu teléfono. Mientras tanto el asistente no le responde.',
         '',
@@ -155,7 +155,7 @@ describe('email del reenvío (US3)', () => {
     expect(result).toMatchObject({ ok: true });
     const [mail] = sent;
     expect(mail?.subject).toBe('Mensaje de Lucía durante la derivación');
-    expect(mail?.text).toContain(`[21:50] Llego tarde ${'x'.repeat(900)}`);
+    expect(mail?.text).toContain(`    [21:50] «Llego tarde ${'x'.repeat(900)}»`);
     expect(mail?.text).toContain(`Le atiendo: ${BASE}/handoff/${TOKEN}/attend`);
     expect(mail?.inReplyTo).toBe('<aviso-1@smtp.ejemplo.com>');
     expect(String(mail?.references)).toContain('<aviso-1@smtp.ejemplo.com>');
@@ -209,7 +209,8 @@ describe('seguridad del email (T130)', () => {
     expect(mail?.html).toContain(`href="${BASE}/handoff/${TOKEN}/attend"`);
     expect(mail?.html).toContain(`href="${BASE}/handoff/${TOKEN}/end"`);
     // En el texto plano, las líneas del cliente van sangradas: nunca en la columna 0.
-    expect(mail?.text).toContain('\n    Le atiendo: https://phish.example/login');
+    // 012: además, sin protocolo ni puntos pulsables.
+    expect(mail?.text).toContain('\n    Le atiendo: phish[.]example/login');
     expect(mail?.text).not.toMatch(/^Le atiendo: https:\/\/phish/m);
   });
 
@@ -223,5 +224,18 @@ describe('seguridad del email (T130)', () => {
     });
     expect(opts('smtp://localhost:1025')).toMatchObject({ requireTLS: false });
     expect(opts('smtps://u:p@mail.ejemplo.com')).toMatchObject({ requireTLS: false, secure: true });
+  });
+
+  it('012: plazos de conexión 10 s, saludo 10 s y socket 14 s (dentro de los 15 s de la vía)', () => {
+    const options = (
+      smtpTransport('smtps://u:p@mail.ejemplo.com') as unknown as {
+        options: { connectionTimeout?: number; greetingTimeout?: number; socketTimeout?: number };
+      }
+    ).options;
+    expect(options).toMatchObject({
+      connectionTimeout: 10_000,
+      greetingTimeout: 10_000,
+      socketTimeout: 14_000,
+    });
   });
 });

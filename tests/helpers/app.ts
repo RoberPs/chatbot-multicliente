@@ -1,4 +1,5 @@
 import argon2 from 'argon2';
+import type { LoginThrottle } from '../../src/admin/auth/login-throttle.js';
 import type { FastifyInstance, LightMyRequestResponse } from 'fastify';
 import { buildApp, type BotHttp } from '../../src/app.js';
 import { loadEnv } from '../../src/config/env.js';
@@ -6,6 +7,7 @@ import type { Db } from '../../src/db/client.js';
 import { createLifecycle } from '../../src/health/lifecycle.js';
 import { createInstanceHealth, type InstanceHealth } from '../../src/health/report.js';
 import { readCoreVersion } from '../../src/health/version.js';
+import type { ProtectionConfig } from '../../src/usage/protection.js';
 
 export const OPERATOR_USER = 'operador';
 export const OPERATOR_PASSWORD = 'contraseña-de-prueba';
@@ -27,7 +29,12 @@ export async function buildTestApp(
   /** Registros de la app en líneas JSON (sin él, la app no registra nada). */
   logLines?: string[],
   /** Salud de la instancia (009); por defecto, el sondeo real contra la BD del test y lista. */
-  options: { health?: InstanceHealth } = {},
+  options: {
+    health?: InstanceHealth;
+    protection?: ProtectionConfig;
+    publicDb?: Db;
+    loginThrottle?: LoginThrottle;
+  } = {},
 ): Promise<FastifyInstance> {
   passwordHash ??= argon2.hash(OPERATOR_PASSWORD, { type: argon2.argon2id });
   const env = loadEnv({
@@ -61,6 +68,9 @@ export async function buildTestApp(
     ...(logLines ? { logStream: { write: (line: string) => void logLines.push(line) } } : {}),
     bot,
     health,
+    ...(options.protection ? { protection: options.protection } : {}),
+    ...(options.publicDb ? { publicDb: options.publicDb } : {}),
+    ...(options.loginThrottle ? { loginThrottle: options.loginThrottle } : {}),
   });
   await app.ready();
   return app;

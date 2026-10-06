@@ -66,9 +66,9 @@ describe('registros de la derivación sin datos personales (FR-022)', () => {
     const token = b.alertRoutes.email.received[0]?.handoff.token;
     if (!token) throw new Error('Sin derivación');
 
-    // Reenvío durante la derivación.
+    // Reenvío durante la derivación (agrupado: sale al cumplirse el intervalo, 012).
     await b.sendVia('web', `Otra cosa ${MARK}`);
-    await b.settle();
+    await b.settle(15 * 60 * 1000);
 
     // Recordatorio a las 2 h de horario, con R-HANDOFF-LATE al cliente.
     b.clock.advance(3 * 60 * 60 * 1000);

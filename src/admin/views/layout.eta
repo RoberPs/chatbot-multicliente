@@ -44,6 +44,7 @@
       <a href="<%= item[0] %>"<% if (current) { %> aria-current="page"<% } %>><%= item[1] %></a>
     <% }) %>
   </nav>
+  <%~ include('/partials/protection-banner', { warnings: it.layout.protection }) %>
   <%~ include('/partials/spend-banner', { spend: it.layout.spend }) %>
   <main id="main">
     <%~ include('/partials/flash', { flash: it.layout.flash }) %>

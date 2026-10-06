@@ -63,7 +63,9 @@ describe('Exportar e importar (/admin/config)', () => {
         expect(res.body).toMatch(/<a href="\/admin\/config"[^>]*>Exportar e importar<\/a>/);
       }
       const page = await get(app, session, '/admin/config');
-      expect(page.body).toContain('<a href="/admin/config" aria-current="page">Exportar e importar</a>');
+      expect(page.body).toContain(
+        '<a href="/admin/config" aria-current="page">Exportar e importar</a>',
+      );
     });
   });
 
@@ -71,7 +73,9 @@ describe('Exportar e importar (/admin/config)', () => {
     it('el formulario lleva la casilla desmarcada y el aviso de lo que no incluye', async () => {
       const res = await get(app, session, '/admin/config');
       expect(res.body).toContain('action="/admin/config/export"');
-      expect(res.body).toMatch(/<input[^>]*name="include_alerts"[^>]*type="checkbox"(?![^>]*checked)[^>]*>/);
+      expect(res.body).toMatch(
+        /<input[^>]*name="include_alerts"[^>]*type="checkbox"(?![^>]*checked)[^>]*>/,
+      );
       expect(res.body).toContain('Incluir los destinos de los avisos de derivación');
       expect(res.body).toContain(
         'El fichero no incluye conversaciones, clientes ni secretos de la instancia',
@@ -98,13 +102,7 @@ describe('Exportar con INSTANCE_ID y registro (/admin/config/export)', () => {
 
   beforeAll(async () => {
     t = await createTestDatabase();
-    app = await buildTestApp(
-      t.db,
-      'postgres://no-usada',
-      null,
-      instanceEnv('demo-01'),
-      lines,
-    );
+    app = await buildTestApp(t.db, 'postgres://no-usada', null, instanceEnv('demo-01'), lines);
   });
   afterAll(async () => {
     await app.close();

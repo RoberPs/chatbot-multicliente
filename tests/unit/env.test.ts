@@ -3,6 +3,17 @@ import { parseEnv } from 'node:util';
 import { describe, expect, it } from 'vitest';
 import { checkEnv, loadEnv } from '../../src/config/env.js';
 
+/**
+ * Secretos de prueba que pasan las reglas de producción (012): estas pruebas son del esquema; la
+ * calidad de los secretos la prueba `tests/unit/config/secret-rules.test.ts`.
+ */
+const ACCESS_TOKEN = 'EAAGm4Kq7pX2vR9tL4wN8bZ3cY6dF1hJ5sQ0uE7gT2kM9nV4xB8aW3rP6';
+const APP_SECRET = '4f9c2e7a1b8d3f6a0c5e9b2d7f4a1c8e';
+const VERIFY_TOKEN = '7d3a9f1c5e8b2d6a0f4c9e3b7a1d5f8c2e6b0a4d9f3c7e1b';
+const LLM_KEY = 'sk-ant-api03-Hq4Lm8Rt2Vx6Zb9Cd3Fg7Jk1Np5Sw0Yu4Ea8Ic2Mo6Qs9';
+const STT_KEY = 'sk-proj-Wd7Kp2Xq9Lm4Rt8Vb3Nz6';
+const SMTP_PASSWORD = 'Xq7mP2vR9tL4wK8n';
+
 const base = {
   DATABASE_URL: 'postgres://x',
   OPERATOR_USER: 'operador',
@@ -13,6 +24,8 @@ const base = {
   INSTANCE_ID: 'demo-01',
   BACKUP_DIR: '/var/lib/chatbot/backups',
   BACKUP_KEY: '9c4e1a7f3b5d2068e1a3c5f7092b4d6e8a0c2e4f6183a5c7e9b1d3f5a7c9e0b4',
+  // 012: obligatoria en production.
+  HEALTH_SECRET: '5b8e2d4f6a1c3087e2a4c6f8093b5d7e9a1c3e5f7294b6d8f0a2c4e6b8d0f1a3',
 };
 
 describe('variables de la instancia', () => {
@@ -56,21 +69,21 @@ describe('variables de la instancia', () => {
   describe('canal de WhatsApp y bot', () => {
     const channel = {
       WHATSAPP_PHONE_NUMBER_ID: '123456',
-      WHATSAPP_ACCESS_TOKEN: 'token',
-      WHATSAPP_APP_SECRET: 'secreto',
-      WHATSAPP_VERIFY_TOKEN: 'verificacion',
+      WHATSAPP_ACCESS_TOKEN: ACCESS_TOKEN,
+      WHATSAPP_APP_SECRET: APP_SECRET,
+      WHATSAPP_VERIFY_TOKEN: VERIFY_TOKEN,
       WHATSAPP_GRAPH_VERSION: 'v23.0',
       EMERGENCY_CONTACT_PHONE: '+34 600 111 222',
-      ANTHROPIC_API_KEY: 'sk-ant-prueba',
+      ANTHROPIC_API_KEY: LLM_KEY,
     };
 
     it('canal completo → objeto whatsapp y valores por defecto del modelo y los audios', () => {
       const env = loadEnv({ ...base, ...channel });
       expect(env.whatsapp).toEqual({
         phoneNumberId: '123456',
-        accessToken: 'token',
-        appSecret: 'secreto',
-        verifyToken: 'verificacion',
+        accessToken: ACCESS_TOKEN,
+        appSecret: APP_SECRET,
+        verifyToken: VERIFY_TOKEN,
         graphVersion: 'v23.0',
       });
       expect(env.emergencyContactPhone).toBe('+34600111222');
@@ -115,7 +128,7 @@ describe('variables de la instancia', () => {
         /STT_API_KEY/,
       );
       expect(
-        loadEnv({ ...base, ...channel, AUDIO_TRANSCRIPTION: 'on', STT_API_KEY: 'sk' })
+        loadEnv({ ...base, ...channel, AUDIO_TRANSCRIPTION: 'on', STT_API_KEY: STT_KEY })
           .audioTranscription,
       ).toBe(true);
     });
@@ -127,7 +140,7 @@ describe('variables de la instancia', () => {
 
   describe('bot sin WhatsApp (004)', () => {
     it('clave del modelo sin contacto de emergencia → error', () => {
-      expect(() => loadEnv({ ...base, ANTHROPIC_API_KEY: 'sk-ant-prueba' })).toThrow(
+      expect(() => loadEnv({ ...base, ANTHROPIC_API_KEY: LLM_KEY })).toThrow(
         /EMERGENCY_CONTACT_PHONE es obligatoria con ANTHROPIC_API_KEY/,
       );
     });
@@ -135,7 +148,7 @@ describe('variables de la instancia', () => {
     it('clave del modelo con contacto de emergencia → válido y sin WhatsApp', () => {
       const env = loadEnv({
         ...base,
-        ANTHROPIC_API_KEY: 'sk-ant-prueba',
+        ANTHROPIC_API_KEY: LLM_KEY,
         EMERGENCY_CONTACT_PHONE: '+34600111222',
       });
       expect(env.whatsapp).toBeNull();
@@ -174,8 +187,8 @@ describe('variables de la instancia', () => {
     });
 
     it.each([
-      ['smtps', 'smtps://usuario:clave@correo.ejemplo.com:465'],
-      ['smtp con STARTTLS', 'smtp://usuario:clave@correo.ejemplo.com:587'],
+      ['smtps', `smtps://usuario:${SMTP_PASSWORD}@correo.ejemplo.com:465`],
+      ['smtp con STARTTLS', `smtp://usuario:${SMTP_PASSWORD}@correo.ejemplo.com:587`],
     ])('SMTP completo (%s) → url y remitente', (_name, url) => {
       const env = loadEnv({ ...base, SMTP_URL: url, SMTP_FROM: ' Avisos@Ejemplo.com ' });
       expect(env.smtp).toEqual({ url, from: 'avisos@ejemplo.com' });
@@ -225,6 +238,7 @@ describe('variables de la instancia', () => {
   });
   describe('copias de seguridad (006)', () => {
     const KEY_B = '1b3d5f7092a4c6e8f0a2c4e6183b5d7f9a1c3e5072b4d6f8e0a2c4e6f8193b5d';
+    const KEY_C = '6e2a8c4f0b7d3e9a1c5f8b2d6a0e4c7f9b3d1a5e8c2f6b0d4a9e3c7f1b5d8a2e';
     const { INSTANCE_ID: _i, BACKUP_DIR: _d, BACKUP_KEY: _k, ...withoutBackup } = base;
     const dev = { ...withoutBackup, NODE_ENV: 'development' };
 
@@ -288,8 +302,9 @@ describe('variables de la instancia', () => {
     });
 
     it('BACKUP_KEY igual a SESSION_SECRET → error', () => {
+      // 012: la regla `reused` de los secretos sustituye a la propia de la 006.
       expect(() => loadEnv({ ...base, BACKUP_KEY: base.SESSION_SECRET.toUpperCase() })).toThrow(
-        /BACKUP_KEY debe ser distinta de SESSION_SECRET/,
+        '- BACKUP_KEY: coincide con SESSION_SECRET',
       );
     });
 
@@ -297,9 +312,9 @@ describe('variables de la instancia', () => {
       expect(
         loadEnv({
           ...base,
-          BACKUP_KEYS_PREVIOUS: ` ${KEY_B.toUpperCase()} , ${base.SESSION_SECRET}`,
+          BACKUP_KEYS_PREVIOUS: ` ${KEY_B.toUpperCase()} , ${KEY_C}`,
         }).backup?.previousKeys,
-      ).toEqual([KEY_B, base.SESSION_SECRET]);
+      ).toEqual([KEY_B, KEY_C]);
       expect(() => loadEnv({ ...base, BACKUP_KEYS_PREVIOUS: `${KEY_B},abc` })).toThrow(
         /BACKUP_KEYS_PREVIOUS/,
       );
@@ -335,9 +350,12 @@ describe('variables de la instancia', () => {
 describe('secreto de salud (009, R2)', () => {
   const HEALTH = '5b8e2d4f6a1c3087e2a4c6f8093b5d7e9a1c3e5f7294b6d8f0a2c4e6b8d0f1a3';
 
-  it('es opcional: sin él la instancia arranca', () => {
-    expect(loadEnv(base).HEALTH_SECRET).toBeUndefined();
-    expect(loadEnv({ ...base, HEALTH_SECRET: ' ' }).HEALTH_SECRET).toBeUndefined();
+  it('fuera de production es opcional; en production es obligatoria (012)', () => {
+    const { HEALTH_SECRET: _omit, ...without } = base;
+    const development = { ...without, NODE_ENV: 'development' };
+    expect(loadEnv(development).HEALTH_SECRET).toBeUndefined();
+    expect(loadEnv({ ...development, HEALTH_SECRET: ' ' }).HEALTH_SECRET).toBeUndefined();
+    expect(() => loadEnv(without)).toThrow('- HEALTH_SECRET: es obligatoria en producción');
   });
 
   it('válida: 64 hex aleatorios, normalizada a minúsculas', () => {
@@ -354,19 +372,17 @@ describe('secreto de salud (009, R2)', () => {
     expect(() => loadEnv({ ...base, HEALTH_SECRET: value })).toThrow(/HEALTH_SECRET/);
   });
 
-  it('igual a SESSION_SECRET o a BACKUP_KEY → regla propia', () => {
-    expect(
-      checkEnv({ ...base, HEALTH_SECRET: base.SESSION_SECRET.toUpperCase() }).map(
-        (i) => `${i.rule}:${i.variable ?? '-'}`,
-      ),
-    ).toEqual(['health_secret_equals_session:HEALTH_SECRET']);
-    expect(
-      checkEnv({ ...base, HEALTH_SECRET: base.BACKUP_KEY }).map(
-        (i) => `${i.rule}:${i.variable ?? '-'}`,
-      ),
-    ).toEqual(['health_secret_equals_backup_key:HEALTH_SECRET']);
+  it('igual a SESSION_SECRET o a BACKUP_KEY → regla reused con la otra variable (012)', () => {
+    expect(checkEnv({ ...base, HEALTH_SECRET: base.SESSION_SECRET.toUpperCase() })).toEqual([
+      {
+        variable: 'HEALTH_SECRET',
+        rule: 'reused',
+        otherVariable: 'SESSION_SECRET',
+        message: 'HEALTH_SECRET: coincide con SESSION_SECRET',
+      },
+    ]);
     expect(() => loadEnv({ ...base, HEALTH_SECRET: base.BACKUP_KEY })).toThrow(
-      /HEALTH_SECRET debe ser distinta de BACKUP_KEY/,
+      '- HEALTH_SECRET: coincide con BACKUP_KEY',
     );
   });
 
@@ -379,8 +395,12 @@ describe('secreto de salud (009, R2)', () => {
 });
 
 describe('checkEnv (007, research R2)', () => {
+  /** Reglas del esquema; las de los secretos (012) se prueban en secret-rules.test.ts. */
+  const SECRET_RULES = new Set(['too_short', 'example_value', 'trivial', 'health_secret_required']);
   const rules = (source: Record<string, string | undefined>) =>
-    checkEnv(source).map((i) => `${i.rule}:${i.variable ?? '-'}`);
+    checkEnv(source)
+      .filter((i) => !SECRET_RULES.has(i.rule))
+      .map((i) => `${i.rule}:${i.variable ?? '-'}`);
 
   it('entorno válido → sin incidencias', () => {
     expect(checkEnv(base)).toEqual([]);
@@ -399,6 +419,8 @@ describe('checkEnv (007, research R2)', () => {
   it('WhatsApp parcial → una entrada whatsapp_incomplete por variable que falta', () => {
     const issues = checkEnv({
       ...base,
+      // Fuera de production: solo las reglas del esquema (los valores de prueba son cortos).
+      NODE_ENV: 'development',
       WHATSAPP_PHONE_NUMBER_ID: '1',
       WHATSAPP_VERIFY_TOKEN: 'v',
       WHATSAPP_GRAPH_VERSION: 'v23.0',
@@ -433,10 +455,11 @@ describe('checkEnv (007, research R2)', () => {
     ]);
   });
 
-  it('BACKUP_KEY igual a SESSION_SECRET → backup_key_equals_session', () => {
-    expect(rules({ ...base, BACKUP_KEY: base.SESSION_SECRET })).toEqual([
-      'backup_key_equals_session:BACKUP_KEY',
-    ]);
+  it('BACKUP_KEY igual a SESSION_SECRET → reused en production; fuera, nada (012)', () => {
+    expect(rules({ ...base, BACKUP_KEY: base.SESSION_SECRET })).toEqual(['reused:BACKUP_KEY']);
+    expect(rules({ ...base, BACKUP_KEY: base.SESSION_SECRET, NODE_ENV: 'development' })).toEqual(
+      [],
+    );
   });
 
   it('reglas del bot: teléfono de emergencia, clave del modelo y transcripción', () => {
@@ -487,7 +510,8 @@ describe('checkEnv (007, research R2)', () => {
     ]);
   });
 
-  // FR-034: el arranque no cambia. Textos capturados antes de añadir checkEnv.
+  // FR-034: el arranque no cambia. Textos capturados antes de añadir checkEnv; desde la 012, en
+  // production se añaden al final las incidencias de los secretos.
   it.each([
     [
       'vacío',
@@ -503,7 +527,7 @@ describe('checkEnv (007, research R2)', () => {
         ANTHROPIC_API_KEY: 'k',
         EMERGENCY_CONTACT_PHONE: '+34600111222',
       },
-      'Configuración de la instancia no válida:\n- Las variables WHATSAPP_* van juntas; faltan: WHATSAPP_APP_SECRET, WHATSAPP_VERIFY_TOKEN, WHATSAPP_GRAPH_VERSION',
+      'Configuración de la instancia no válida:\n- Las variables WHATSAPP_* van juntas; faltan: WHATSAPP_APP_SECRET, WHATSAPP_VERIFY_TOKEN, WHATSAPP_GRAPH_VERSION\n- WHATSAPP_ACCESS_TOKEN: tiene un valor de relleno, repetido o en secuencia\n- ANTHROPIC_API_KEY: tiene un valor de relleno, repetido o en secuencia',
     ],
     [
       'copias en production',
@@ -523,7 +547,7 @@ describe('checkEnv (007, research R2)', () => {
         AUDIO_TRANSCRIPTION: 'on',
         ANTHROPIC_API_KEY: 'k',
       },
-      'Configuración de la instancia no válida:\n- EMERGENCY_CONTACT_PHONE es obligatoria con ANTHROPIC_API_KEY\n- STT_API_KEY es obligatoria con AUDIO_TRANSCRIPTION=on\n- BACKUP_KEY debe ser distinta de SESSION_SECRET',
+      'Configuración de la instancia no válida:\n- EMERGENCY_CONTACT_PHONE es obligatoria con ANTHROPIC_API_KEY\n- STT_API_KEY es obligatoria con AUDIO_TRANSCRIPTION=on\n- BACKUP_KEY: coincide con SESSION_SECRET\n- ANTHROPIC_API_KEY: tiene un valor de relleno, repetido o en secuencia',
     ],
     [
       'campos',
@@ -534,7 +558,7 @@ describe('checkEnv (007, research R2)', () => {
         BACKUP_KEYS_PREVIOUS: 'abc',
         EMERGENCY_CONTACT_PHONE: '600',
       },
-      'Configuración de la instancia no válida:\n- SESSION_SECRET debe ser 32 bytes aleatorios en hexadecimal (openssl rand -hex 32)\n- SESSION_SECRET no parece aleatoria\n- BACKUP_KEYS_PREVIOUS debe ser una lista de claves de 64 hex separadas por comas\n- BACKUP_RETENTION_DAYS debe estar entre 1 y 30 días (máximo 30)',
+      'Configuración de la instancia no válida:\n- SESSION_SECRET debe ser 32 bytes aleatorios en hexadecimal (openssl rand -hex 32)\n- SESSION_SECRET no parece aleatoria\n- BACKUP_KEYS_PREVIOUS debe ser una lista de claves de 64 hex separadas por comas\n- BACKUP_RETENTION_DAYS debe estar entre 1 y 30 días (máximo 30)\n- SESSION_SECRET: tiene un valor de relleno, repetido o en secuencia\n- BACKUP_KEYS_PREVIOUS: tiene un valor de relleno, repetido o en secuencia',
     ],
     [
       'copias parciales en development',

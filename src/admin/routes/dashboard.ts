@@ -4,7 +4,8 @@ import { ActivationBlockedError } from '../../knowledge/errors.js';
 import { activateBusiness, deactivateBusiness } from '../../knowledge/services/business-status.js';
 import { readWebChatSettings } from '../../webchat/settings.js';
 import { capReached, readWebUsage } from '../../webchat/usage.js';
-import { readState, renderPage, savedResponse } from '../render.js';
+import { protectionWarnings } from '../../usage/protection.js';
+import { readProtection, readState, renderPage, savedResponse } from '../render.js';
 import { sectionSummaries } from '../section-summaries.js';
 
 /**
@@ -45,7 +46,10 @@ export async function dashboardRoutes(app: FastifyInstance): Promise<void> {
 
   app.post('/status/activate', async (request, reply) => {
     try {
-      await activateBusiness(db);
+      // 012: sin tope o sin precio en producción, el negocio no se puede activar (FR-003).
+      const state = await readState(app.knowledge);
+      const protection = protectionWarnings(await readProtection(app, state.business.timezone));
+      await activateBusiness(db, protection);
     } catch (err) {
       if (!(err instanceof ActivationBlockedError)) throw err;
       return renderPage(

@@ -2,6 +2,8 @@ import { isAbsolute } from 'node:path';
 import { parsePhoneNumberFromString } from 'libphonenumber-js';
 import { z } from 'zod';
 import { isValidTimezone } from '../knowledge/schemas/common.js';
+import type { ProtectionConfig } from '../usage/protection.js';
+import { checkSecrets, secretFindingText } from './secret-rules.js';
 
 // Reutilizado por las herramientas de aprovisionamiento (007) con las mismas reglas del arranque.
 export { isValidTimezone };
@@ -391,13 +393,6 @@ const botSchema = envSchema.transform((raw, ctx) => {
       key: raw.BACKUP_KEY ?? '',
       previousKeys: raw.BACKUP_KEYS_PREVIOUS,
     };
-    if (backup.key === raw.SESSION_SECRET.toLowerCase()) {
-      ctx.addIssue({
-        code: 'custom',
-        message: 'BACKUP_KEY debe ser distinta de SESSION_SECRET',
-        params: { rule: 'backup_key_equals_session', variables: ['BACKUP_KEY'] },
-      });
-    }
   } else if (raw.NODE_ENV === 'production') {
     ctx.addIssue({
       code: 'custom',
@@ -412,24 +407,8 @@ const botSchema = envSchema.transform((raw, ctx) => {
     });
   }
 
-  // Secreto de salud (009, R2): distinto de cualquier otro secreto de la instancia.
-  if (raw.HEALTH_SECRET !== undefined) {
-    if (raw.HEALTH_SECRET === raw.SESSION_SECRET.toLowerCase()) {
-      ctx.addIssue({
-        code: 'custom',
-        message: 'HEALTH_SECRET debe ser distinta de SESSION_SECRET',
-        params: { rule: 'health_secret_equals_session', variables: ['HEALTH_SECRET'] },
-      });
-    }
-    if (raw.BACKUP_KEY !== undefined && raw.HEALTH_SECRET === raw.BACKUP_KEY) {
-      ctx.addIssue({
-        code: 'custom',
-        message: 'HEALTH_SECRET debe ser distinta de BACKUP_KEY',
-        params: { rule: 'health_secret_equals_backup_key', variables: ['HEALTH_SECRET'] },
-      });
-    }
-  }
-
+  // Los secretos repetidos (BACKUP_KEY, HEALTH_SECRET…) los detecta la regla `reused` de
+  // `secret-rules.ts` en producción (012).
   return {
     ...raw,
     BACKUP_VERIFY_URL: raw.BACKUP_VERIFY_URL ?? raw.DATABASE_URL,
@@ -443,10 +422,43 @@ const botSchema = envSchema.transform((raw, ctx) => {
 
 export type Env = z.infer<typeof botSchema>;
 
+/**
+ * Lo que decide la protección frente a abuso (012, R1): producción por `NODE_ENV` y los modelos
+ * configurados (el de transcripción, solo con los audios activados). El dominio lo recibe ya
+ * calculado y nunca lee `process.env`.
+ */
+export function protectionConfigFromEnv(
+  env: Pick<Env, 'NODE_ENV' | 'LLM_MODEL' | 'STT_MODEL' | 'audioTranscription'>,
+): ProtectionConfig {
+  return {
+    production: env.NODE_ENV === 'production',
+    llmModel: env.LLM_MODEL,
+    sttModel: env.audioTranscription ? env.STT_MODEL : null,
+  };
+}
+
+/**
+ * Calidad de los secretos (012, R14): solo en producción, con las reglas de `secret-rules.ts`
+ * que usa también `instance:check`. Fuera de producción el arranque solo lo registra.
+ */
+function secretIssues(source: NodeJS.ProcessEnv): EnvIssue[] {
+  if (source.NODE_ENV?.trim() !== 'production') return [];
+  return checkSecrets(source).map((finding) => ({
+    variable: finding.variable,
+    rule: finding.rule,
+    message: `${finding.variable}: ${secretFindingText(finding)}`,
+    ...(finding.otherVariable ? { otherVariable: finding.otherVariable } : {}),
+  }));
+}
+
 export function loadEnv(source: NodeJS.ProcessEnv = process.env): Env {
   const result = botSchema.safeParse(source);
-  if (!result.success) {
-    const detail = result.error.issues.map((i) => `- ${i.message}`).join('\n');
+  const messages = [
+    ...(result.success ? [] : result.error.issues.map((i) => i.message)),
+    ...secretIssues(source).map((i) => i.message),
+  ];
+  if (!result.success || messages.length > 0) {
+    const detail = messages.map((m) => `- ${m}`).join('\n');
     throw new Error(`Configuración de la instancia no válida:\n${detail}`);
   }
   return result.data;
@@ -460,6 +472,8 @@ export interface EnvIssue {
   variable: string | null;
   rule: string;
   message: string;
+  /** En la regla `reused` de los secretos (012): la otra variable con el mismo valor. */
+  otherVariable?: string;
 }
 
 /**
@@ -468,8 +482,8 @@ export interface EnvIssue {
  */
 export function checkEnv(source: NodeJS.ProcessEnv): EnvIssue[] {
   const result = botSchema.safeParse(source);
-  if (result.success) return [];
-  return result.error.issues.flatMap((issue): EnvIssue[] => {
+  if (result.success) return secretIssues(source);
+  const schemaIssues = result.error.issues.flatMap((issue): EnvIssue[] => {
     const params = (issue as { params?: { rule?: unknown; variables?: unknown } }).params;
     const field = typeof issue.path[0] === 'string' ? issue.path[0] : null;
     if (typeof params?.rule === 'string') {
@@ -486,6 +500,7 @@ export function checkEnv(source: NodeJS.ProcessEnv): EnvIssue[] {
     const rule = value === undefined || value.trim() === '' ? 'missing' : 'core_rule';
     return [{ variable: field, rule, message: issue.message }];
   });
+  return [...schemaIssues, ...secretIssues(source)];
 }
 
 /** Carga `.env` si existe (desarrollo local). En producción las variables llegan del entorno. */

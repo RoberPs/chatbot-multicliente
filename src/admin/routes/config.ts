@@ -71,7 +71,9 @@ export async function configRoutes(app: FastifyInstance): Promise<void> {
 
   // Un único almacén por instancia (R10); lo que caduca sin aplicarse se registra como cancelado.
   const pending = new PendingImports<ImportResult>({
-    onExpire: (entry) => { configImportCancelled(app.log, { reason: 'expired', sourceInstance: entry.sourceInstance }); },
+    onExpire: (entry) => {
+      configImportCancelled(app.log, { reason: 'expired', sourceInstance: entry.sourceInstance });
+    },
   });
 
   /** Página con los tres bloques; con los errores de una subida rechazada si los hay. */
@@ -102,7 +104,10 @@ export async function configRoutes(app: FastifyInstance): Promise<void> {
   }
 
   /** Pendiente caducado, de otra sesión o inexistente (404). */
-  async function renderExpired(request: FastifyRequest, reply: FastifyReply): Promise<FastifyReply> {
+  async function renderExpired(
+    request: FastifyRequest,
+    reply: FastifyReply,
+  ): Promise<FastifyReply> {
     const state = await readState(deps);
     return renderPage(request, reply, 'config/expired', { state, title: PREVIEW_TITLE }, 404);
   }
@@ -150,7 +155,9 @@ export async function configRoutes(app: FastifyInstance): Promise<void> {
     stage: 'upload' | 'confirm',
     reason: ImportRejectReason,
     extra: { issues?: number; sourceInstance?: string | null } = {},
-  ) => { configImportRejected(request.log, { stage, reason, ...extra }); };
+  ) => {
+    configImportRejected(request.log, { stage, reason, ...extra });
+  };
 
   app.get('/config', async (request, reply) => renderIndex(request, reply));
 
@@ -273,7 +280,11 @@ export async function configRoutes(app: FastifyInstance): Promise<void> {
       // Nada aplicado: se vuelve a la vista previa, recalculada con la configuración de ahora.
       const preview = await previewImport(deps.db, entry, importOptions(includeAlerts));
       const general =
-        reason === 'changed' ? CHANGED_MESSAGE : reason === 'critical' ? CRITICAL_MESSAGE : WEB_CHAT_MESSAGE;
+        reason === 'changed'
+          ? CHANGED_MESSAGE
+          : reason === 'critical'
+            ? CRITICAL_MESSAGE
+            : WEB_CHAT_MESSAGE;
       return renderPreview(request, reply, entry, preview, { general }, 409);
     }
 
@@ -305,7 +316,10 @@ export async function configRoutes(app: FastifyInstance): Promise<void> {
     const entry = pending.get(request.params.id, epochOf(request));
     if (!entry || entry.result) return renderExpired(request, reply);
     pending.remove(entry.id);
-    configImportCancelled(request.log, { reason: 'operator', sourceInstance: entry.sourceInstance });
+    configImportCancelled(request.log, {
+      reason: 'operator',
+      sourceInstance: entry.sourceInstance,
+    });
     return savedResponse(request, reply, '/admin/config', CANCELLED_MESSAGE);
   });
 

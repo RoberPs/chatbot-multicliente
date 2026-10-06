@@ -7,7 +7,12 @@
  */
 import type { HandoffStep } from '../handoff/types.js';
 import type { KnowledgeSnapshot } from '../knowledge/types.js';
-import { addTokenUsage, type ResponseUsage, type TokenUsage } from '../usage/types.js';
+import {
+  addTokenUsage,
+  type CapReason,
+  type ResponseUsage,
+  type TokenUsage,
+} from '../usage/types.js';
 import type { ActivityLog, ReplyTemplate } from './activity-log.js';
 import type { Channel } from './channels.js';
 import { buildAllowedFacts, deriveFacts } from './facts.js';
@@ -94,6 +99,8 @@ export interface Response {
    * respuesta acabó en R-SAFE o R-ERR. Sin ninguno, no hay consumo que registrar.
    */
   usage?: ResponseUsage;
+  /** Por qué se respondió sin modelo (012, R4); va a `reply_trace.capReason`. */
+  capReason?: CapReason;
 }
 
 export interface ComposeInput {
@@ -208,6 +215,20 @@ export function unreadableSnapshotReply(emergencyPhone: string | null): Response
   const contact = emergencyPhone ? emergencyContact(emergencyPhone) : null;
   const { text, truncated } = joinParts({ body: errorReply('tu'), contact });
   return templateResponse(text, truncated, contact !== null, 'R-ERR');
+}
+
+/**
+ * R-ERR al abandonar un lote que falla una y otra vez (012, R10): la disculpa con el contacto del
+ * negocio o, sin snapshot, con el de emergencia. Sin modelo.
+ */
+export function abandonedBatchReply(
+  snapshot: KnowledgeSnapshot | null,
+  emergencyPhone: string | null,
+): Response {
+  if (!snapshot) return unreadableSnapshotReply(emergencyPhone);
+  const body = errorReply(formOf(snapshot.tone.addressForm));
+  const { text, truncated } = joinParts({ body, contact: contactBlock(snapshot) });
+  return templateResponse(text, truncated, true, 'R-ERR');
 }
 
 /** R-LIMIT con el contacto del negocio, o con el de emergencia si no se pudo leer (FR-004a). */

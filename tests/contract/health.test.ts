@@ -5,7 +5,12 @@
  */
 import type { FastifyInstance, LightMyRequestResponse } from 'fastify';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { modelPrice, modelUsage, usageSettings } from '../../src/db/schema.js';
+import {
+  modelPrice,
+  modelUsage,
+  transcriptionPrice,
+  usageSettings,
+} from '../../src/db/schema.js';
 import { createLifecycle } from '../../src/health/lifecycle.js';
 import {
   createInstanceHealth,
@@ -308,6 +313,94 @@ describe('estado del tope de gasto (010, US3-12, FR-023a)', () => {
       await t.db
         .update(usageSettings)
         .set({ currency: 'USD', capEnabled: false, monthlyCapCents: null });
+    }
+  });
+});
+
+describe('solo contacto en producción (012, R17): spendCap "blocked"', () => {
+  const LLM = 'modelo-de-salud';
+  const STT = 'stt-de-salud';
+
+  /** `/health` con el sondeo real en producción y con audios. */
+  async function healthWith(
+    production = true,
+  ): Promise<{ open: LightMyRequestResponse; full: LightMyRequestResponse }> {
+    const lifecycle = createLifecycle();
+    lifecycle.markReady();
+    const real = createInstanceHealth({
+      databaseUrl: t.url,
+      coreVersion: '1.4.0',
+      lifecycle,
+      protection: { production, llmModel: LLM, sttModel: STT },
+    });
+    const app = await appWith({ secret: HEALTH_SECRET, report: () => real.report() });
+    try {
+      return { open: await health(app), full: await health(app, bearer(HEALTH_SECRET)) };
+    } finally {
+      await app.close();
+      await real.close?.();
+    }
+  }
+
+  /** Todo en orden salvo lo que rompe `reason`. */
+  async function prepare(reason: string | null): Promise<void> {
+    await t.db.delete(modelPrice);
+    await t.db.delete(transcriptionPrice);
+    await t.db
+      .update(usageSettings)
+      .set({ currency: 'USD', capEnabled: false, monthlyCapCents: null });
+    if (reason !== 'model_unpriced') {
+      await t.db.insert(modelPrice).values({
+        model: LLM,
+        inputMicrosPerMtok: 1n,
+        outputMicrosPerMtok: 1n,
+        cacheWriteMicrosPerMtok: 0n,
+        cacheReadMicrosPerMtok: 0n,
+      });
+    }
+    if (reason !== 'stt_unpriced') {
+      await t.db.insert(transcriptionPrice).values({ model: STT, microsPerMinute: 1n });
+    }
+    if (reason !== 'cap_disabled') {
+      await t.db.update(usageSettings).set({ capEnabled: true, monthlyCapCents: 1000 });
+    }
+    if (reason === 'spend_unreadable') await t.db.delete(usageSettings);
+  }
+  const restore = async () => {
+    await t.db.delete(modelPrice);
+    await t.db.delete(transcriptionPrice);
+    await t.db
+      .insert(usageSettings)
+      .values({ id: 1, currency: 'USD', capEnabled: false, monthlyCapCents: null })
+      .onConflictDoUpdate({
+        target: usageSettings.id,
+        set: { currency: 'USD', capEnabled: false, monthlyCapCents: null },
+      });
+  };
+
+  it.each(['cap_disabled', 'model_unpriced', 'stt_unpriced', 'spend_unreadable'])(
+    '%s → "blocked" con credencial; sin ella, solo {status}',
+    async (reason) => {
+      try {
+        await prepare(reason);
+        const { open, full } = await healthWith();
+        expect(open.json()).toEqual({ status: 'ok' });
+        expect(full.statusCode).toBe(200);
+        expect(full.json()).toMatchObject({ status: 'ok', spendCap: 'blocked' });
+      } finally {
+        await restore();
+      }
+    },
+  );
+
+  it('con tope y precios, el nivel de la 010; fuera de producción nunca "blocked"', async () => {
+    try {
+      await prepare(null);
+      expect((await healthWith()).full.json()).toMatchObject({ spendCap: 'normal' });
+      await prepare('cap_disabled');
+      expect((await healthWith(false)).full.json()).toMatchObject({ spendCap: 'none' });
+    } finally {
+      await restore();
     }
   });
 });

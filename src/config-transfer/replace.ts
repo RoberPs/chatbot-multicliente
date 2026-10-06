@@ -61,7 +61,8 @@ const sortSlots = (slots: WeeklySlot[]): WeeklySlot[] =>
     .sort((a, b) => a.weekday - b.weekday || a.start.localeCompare(b.start));
 
 /** Orden de la BD para los bloques de fechas: fecha y hora de inicio (sin hora, al final). */
-const blockKey = (b: ConfigDateBlock) => `${b.startDate}|${b.startTime ?? '~'}|${b.endDate}|${b.endTime ?? '~'}`;
+const blockKey = (b: ConfigDateBlock) =>
+  `${b.startDate}|${b.startTime ?? '~'}|${b.endDate}|${b.endTime ?? '~'}`;
 const sortBlocks = <T extends ConfigDateBlock>(blocks: T[]): T[] =>
   [...blocks].sort((a, b) => blockKey(a).localeCompare(blockKey(b)));
 
@@ -108,7 +109,10 @@ async function replaceBusiness(tx: Tx, state: KnowledgeState, doc: ConfigDocumen
   const next = { ...doc.business };
   if (same(current, next)) return;
   // `status` no se toca nunca (FR-017).
-  await tx.update(business).set({ ...next, ...touch() }).where(eq(business.id, 1));
+  await tx
+    .update(business)
+    .set({ ...next, ...touch() })
+    .where(eq(business.id, 1));
 }
 
 async function replaceOpeningHours(
@@ -118,11 +122,16 @@ async function replaceOpeningHours(
 ): Promise<boolean> {
   if (same(sortSlots(state.businessHours), sortSlots(doc.openingHours))) return false;
   await tx.delete(businessHours);
-  if (doc.openingHours.length > 0) await tx.insert(businessHours).values(slotRows(doc.openingHours));
+  if (doc.openingHours.length > 0)
+    await tx.insert(businessHours).values(slotRows(doc.openingHours));
   return true;
 }
 
-async function replaceClosures(tx: Tx, state: KnowledgeState, doc: ConfigDocument): Promise<boolean> {
+async function replaceClosures(
+  tx: Tx,
+  state: KnowledgeState,
+  doc: ConfigDocument,
+): Promise<boolean> {
   const current = sortBlocks(
     state.closures.map((c) => ({
       startDate: c.startDate,
@@ -187,14 +196,20 @@ async function replaceServices(
         sortOrder: current.sortOrder,
       };
       if (!same(now, values)) {
-        await tx.update(service).set({ ...values, ...touch() }).where(eq(service.id, id));
+        await tx
+          .update(service)
+          .set({ ...values, ...touch() })
+          .where(eq(service.id, id));
       }
     } else {
       inserts.push({ ...values, ...touch() });
     }
   }
   if (inserts.length > 0) {
-    const rows = await tx.insert(service).values(inserts).returning({ id: service.id, name: service.name });
+    const rows = await tx
+      .insert(service)
+      .values(inserts)
+      .returning({ id: service.id, name: service.name });
     for (const row of rows) ids.set(normalizeKey(row.name), row.id);
   }
   return { ids, deleted };
@@ -222,7 +237,12 @@ async function replaceResources(
   const links: Array<PgInsertValue<typeof resourceService>> = [];
   const hours: Array<PgInsertValue<typeof resourceHours>> = [];
   const absences: Array<PgInsertValue<typeof resourceAbsence>> = [];
-  const replaced = { links: [] as string[], hours: [] as string[], absences: [] as string[] };
+  // Conjuntos (012, R15): la pertenencia de cada recurso se mira sin recorrer la lista.
+  const replaced = {
+    links: new Set<string>(),
+    hours: new Set<string>(),
+    absences: new Set<string>(),
+  };
 
   for (const [sortOrder, r] of doc.resources.entries()) {
     const wantedServices = r.services
@@ -235,15 +255,19 @@ async function replaceResources(
     const current = id ? byId.get(id) : undefined;
     let changed = false;
     if (id && current) {
-      if (current.name !== r.name || current.active !== r.active || current.sortOrder !== sortOrder) {
+      if (
+        current.name !== r.name ||
+        current.active !== r.active ||
+        current.sortOrder !== sortOrder
+      ) {
         changed = true;
       }
       if (!same([...current.serviceIds].sort(), [...wantedServices].sort())) {
-        replaced.links.push(id);
+        replaced.links.add(id);
         changed = true;
       }
       if (!same(sortSlots(current.hours), wantedHours)) {
-        replaced.hours.push(id);
+        replaced.hours.add(id);
         changed = true;
       }
       const currentAbsences = sortBlocks(
@@ -255,7 +279,7 @@ async function replaceResources(
         })),
       );
       if (!same(currentAbsences, wantedAbsences)) {
-        replaced.absences.push(id);
+        replaced.absences.add(id);
         changed = true;
       }
       if (changed) {
@@ -271,30 +295,34 @@ async function replaceResources(
         .returning({ id: resource.id });
       if (!row) throw new Error('No se pudo crear el recurso');
       id = row.id;
-      replaced.links.push(id);
-      replaced.hours.push(id);
-      replaced.absences.push(id);
+      replaced.links.add(id);
+      replaced.hours.add(id);
+      replaced.absences.add(id);
     }
     const resourceId = id;
-    if (replaced.links.includes(resourceId)) {
+    if (replaced.links.has(resourceId)) {
       links.push(...wantedServices.map((serviceId) => ({ resourceId, serviceId, ...touch() })));
     }
-    if (replaced.hours.includes(resourceId)) {
+    if (replaced.hours.has(resourceId)) {
       hours.push(...slotRows(wantedHours).map((h) => ({ ...h, resourceId })));
     }
-    if (replaced.absences.includes(resourceId)) {
+    if (replaced.absences.has(resourceId)) {
       absences.push(...wantedAbsences.map((a) => ({ ...a, resourceId, ...touch() })));
     }
   }
 
-  if (replaced.links.length > 0) {
-    await tx.delete(resourceService).where(inArray(resourceService.resourceId, replaced.links));
+  if (replaced.links.size > 0) {
+    await tx
+      .delete(resourceService)
+      .where(inArray(resourceService.resourceId, [...replaced.links]));
   }
-  if (replaced.hours.length > 0) {
-    await tx.delete(resourceHours).where(inArray(resourceHours.resourceId, replaced.hours));
+  if (replaced.hours.size > 0) {
+    await tx.delete(resourceHours).where(inArray(resourceHours.resourceId, [...replaced.hours]));
   }
-  if (replaced.absences.length > 0) {
-    await tx.delete(resourceAbsence).where(inArray(resourceAbsence.resourceId, replaced.absences));
+  if (replaced.absences.size > 0) {
+    await tx
+      .delete(resourceAbsence)
+      .where(inArray(resourceAbsence.resourceId, [...replaced.absences]));
   }
   if (links.length > 0) await tx.insert(resourceService).values(links);
   if (hours.length > 0) await tx.insert(resourceHours).values(hours);
@@ -321,8 +349,16 @@ async function replaceFaqs(tx: Tx, state: KnowledgeState, doc: ConfigDocument): 
     const current = id ? byId.get(id) : undefined;
     const values = { question: f.question, answer: f.answer, sortOrder };
     if (id && current) {
-      const now = { question: current.question, answer: current.answer, sortOrder: current.sortOrder };
-      if (!same(now, values)) await tx.update(faq).set({ ...values, ...touch() }).where(eq(faq.id, id));
+      const now = {
+        question: current.question,
+        answer: current.answer,
+        sortOrder: current.sortOrder,
+      };
+      if (!same(now, values))
+        await tx
+          .update(faq)
+          .set({ ...values, ...touch() })
+          .where(eq(faq.id, id));
     } else {
       inserts.push({ ...values, ...touch() });
     }
@@ -331,7 +367,11 @@ async function replaceFaqs(tx: Tx, state: KnowledgeState, doc: ConfigDocument): 
   return deleted;
 }
 
-async function replacePolicies(tx: Tx, state: KnowledgeState, doc: ConfigDocument): Promise<boolean> {
+async function replacePolicies(
+  tx: Tx,
+  state: KnowledgeState,
+  doc: ConfigDocument,
+): Promise<boolean> {
   if (doc.policies === null) {
     if (state.policies === null) return false;
     await tx.delete(policies);
@@ -356,7 +396,13 @@ async function replaceTone(tx: Tx, state: KnowledgeState, doc: ConfigDocument): 
     return true;
   }
   const next = { addressForm: doc.tone.addressForm, styleDescription: doc.tone.styleDescription };
-  if (state.tone && same({ addressForm: state.tone.addressForm, styleDescription: state.tone.styleDescription }, next)) {
+  if (
+    state.tone &&
+    same(
+      { addressForm: state.tone.addressForm, styleDescription: state.tone.styleDescription },
+      next,
+    )
+  ) {
     return false;
   }
   await tx
@@ -367,7 +413,11 @@ async function replaceTone(tx: Tx, state: KnowledgeState, doc: ConfigDocument): 
 }
 
 /** Contacto de derivación, como `saveHandoff` del panel: sin medios no hay contacto. */
-async function replaceHandoff(tx: Tx, state: KnowledgeState, doc: ConfigDocument): Promise<boolean> {
+async function replaceHandoff(
+  tx: Tx,
+  state: KnowledgeState,
+  doc: ConfigDocument,
+): Promise<boolean> {
   const wanted = doc.handoff;
   if (wanted === null || wanted.channels.length === 0) {
     if (state.handoff === null) return false;
@@ -380,7 +430,10 @@ async function replaceHandoff(tx: Tx, state: KnowledgeState, doc: ConfigDocument
     const channels = [...state.handoff.channels]
       .sort((a, b) => a.sortOrder - b.sortOrder)
       .map((c) => ({ type: c.type, value: c.value }));
-    if (same(channels, wanted.channels) && same(sortSlots(state.handoff.hours), sortSlots(wanted.hours))) {
+    if (
+      same(channels, wanted.channels) &&
+      same(sortSlots(state.handoff.hours), sortSlots(wanted.hours))
+    ) {
       return false;
     }
   }
@@ -390,10 +443,16 @@ async function replaceHandoff(tx: Tx, state: KnowledgeState, doc: ConfigDocument
     .insert(handoffContact)
     .values({ id: 1, ...touch() })
     .onConflictDoUpdate({ target: handoffContact.id, set: touch() });
-  await tx
-    .insert(handoffChannel)
-    .values(wanted.channels.map((c, sortOrder) => ({ type: c.type, value: c.value, sortOrder, ...touch() })));
-  if (wanted.hours.length > 0) await tx.insert(handoffHours).values(slotRows(sortSlots(wanted.hours)));
+  await tx.insert(handoffChannel).values(
+    wanted.channels.map((c, sortOrder) => ({
+      type: c.type,
+      value: c.value,
+      sortOrder,
+      ...touch(),
+    })),
+  );
+  if (wanted.hours.length > 0)
+    await tx.insert(handoffHours).values(slotRows(sortSlots(wanted.hours)));
   return false;
 }
 
@@ -413,7 +472,10 @@ async function replaceWebChat(tx: Tx, doc: ConfigDocument): Promise<void> {
   };
   if (same(now, next)) return;
   // `enabled` no se toca nunca (FR-017).
-  await tx.update(webChatSettings).set({ ...next, ...touch() }).where(eq(webChatSettings.id, 1));
+  await tx
+    .update(webChatSettings)
+    .set({ ...next, ...touch() })
+    .where(eq(webChatSettings.id, 1));
 }
 
 /**
@@ -439,7 +501,10 @@ async function replaceChatDesign(tx: Tx, doc: ConfigDocument): Promise<void> {
       changes[slot] = { kind: 'keep' };
     } else {
       // Ya validada al leer el fichero; aquí solo se obtienen sus metadatos.
-      const result = validateDesignImage({ bytes: Buffer.from(next.data, 'base64'), truncated: false });
+      const result = validateDesignImage({
+        bytes: Buffer.from(next.data, 'base64'),
+        truncated: false,
+      });
       if (!result.ok) throw new Error('Imagen del diseño sin validar');
       changes[slot] = { kind: 'replace', image: result.image };
     }
@@ -467,7 +532,8 @@ export async function replaceConfig(
   const state = await loadKnowledgeState(tx);
   let removed = false;
   await replaceBusiness(tx, state, doc);
-  removed = ((await replaceOpeningHours(tx, state, doc)) && doc.openingHours.length === 0) || removed;
+  removed =
+    ((await replaceOpeningHours(tx, state, doc)) && doc.openingHours.length === 0) || removed;
   removed = ((await replaceClosures(tx, state, doc)) && doc.closures.length === 0) || removed;
   const services = await replaceServices(tx, state, doc);
   removed = services.deleted || removed;

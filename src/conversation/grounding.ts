@@ -3,7 +3,12 @@
  *
  * Extrae del texto importes, horas, fechas, teléfonos, correos, URLs y números, y comprueba que cada
  * uno está en `AllowedFacts`. Determinista: nunca llama al modelo.
+ *
+ * 012 (US7, FR-031): las direcciones salen de `linkCandidates`, la misma regla que decide qué se
+ * pinta como enlace (con y sin protocolo, `www.` y dominios sueltos con un TLD real), y se
+ * comparan por la URL normalizada o por host + ruta.
  */
+import { linkCandidates } from './link-rule.js';
 import type { AllowedFacts } from './types.js';
 
 export type FactCategory = 'url' | 'email' | 'phone' | 'date' | 'time' | 'amount' | 'number';
@@ -73,16 +78,34 @@ function amountToCents(text: string): number | null {
   return Number.isFinite(value) ? Math.round(value * 100) : null;
 }
 
+/**
+ * Claves de una dirección: `host[:puerto]/ruta?consulta` y `host/ruta`, en minúsculas, sin
+ * protocolo, sin `www.` y sin barra final.
+ */
+function urlFact(raw: string): ExtractedFact {
+  const withScheme = /^[a-z][a-z0-9+.-]*:\/\//i.test(raw) ? raw : `https://${raw}`;
+  let url: URL;
+  try {
+    url = new URL(withScheme);
+  } catch {
+    const value = raw.toLowerCase().replace(/\/+$/, '');
+    return { category: 'url', raw, value };
+  }
+  const host = url.hostname.toLowerCase().replace(/^www\./, '');
+  const path = url.pathname.replace(/\/+$/, '').toLowerCase();
+  const port = url.port ? `:${url.port}` : '';
+  const value = `${host}${port}${path}${url.search.toLowerCase()}`;
+  const hostPath = `${host}${path}`;
+  return {
+    category: 'url',
+    raw,
+    value,
+    ...(hostPath === value ? {} : { alternatives: [hostPath] }),
+  };
+}
+
 /** En orden: cada extractor consume su trozo para que los siguientes no lo vuelvan a contar. */
 const EXTRACTORS: Extractor[] = [
-  {
-    category: 'url',
-    re: /\b(?:https?:\/\/|www\.)[^\s<>"')]+/gi,
-    parse: (m) => {
-      const raw = m[0].replace(/[.,;:!?]+$/, '');
-      return { raw, value: raw.toLowerCase().replace(/\/+$/, '') };
-    },
-  },
   {
     category: 'email',
     re: /\b[\w.+-]+@[\w-]+(?:\.[\w-]+)+\b/g,
@@ -158,6 +181,11 @@ const EXTRACTORS: Extractor[] = [
 export function extractFacts(text: string): ExtractedFact[] {
   let rest = text;
   const facts: ExtractedFact[] = [];
+  // Primero las direcciones, con la regla común de enlaces; su trozo no cuenta para lo demás.
+  for (const match of linkCandidates(text)) {
+    facts.push(urlFact(match.url));
+    rest = rest.slice(0, match.start) + ' '.repeat(match.end - match.start) + rest.slice(match.end);
+  }
   for (const extractor of EXTRACTORS) {
     extractor.re.lastIndex = 0;
     const found: Array<{ index: number; length: number; fact: ExtractedFact }> = [];
@@ -182,7 +210,7 @@ export function extractFacts(text: string): ExtractedFact[] {
 function isAllowed(fact: ExtractedFact, allowed: AllowedFacts): boolean {
   switch (fact.category) {
     case 'url':
-      return allowed.urls.has(fact.value);
+      return [fact.value, ...(fact.alternatives ?? [])].some((v) => allowed.urls.has(v));
     case 'email':
       return allowed.emails.has(fact.value);
     case 'phone':

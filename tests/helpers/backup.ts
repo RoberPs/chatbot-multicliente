@@ -16,7 +16,7 @@ import {
   listTables,
   qualified,
 } from '../../src/backup/dump.js';
-import { applyMigrationsUpTo } from '../../src/backup/schema-version.js';
+import { applyMigrationsUpTo, installedSchema, journal } from '../../src/backup/schema-version.js';
 import type { LoggerLike } from '../../src/conversation/activity-log.js';
 import type { Clock } from '../../src/conversation/ports.js';
 import { closeDb, createDb, type Db } from '../../src/db/client.js';
@@ -28,6 +28,13 @@ import { withDatabase } from './db.js';
 export const TEST_INSTANCE = 'test-01';
 export const TEST_KEY = randomBytes(32).toString('hex');
 export const TEST_KEY_2 = randomBytes(32).toString('hex');
+
+/** Último esquema del núcleo instalado: las pruebas no fijan el nombre de la última migración. */
+export const CURRENT_SCHEMA = installedSchema().tag;
+/** Migraciones pendientes en una BD que se quedó en la 0003 (de la 0004 a la última). */
+export const PENDING_AFTER_0003 = journal()
+  .slice(4)
+  .map((m) => m.tag);
 
 export interface TempDir {
   path: string;

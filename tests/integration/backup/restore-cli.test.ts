@@ -2,6 +2,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { createBackup, type BackupReport } from '../../../src/backup/service.js';
 import { main } from '../../../src/cli/restore.js';
 import {
+  CURRENT_SCHEMA,
   cliEnv,
   seedInstance,
   tableSnapshot,
@@ -47,7 +48,9 @@ describe('pnpm db:restore', () => {
     const io = testIO(cliEnv(test.url, dir.path), { interactive: true, answers: ['otra-cosa'] });
     expect(await main([backup.file], io)).toBe(1);
     expect(io.stdout[0]).toBe(`Restaurar: ${backup.file}`);
-    expect(io.stdout[1]).toMatch(/Copia de la instancia test-01 · esquema 0007_chat_design · núcleo /);
+    expect(io.stdout[1]).toMatch(
+      new RegExp(`Copia de la instancia test-01 · esquema ${CURRENT_SCHEMA} · núcleo `),
+    );
     expect(io.questions[0]).toContain('(test-01)');
     expect(io.stderr).toContain('Cancelado: no se ha modificado nada.');
     expect(await tableSnapshot(test.url)).toEqual(before);
@@ -79,7 +82,7 @@ describe('pnpm db:restore', () => {
       ok: true,
       file: backup.file,
       sourceInstance: 'test-01',
-      schema: '0007_chat_design',
+      schema: CURRENT_SCHEMA,
       pendingMigrations: [],
     });
   });

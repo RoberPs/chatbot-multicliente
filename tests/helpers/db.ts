@@ -9,8 +9,10 @@ import {
   chatDesign,
   conversationTableNames,
   handoffAlerts,
+  handoffLimits,
   modelPrice,
   modelUsage,
+  transcriptionPrice,
   usageSettings,
   webChatSettings,
 } from '../../src/db/schema.js';
@@ -76,18 +78,26 @@ export async function resetDb(db: Db): Promise<void> {
   // Diseño del chat (011): sin fila es el aspecto original; las imágenes caen en cascada.
   await db.delete(chatDesign);
   // Consumo (010): no está en `allTableNames` (alimenta el `max(updated_at)` del snapshot).
-  await db.execute(sql`truncate ${modelUsage}, ${modelPrice}`);
+  await db.execute(sql`truncate ${modelUsage}, ${modelPrice}, ${transcriptionPrice}`);
   // Upsert: algún test borra la fila única para provocar fallos.
   const defaults = {
     currency: 'USD',
     capEnabled: false,
     monthlyCapCents: null,
     capNotifiedMonth: null,
+    whatsappDailyCap: 200,
+    whatsappCapNotifiedDay: null,
   };
   await db
     .insert(usageSettings)
     .values({ id: 1, ...defaults })
     .onConflictDoUpdate({ target: usageSettings.id, set: defaults });
+  // Límites de derivación (012): los de la migración.
+  const limits = { dailyMax: 20, forwardIntervalMinutes: 15, noticesDailyMax: 60 };
+  await db
+    .insert(handoffLimits)
+    .values({ id: 1, ...limits })
+    .onConflictDoUpdate({ target: handoffLimits.id, set: limits });
 }
 
 /** Guarda los destinos de los avisos de derivación (005) directamente en la fila única. */

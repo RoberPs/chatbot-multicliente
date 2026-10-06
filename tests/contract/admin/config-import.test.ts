@@ -45,7 +45,13 @@ describe('Importar desde el panel (/admin/config/import)', () => {
 
   beforeAll(async () => {
     t = await createTestDatabase();
-    app = await buildTestApp(t.db, 'postgres://no-usada', null, instanceEnv('produccion-01'), lines);
+    app = await buildTestApp(
+      t.db,
+      'postgres://no-usada',
+      null,
+      instanceEnv('produccion-01'),
+      lines,
+    );
   });
   afterAll(async () => {
     await app.close();
@@ -70,7 +76,14 @@ describe('Importar desde el panel (/admin/config/import)', () => {
       ...(opts.csrf === false ? [] : [{ name: '_csrf', value: session.csrf }]),
       ...(file === null
         ? [{ name: 'file', value: Buffer.alloc(0), filename: '' }]
-        : [{ name: 'file', value: file, filename: opts.filename ?? 'configuracion.json', type: opts.type }]),
+        : [
+            {
+              name: 'file',
+              value: file,
+              filename: opts.filename ?? 'configuracion.json',
+              type: opts.type,
+            },
+          ]),
     ]);
     return app.inject({
       method: 'POST',
@@ -153,7 +166,9 @@ describe('Importar desde el panel (/admin/config/import)', () => {
       const off = await get(app, session, path);
       expect(off.body).toContain('La instancia enviará los avisos de derivación a estos destinos');
       expect(off.body).toContain(FULL_ALERTS.whatsapp);
-      expect(off.body).toMatch(/<input id="include_alerts" name="alerts" type="checkbox" value="1">/);
+      expect(off.body).toMatch(
+        /<input id="include_alerts" name="alerts" type="checkbox" value="1">/,
+      );
       expect(off.body).toContain(`hx-get="${path}"`);
       expect(off.body).toContain('hx-trigger="change"');
       expect(off.body).toContain('Actualizar vista previa');
@@ -161,7 +176,9 @@ describe('Importar desde el panel (/admin/config/import)', () => {
       expect(off.body).not.toContain('data-section="alertDestinations"');
 
       const on = await get(app, session, `${path}?alerts=1`);
-      expect(on.body).toMatch(/<input id="include_alerts" name="alerts" type="checkbox" value="1" checked>/);
+      expect(on.body).toMatch(
+        /<input id="include_alerts" name="alerts" type="checkbox" value="1" checked>/,
+      );
       expect(hidden(on.body, 'include_alerts')).toBe('1');
       expect(on.body).toContain('data-section="alertDestinations"');
     });
@@ -223,7 +240,10 @@ describe('Importar desde el panel (/admin/config/import)', () => {
       const path = await uploaded(Buffer.from(JSON.stringify(f)));
       const page = await get(app, session, path);
       const [first] = await t.db.select().from(faq).orderBy(faq.sortOrder);
-      await updateFaq(t.deps, first?.id ?? '', { question: '¿Hay aparcamiento?', answer: 'Cambiada.' });
+      await updateFaq(t.deps, first?.id ?? '', {
+        question: '¿Hay aparcamiento?',
+        answer: 'Cambiada.',
+      });
 
       const conflict = await apply(path, page.body);
       expect(conflict.statusCode).toBe(409);
@@ -244,7 +264,9 @@ describe('Importar desde el panel (/admin/config/import)', () => {
       const path = await uploaded(Buffer.from(JSON.stringify(f)));
       const page = await get(app, session, path);
       expect(page.body).toContain('data-outcome="blocked_critical"');
-      expect(page.body).toMatch(/<button type="submit" disabled>Confirmar la importación<\/button>/);
+      expect(page.body).toMatch(
+        /<button type="submit" disabled>Confirmar la importación<\/button>/,
+      );
       const fingerprint = await configTablesFingerprint(t.db);
       const res = await apply(path, page.body);
       expect(res.statusCode).toBe(409);
@@ -323,7 +345,12 @@ describe('Importar desde el panel (/admin/config/import)', () => {
     });
 
     it.each([
-      ['un .txt', Buffer.from('hola, esto no es una exportación'), 'unreadable', 'no es un JSON válido'],
+      [
+        'un .txt',
+        Buffer.from('hola, esto no es una exportación'),
+        'unreadable',
+        'no es un JSON válido',
+      ],
       ['un JSON sin sobre', Buffer.from('{"business": {}}'), 'not_export', 'no es una exportación'],
       [
         'formatVersion 99',
@@ -346,7 +373,10 @@ describe('Importar desde el panel (/admin/config/import)', () => {
       f.faqs![1]!.answer = '';
       const res = await upload(Buffer.from(JSON.stringify(f)));
       await expectRejected(res, 422, 'invalid');
-      expect(events('config_import_rejected')[0]).toMatchObject({ issues: 3, sourceInstance: 'demo-01' });
+      expect(events('config_import_rejected')[0]).toMatchObject({
+        issues: 3,
+        sourceInstance: 'demo-01',
+      });
       expect(res.body).toContain('El fichero no se puede importar: 3 errores');
       expect(res.body).toContain('<h3>Servicios</h3>');
       expect(res.body).toContain('<h3>Recursos</h3>');
@@ -354,6 +384,25 @@ describe('Importar desde el panel (/admin/config/import)', () => {
       expect(res.body).toContain('<strong>«Servicio A»</strong>');
       expect(res.body).toContain('<code>priceCents</code>');
       expect(res.body).toContain('El servicio «Servicio Z» no está en el fichero');
+    });
+
+    it('012: con más de 50 errores se muestran 50 y «Y N errores más»; el registro guarda el total', async () => {
+      const f = fixtureJson('valid-full.json') as Record<string, Array<Record<string, unknown>>>;
+      // 80 preguntas sin respuesta: 80 errores, en el orden del fichero.
+      f.faqs = Array.from({ length: 80 }, (_, i) => ({
+        question: `Pregunta ${String(i + 1)}`,
+        answer: '',
+      }));
+      const res = await upload(Buffer.from(JSON.stringify(f)));
+      await expectRejected(res, 422, 'invalid');
+      expect(events('config_import_rejected')[0]).toMatchObject({ issues: 80 });
+      expect(res.body).toContain('El fichero no se puede importar: 80 errores');
+      const shown = [...res.body.matchAll(/<li data-section=/g)];
+      expect(shown).toHaveLength(50);
+      expect(res.body).toContain('<strong>«Pregunta 1»</strong>');
+      expect(res.body).toContain('<strong>«Pregunta 50»</strong>');
+      expect(res.body).not.toContain('<strong>«Pregunta 51»</strong>');
+      expect(res.body).toContain('Y 30 errores más. Corrige estos y vuelve a importar.');
     });
 
     it('el resto del panel sigue rechazando multipart y cuerpos urlencoded de más de 256 KiB', async () => {
@@ -425,7 +474,11 @@ describe('Diseño del chat en exportar e importar (011, US5)', () => {
     expect(file).toHaveProperty('chatDesign', null);
     expect(Object.keys(file).indexOf('chatDesign')).toBe(Object.keys(file).indexOf('webChat') + 1);
 
-    await seedChatDesignWithImages(t.db, { logo: 'valid.png' }, { shape: 'soft', chatName: 'Recepción' });
+    await seedChatDesignWithImages(
+      t.db,
+      { logo: 'valid.png' },
+      { shape: 'soft', chatName: 'Recepción' },
+    );
     const withDesign = JSON.parse((await postForm(app, session, '/admin/config/export')).body) as {
       chatDesign: Record<string, unknown> & { images: Record<string, unknown> };
     };
@@ -457,7 +510,9 @@ describe('Diseño del chat en exportar e importar (011, US5)', () => {
     const res = await upload(Buffer.from(JSON.stringify(f)));
     expect(res.statusCode).toBe(422);
     expect(res.body).toContain('Diseño del chat');
-    expect(res.body).toContain('Valor no válido; se admite: &quot;small&quot;, &quot;medium&quot;, &quot;large&quot;');
+    expect(res.body).toContain(
+      'Valor no válido; se admite: &quot;small&quot;, &quot;medium&quot;, &quot;large&quot;',
+    );
     expect(res.body).toContain('tiene un contraste de');
     expect(await configTablesFingerprint(t.db)).toBe(fingerprint);
   });

@@ -6,11 +6,17 @@ import { describe, expect, it } from 'vitest';
 import { ZodError } from 'zod';
 import {
   CAP_AMOUNT_MESSAGE,
+  CAP_REQUIRED_MESSAGE,
   CURRENCY_MESSAGE,
   MODEL_MESSAGE,
+  PER_MINUTE_MESSAGE,
+  PRICE_IN_USE_MESSAGE,
   PRICE_MESSAGE,
   priceSchema,
+  transcriptionPriceSchema,
   usageSettingsSchema,
+  WHATSAPP_CAP_MESSAGE,
+  whatsappCapSchema,
 } from '../../../src/usage/schemas.js';
 
 /** Errores por campo de un `safeParse` fallido. */
@@ -130,5 +136,65 @@ describe('usageSettingsSchema: tope mensual', () => {
     expect(
       fieldErrors(usageSettingsSchema.safeParse({ currency: 'USD', monthlyCap: '0' })),
     ).toEqual({ monthlyCap: CAP_AMOUNT_MESSAGE });
+  });
+});
+
+describe('whatsappCapSchema (012, R5)', () => {
+  it.each([
+    ['1', 1],
+    ['200', 200],
+    [' 10000 ', 10_000],
+    [350, 350],
+  ])('acepta %j', (value, n) => {
+    expect(whatsappCapSchema.parse({ whatsappDailyCap: value })).toBe(n);
+  });
+
+  it.each(['0', '10001', '1,5', '1.5', '-3', '', 'cien', undefined])(
+    'rechaza %j con el rango en el mensaje',
+    (value) => {
+      expect(fieldErrors(whatsappCapSchema.safeParse({ whatsappDailyCap: value }))).toEqual({
+        whatsappDailyCap: WHATSAPP_CAP_MESSAGE,
+      });
+    },
+  );
+
+  it('el mensaje nombra el rango', () => {
+    expect(WHATSAPP_CAP_MESSAGE).toContain('entre 1 y 10.000');
+  });
+});
+
+describe('transcriptionPriceSchema (012, R6)', () => {
+  it('convierte el precio por minuto a millonésimas y recorta el modelo', () => {
+    expect(transcriptionPriceSchema.parse({ model: ' whisper-1 ', perMinute: '0,006' })).toEqual({
+      model: 'whisper-1',
+      perMinute: 6_000n,
+    });
+    expect(transcriptionPriceSchema.parse({ model: 'm', perMinute: '1000000' }).perMinute).toBe(
+      1_000_000_000_000n,
+    );
+    expect(transcriptionPriceSchema.parse({ model: 'm', perMinute: '0' }).perMinute).toBe(0n);
+  });
+
+  it.each(['-1', '0,0000001', '1000000,01', 'abc', ''])('rechaza el precio %j', (perMinute) => {
+    expect(fieldErrors(transcriptionPriceSchema.safeParse({ model: 'm', perMinute }))).toEqual({
+      perMinute: PER_MINUTE_MESSAGE,
+    });
+  });
+
+  it.each(['', '   ', 'x'.repeat(201)])('rechaza el modelo %j', (model) => {
+    expect(fieldErrors(transcriptionPriceSchema.safeParse({ model, perMinute: '1' }))).toEqual({
+      model: MODEL_MESSAGE,
+    });
+  });
+});
+
+describe('mensajes de los rechazos en producción (012, FR-003)', () => {
+  it('nombran la regla sin datos', () => {
+    expect(CAP_REQUIRED_MESSAGE).toBe(
+      'En producción el tope de gasto es obligatorio mientras el negocio está activo.',
+    );
+    expect(PRICE_IN_USE_MESSAGE).toBe(
+      'En producción no se puede borrar el precio del modelo en uso mientras el negocio está activo.',
+    );
   });
 });

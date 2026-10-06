@@ -6,6 +6,8 @@
  */
 import type { FastifyInstance, FastifyReply } from 'fastify';
 import { z } from 'zod';
+import { setProcessAfter } from '../../conversation/repositories/conversation.js';
+import { markHeld } from '../../conversation/repositories/message.js';
 import { displayPhone } from '../../conversation/templates.js';
 import { describeChannel, describeKind } from '../../handoff/notices.js';
 import * as handoffs from '../../handoff/repositories/handoff.js';
@@ -45,6 +47,18 @@ export interface ActiveRow {
   startedAt: string;
   confirmed: string;
   reminder: string;
+  /** Entrantes esperando el reenvío agrupado (012). */
+  pending: number;
+  pendingText: string | null;
+}
+
+/** Fila de «Mensajes retenidos» (012): cuántos, nunca los textos. */
+export interface HeldRow {
+  conversationId: string;
+  customer: string;
+  channel: string;
+  held: number;
+  lastAt: string;
 }
 
 const localTime = (at: Date, timezone: string) =>
@@ -86,16 +100,42 @@ export async function handoffsRoutes(app: FastifyInstance): Promise<void> {
     ];
   }
 
+  const customerText = (name: string | null, phone: string | null) =>
+    `${name ?? '—'} (${phone ? displayPhone(phone) : '—'})`;
+
+  /** «2 mensajes; se reenvían el 24/09/2026, 10:15» (012, reenvío agrupado). */
+  function pendingText(pending: number, processAfter: Date | null, timezone: string) {
+    if (pending === 0) return null;
+    const count = pending === 1 ? '1 mensaje' : `${String(pending)} mensajes`;
+    const now = app.bot?.clock.now() ?? new Date();
+    return processAfter && processAfter.getTime() > now.getTime()
+      ? `${count}; se reenvían el ${localTime(processAfter, timezone)}`
+      : `${count}; se reenvían enseguida`;
+  }
+
+  async function heldRows(timezone: string): Promise<HeldRow[]> {
+    const rows = await handoffs.listHeld(deps.db);
+    return rows.map((r) => ({
+      conversationId: r.conversationId,
+      customer: customerText(r.customerName, r.customerPhone),
+      channel: describeChannel(r.channel),
+      held: r.held,
+      lastAt: localTime(r.lastAt, timezone),
+    }));
+  }
+
   async function activeRows(timezone: string): Promise<ActiveRow[]> {
     const rows = await handoffs.listActive(deps.db);
     return rows.map((r) => ({
       id: r.id,
-      customer: `${r.customerName ?? '—'} (${r.customerPhone ? displayPhone(r.customerPhone) : '—'})`,
+      customer: customerText(r.customerName, r.customerPhone),
       channel: describeChannel(r.channel),
       kind: describeKind(r.kind),
       startedAt: localTime(r.startedAt, timezone),
       confirmed: r.confirmedAt ? `Sí, ${localTime(r.confirmedAt, timezone)}` : 'No',
       reminder: r.reminderSentAt ? 'Sí' : 'No',
+      pending: r.pending,
+      pendingText: pendingText(r.pending, r.processAfter, timezone),
     }));
   }
 
@@ -107,6 +147,7 @@ export async function handoffsRoutes(app: FastifyInstance): Promise<void> {
       title: TITLE,
       routes: routeStatus(alerts),
       active: await activeRows(state.business.timezone),
+      held: await heldRows(state.business.timezone),
       values: values ?? { whatsapp: alerts.whatsapp ?? '', email: alerts.email ?? '' },
     };
   }
@@ -166,7 +207,14 @@ export async function handoffsRoutes(app: FastifyInstance): Promise<void> {
     }
     const row = await handoffs.findById(deps.db, id);
     if (!row) return { result: 'not_found', name: '—' };
-    const changed = await handoffs.end(deps.db, id, 'operator', new Date());
+    const now = new Date();
+    // Como el servicio: lo que esperaba su reenvío queda retenido (012, R7.4).
+    const changed = await deps.db.transaction(async (tx) => {
+      if (!(await handoffs.end(tx, id, 'operator', now))) return false;
+      await markHeld(tx, row.conversationId, now);
+      await setProcessAfter(tx, row.conversationId, null);
+      return true;
+    });
     return { result: changed ? 'done' : 'already_ended', name: row.customerName ?? '—' };
   }
 }

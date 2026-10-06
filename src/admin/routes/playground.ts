@@ -31,7 +31,8 @@ import {
 } from '../../handoff/repositories/handoff-notice.js';
 import { isHtmx } from '../auth/plugin.js';
 import { parseForm } from '../form-parse.js';
-import { readState, renderPage, savedResponse, viewHelpers } from '../render.js';
+import { CONTACT_ONLY_TEXT } from '../../usage/protection.js';
+import { readProtection, readState, renderPage, savedResponse, viewHelpers } from '../render.js';
 
 const TITLE = 'Probar el bot';
 const MAX_CHARS = 1000;
@@ -129,17 +130,26 @@ export async function playgroundRoutes(app: FastifyInstance): Promise<void> {
     status = 200,
   ): Promise<FastifyReply> {
     const thread = await readThread(db, playgroundId(request));
+    const state = await readState(app.knowledge);
+    // 012: la prueba no se corta, pero recuerda que los clientes solo reciben el contacto.
+    const { contactOnly } = await readProtection(app, state.business.timezone);
     return renderPage(
       request,
       reply,
       'playground',
       {
-        state: await readState(app.knowledge),
+        state,
         title: TITLE,
         botPresent: app.bot !== null,
         messages: thread.messages,
         poll: pollCursor(thread),
         handoffNotice: thread.handoffNotice,
+        contactOnly:
+          contactOnly.length === 0
+            ? null
+            : `En producción, los clientes reciben ahora solo el contacto: ${contactOnly
+                .map((r) => CONTACT_ONLY_TEXT[r])
+                .join('; ')}.`,
         ...extra,
       },
       status,

@@ -40,6 +40,8 @@ describe('US3: el bot calla y reenvía mientras el negocio atiende', () => {
     await b.send('Quiero hablar con una persona');
     await b.settle();
     expect(await t.db.select().from(handoff)).toHaveLength(1);
+    // Sin el agrupado de la 012 (lo prueba grouped-forward): el último aviso, hace tiempo.
+    await t.db.update(handoff).set({ lastNoticeAt: new Date(0) });
     return b;
   }
 

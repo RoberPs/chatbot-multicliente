@@ -201,11 +201,7 @@ export const isSectionKey = (value: unknown): value is SectionKey =>
 
 /** Rechazos del fichero antes de validar sus secciones (data-model §4). */
 export type FileRejectReason =
-  | 'too_large'
-  | 'unreadable'
-  | 'not_export'
-  | 'future_version'
-  | 'unsupported_version';
+  'too_large' | 'unreadable' | 'not_export' | 'future_version' | 'unsupported_version';
 
 /** Error de un fichero que no se puede importar (data-model §4). */
 export interface ImportIssue {

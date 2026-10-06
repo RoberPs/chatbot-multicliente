@@ -1,4 +1,4 @@
-import { and, asc, count, desc, eq, gt, inArray, or, sql } from 'drizzle-orm';
+import { and, asc, count, desc, eq, gt, inArray, lte, or, sql } from 'drizzle-orm';
 import { conversation, message } from '../../db/schema.js';
 import type { MessageKind, ReplyTrace } from '../types.js';
 import type { DbOrTx } from './customer.js';
@@ -76,7 +76,7 @@ export async function pendingFor(tx: DbOrTx, conversationId: string): Promise<In
  * Últimos `limit` mensajes ya tratados de la conversación (entrantes contestados o reenviados
  * al negocio durante una derivación, y salientes enviados), en orden cronológico. Los
  * pendientes van aparte. Los reenviados entran para que el bot los tenga en cuenta cuando la
- * conversación vuelve (005, FR-018).
+ * conversación vuelve (005, FR-018); los retenidos (`held`, 012) no, porque nadie los leyó.
  */
 export async function history(
   tx: DbOrTx,
@@ -106,15 +106,38 @@ export async function history(
 }
 
 /**
- * Pasa entrantes pendientes a `forwarded` (005, R11): se reenviaron al negocio en lugar de
- * contestarse. Es terminal: `claimReady` ya no los reclama.
+ * Pasa entrantes pendientes a `forwarded` (005, R11): se reenvían al negocio en lugar de
+ * contestarse. Es terminal: `claimReady` ya no los reclama. Devuelve cuántos cambiaron (012: se
+ * marcan antes de enviar, así que un reintento no repite el reenvío).
  */
-export async function markForwarded(tx: DbOrTx, ids: string[]): Promise<void> {
-  if (ids.length === 0) return;
-  await tx
+export async function markForwarded(tx: DbOrTx, ids: string[]): Promise<number> {
+  if (ids.length === 0) return 0;
+  const rows = await tx
     .update(message)
     .set({ status: 'forwarded' })
-    .where(and(inArray(message.id, ids), eq(message.status, 'pending')));
+    .where(and(inArray(message.id, ids), eq(message.status, 'pending')))
+    .returning({ id: message.id });
+  return rows.length;
+}
+
+/**
+ * Al terminar una derivación (012, R7.4), los entrantes pendientes de la conversación anteriores
+ * al fin pasan a `held`: no se reenvían ni los contesta el bot. Devuelve cuántos.
+ */
+export async function markHeld(tx: DbOrTx, conversationId: string, endedAt: Date): Promise<number> {
+  const rows = await tx
+    .update(message)
+    .set({ status: 'held' })
+    .where(
+      and(
+        eq(message.conversationId, conversationId),
+        eq(message.direction, 'inbound'),
+        eq(message.status, 'pending'),
+        lte(message.receivedAt, endedAt),
+      ),
+    )
+    .returning({ id: message.id });
+  return rows.length;
 }
 
 /**
@@ -265,6 +288,8 @@ export interface ConversationMessage {
   body: string | null;
   sentAt: Date;
   replyTrace: ReplyTrace | null;
+  /** Entrante retenido al terminar la derivación (012): el panel lo marca. */
+  held: boolean;
 }
 
 /** Cursor opaco: posición (sent_at, id) del último mensaje entregado. */
@@ -284,7 +309,8 @@ export function decodeCursor(cursor: string): { sentAt: Date; id: string } | nul
 
 /**
  * Mensajes visibles de una conversación para el playground y la web (R5, R6): entrantes
- * `pending`, `answered`, `rate_limited` o `forwarded` (005) y salientes `sent`, en orden. Con
+ * `pending`, `answered`, `rate_limited`, `forwarded` (005) o `held` (012) y salientes `sent`, en
+ * orden. Con
  * `after`, solo los posteriores a ese cursor.
  */
 export async function listForConversation(
@@ -296,6 +322,7 @@ export async function listForConversation(
     .select({
       id: message.id,
       direction: message.direction,
+      status: message.status,
       body: message.body,
       sentAt: message.sentAt,
       replyTrace: message.replyTrace,
@@ -307,7 +334,7 @@ export async function listForConversation(
         or(
           and(
             eq(message.direction, 'inbound'),
-            inArray(message.status, ['pending', 'answered', 'rate_limited', 'forwarded']),
+            inArray(message.status, ['pending', 'answered', 'rate_limited', 'forwarded', 'held']),
           ),
           and(eq(message.direction, 'outbound'), eq(message.status, 'sent')),
         ),
@@ -317,7 +344,11 @@ export async function listForConversation(
       ),
     )
     .orderBy(asc(message.sentAt), asc(message.id));
-  return rows.map((r) => ({ ...r, replyTrace: (r.replyTrace as ReplyTrace | null) ?? null }));
+  return rows.map(({ status, ...r }) => ({
+    ...r,
+    replyTrace: (r.replyTrace as ReplyTrace | null) ?? null,
+    held: status === 'held',
+  }));
 }
 
 /** Hay entrantes del cliente pendientes de respuesta (el cliente sigue esperando). */

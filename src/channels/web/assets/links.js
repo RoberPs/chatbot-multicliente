@@ -2,16 +2,14 @@
  * Enlaces pulsables en las respuestas del bot (004 FR-020a, research R15).
  *
  * Solo parte el texto en trozos `{ text, href? }`; quien pinta (`frame.js`) crea los nodos con
- * `createElement` y `textContent`. Es la misma regla que `src/admin/message-links.ts`, y
- * `tests/unit/channels/message-links.test.ts` ejecuta la misma tabla de casos contra las dos.
+ * `createElement` y `textContent`. La expresión es la de `displayLinks`
+ * (`src/conversation/link-rule.ts`, 012): el servidor sustituye el marcador al servir el fichero.
+ * Sin ella (el fichero tal cual), no se pinta ningún enlace.
  */
 (function () {
   'use strict';
 
-  /** Candidato: se corta donde lo hace el verificador de cifras del servidor. */
-  var CANDIDATE = /https:\/\/[^\s<>"')]+/gi;
-  /** Signos que cierran la frase y no forman parte del enlace. */
-  var TRAILING = /[.,;:!?\]}»]+$/;
+  var RULE = /*__LINK_RULE__*/ null;
 
   /** Misma comprobación que el campo "Enlace a mapa" del panel. */
   function isSafeHttpsUrl(value) {
@@ -31,13 +29,15 @@
 
   /** Parte el texto en trozos de texto y enlaces `https://`. Los trozos unidos son el original. */
   function split(text) {
+    if (!RULE) return text === '' ? [] : [{ text: text }];
+    var candidate = new RegExp(RULE.candidate, RULE.flags);
+    var trailing = new RegExp(RULE.trailing);
     var parts = [];
     var last = 0;
     var match;
-    CANDIDATE.lastIndex = 0;
-    while ((match = CANDIDATE.exec(text)) !== null) {
-      var url = match[0].replace(TRAILING, '');
-      if (!isSafeHttpsUrl(url)) continue;
+    while ((match = candidate.exec(text)) !== null) {
+      var url = match[0].replace(trailing, '');
+      if (url === '' || !isSafeHttpsUrl(url)) continue;
       if (match.index > last) parts.push({ text: text.slice(last, match.index) });
       parts.push({ text: url, href: url });
       last = match.index + url.length;

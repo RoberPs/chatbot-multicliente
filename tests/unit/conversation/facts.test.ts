@@ -169,7 +169,8 @@ describe('AllowedFacts', () => {
 
   it('números de la dirección, de las FAQ y URLs', () => {
     for (const n of ['12', '28013', '3', '15', '200']) expect(allowed.numbers).toContain(n);
-    expect(allowed.urls).toContain('https://example.com/info');
+    // 012: host + ruta, sin protocolo.
+    expect(allowed.urls).toContain('example.com/info');
   });
 
   it('teléfonos del negocio y del contacto', () => {

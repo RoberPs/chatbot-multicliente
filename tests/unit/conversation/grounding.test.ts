@@ -3,6 +3,7 @@ import { extractFacts, groundingGuard } from '../../../src/conversation/groundin
 import { buildAllowedFacts } from '../../../src/conversation/facts.js';
 import type { AllowedFacts } from '../../../src/conversation/types.js';
 import { activeSnapshot, emptyDerived } from '../../helpers/snapshot.js';
+import { LINK_CASES } from '../../fixtures/links/battery.js';
 
 const allowed = (partial: Partial<Record<keyof AllowedFacts, Iterable<string | number>>> = {}) =>
   ({
@@ -10,7 +11,7 @@ const allowed = (partial: Partial<Record<keyof AllowedFacts, Iterable<string | n
     dates: new Set(partial.dates ?? ['12-25', '09-24']),
     phones: new Set(partial.phones ?? ['34910000000', '910000000']),
     emails: new Set(partial.emails ?? ['hola@example.com']),
-    urls: new Set(partial.urls ?? ['https://example.com/info']),
+    urls: new Set(partial.urls ?? ['example.com/info']),
     amountsCents: new Set(partial.amountsCents ?? []),
     numbers: new Set(partial.numbers ?? ['12', '28013', '30']),
   }) as AllowedFacts;
@@ -51,7 +52,8 @@ describe('extracción de cifras', () => {
         'mira https://example.com/info/. Estamos en el número 12.',
     );
     expect(facts.map((f) => [f.category, f.value])).toEqual([
-      ['url', 'https://example.com/info'],
+      // 012: la clave de una dirección es el host (sin www.) y la ruta, sin protocolo.
+      ['url', 'example.com/info'],
       ['email', 'hola@example.com'],
       ['phone', '34910000000'],
       ['phone', '910000000'],
@@ -168,4 +170,29 @@ describe('enlace a mapa (003, Principio IV)', () => {
       groundingGuard(`Mapa: ${MAP}`, buildAllowedFacts(activeSnapshot(), emptyDerived())),
     ).toMatchObject({ ok: false });
   });
+});
+
+describe('direcciones con la regla común de enlaces (012, US7, FR-031)', () => {
+  const SITE = 'https://www.peluqueria-tijeras.es/reservas';
+  const base = activeSnapshot();
+  // Cualquier texto del negocio vale como dirección registrada (aquí, el enlace a mapa).
+  const snapshot = { ...base, business: { ...base.business, mapUrl: SITE } };
+  const facts = () => buildAllowedFacts(snapshot, emptyDerived());
+
+  it.each([
+    ['con protocolo', 'Reserva en ' + SITE],
+    ['sin protocolo', 'Reserva en peluqueria-tijeras.es/reservas'],
+    ['con www.', 'Reserva en www.peluqueria-tijeras.es/reservas.'],
+    ['en mayúsculas', 'Reserva en HTTPS://WWW.PELUQUERIA-TIJERAS.ES/reservas'],
+  ])('la registrada vale %s', (_name, body) => {
+    expect(groundingGuard(body, facts())).toEqual({ ok: true });
+  });
+
+  it.each(LINK_CASES.filter((c) => c.candidates.length > 0).map((c) => [c.name, c.text] as const))(
+    'una no registrada se rechaza: %s',
+    (_name, text) => {
+      const result = groundingGuard('Mira esto: ' + text, facts());
+      expect(result).toMatchObject({ ok: false });
+    },
+  );
 });

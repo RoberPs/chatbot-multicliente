@@ -21,13 +21,13 @@ afterAll(async () => {
 });
 
 describe('versión del esquema', () => {
-  it('el núcleo instalado llega a 0007_chat_design con el hash que calcula Drizzle', () => {
+  it('el núcleo instalado llega a 0008_abuse_protection con el hash que calcula Drizzle', () => {
     const files = readMigrationFiles({ migrationsFolder: defaultMigrationsFolder });
     const installed = installedSchema();
-    expect(installed.tag).toBe('0007_chat_design');
-    expect(installed.index).toBe(7);
+    expect(installed.tag).toBe('0008_abuse_protection');
+    expect(installed.index).toBe(8);
     expect(installed.hash).toBe(files.at(-1)?.hash);
-    expect(readdirSync(defaultMigrationsFolder).filter((f) => f.endsWith('.sql'))).toHaveLength(8);
+    expect(readdirSync(defaultMigrationsFolder).filter((f) => f.endsWith('.sql'))).toHaveLength(9);
   });
 
   it('BD recién creada vacía → empty y todas pendientes', async () => {
@@ -44,6 +44,7 @@ describe('versión del esquema', () => {
         '0005_config_transfer',
         '0006_usage',
         '0007_chat_design',
+        '0008_abuse_protection',
       ]);
     });
   });
@@ -57,7 +58,7 @@ describe('versión del esquema', () => {
     });
   });
 
-  it('applyMigrationsUpTo(3) deja 0003 y el migrador de Drizzle aplica después de la 0004 a la 0007', async () => {
+  it('applyMigrationsUpTo(3) deja 0003 y el migrador de Drizzle aplica después de la 0004 a la 0008', async () => {
     const scratch = await createDatabaseMigratedUpTo(3);
     opened.push(scratch);
     await withClient(scratch.url, async (client) => {
@@ -67,6 +68,7 @@ describe('versión del esquema', () => {
         '0005_config_transfer',
         '0006_usage',
         '0007_chat_design',
+        '0008_abuse_protection',
       ]);
       const handoff = await client.query<{ t: string | null }>(
         `select to_regclass('public.handoff')::text as t`,
@@ -79,7 +81,7 @@ describe('versión del esquema', () => {
       const count = await client.query<{ n: string }>(
         'select count(*)::text as n from drizzle.__drizzle_migrations',
       );
-      expect(count.rows[0]?.n).toBe('8');
+      expect(count.rows[0]?.n).toBe('9');
     });
   });
 });

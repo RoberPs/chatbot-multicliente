@@ -40,7 +40,8 @@ export type RouteName = (typeof ROUTE_NAMES)[number];
 export type RouteResults = Partial<Record<RouteName, 'sent' | 'failed'>>;
 
 export type HandoffActionVia = 'whatsapp' | 'email';
-export type HandoffEndCause = 'business' | 'inactivity' | 'operator' | 'playground';
+/** `interrupted` (012, R10.4): un reintento no sabe si la alerta de inicio llegó al negocio. */
+export type HandoffEndCause = 'business' | 'inactivity' | 'operator' | 'playground' | 'interrupted';
 
 /** Datos de la derivación que llevan todos los mensajes al negocio. */
 export interface NoticeHandoff {

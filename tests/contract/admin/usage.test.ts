@@ -4,8 +4,18 @@
  */
 import type { FastifyInstance } from 'fastify';
 import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
-import { modelPrice, modelUsage, usageSettings } from '../../../src/db/schema.js';
-import { readUsageSettings } from '../../../src/usage/settings.js';
+import {
+  business,
+  handoffDay,
+  modelPrice,
+  modelUsage,
+  transcriptionPrice,
+  usageSettings,
+  whatsappUsageDay,
+} from '../../../src/db/schema.js';
+import { defaultHandoffLimits, readHandoffLimits } from '../../../src/handoff/limits.js';
+import { PRICE_IN_USE_MESSAGE, WHATSAPP_CAP_MESSAGE } from '../../../src/usage/schemas.js';
+import { readUsageSettings, readWhatsappCap } from '../../../src/usage/settings.js';
 import type { UsagePurpose } from '../../../src/usage/types.js';
 import {
   buildTestApp,
@@ -18,8 +28,15 @@ import {
   type FormFields,
   type Session,
 } from '../../helpers/app.js';
-import { createTestBot, TEST_LLM_MODEL, type TestBot } from '../../helpers/bot.js';
+import {
+  createTestBot,
+  TEST_LLM_MODEL,
+  TEST_STT_MODEL,
+  type TestBot,
+  type TestBotOptions,
+} from '../../helpers/bot.js';
 import { createTestDatabase, resetDb, type TestDatabase } from '../../helpers/db.js';
+import { FakeMediaFetcher, FakeSpeechToText } from '../../helpers/fakes.js';
 
 const ESTIMATE =
   'Coste estimado con los precios configurados aquí. No es la factura del proveedor. Importes ' +
@@ -350,6 +367,247 @@ describe('Consumo (/admin/usage)', () => {
       const res = await post('/admin/usage/prices/delete', { model: TEST_LLM_MODEL });
       expect(res.statusCode).toBe(303);
       expect((await readUsageSettings(t.db)).capEnabled).toBe(true);
+    });
+  });
+
+  describe('012: tope diario de WhatsApp y precios de transcripción', () => {
+    const STT = TEST_STT_MODEL;
+    const audio = () => ({ stt: new FakeSpeechToText(), media: new FakeMediaFetcher() });
+
+    async function startWith(opts: TestBotOptions): Promise<TestBot> {
+      bot = await createTestBot(t, opts);
+      app = bot.app;
+      session = await login(app);
+      return bot;
+    }
+
+    it('los POST nuevos sin CSRF dan 403', async () => {
+      const b = await start();
+      for (const url of [
+        '/admin/usage/whatsapp-cap',
+        '/admin/usage/transcription-prices',
+        `/admin/usage/transcription-prices/${STT}/delete`,
+      ]) {
+        const res = await b.app.inject({
+          method: 'POST',
+          url,
+          headers: { cookie: session.cookie, 'content-type': 'application/x-www-form-urlencoded' },
+          payload: encodeForm({ whatsappDailyCap: '5', model: STT, perMinute: '1' }),
+        });
+        expect([url, res.statusCode]).toEqual([url, 403]);
+      }
+    });
+
+    it('con WhatsApp: «Tope diario de WhatsApp» con hoy / tope; sin audios no hay precios de transcripción', async () => {
+      await start();
+      await t.db.insert(whatsappUsageDay).values({ day: '2026-09-24', replies: 7 });
+      const html = await page();
+      expect(html).toContain('<h2>Tope diario de WhatsApp</h2>');
+      expect(html).toContain('Respuestas con el modelo hoy: 7 / 200');
+      expect(html).not.toContain('Precios de transcripción');
+      expect(html).toContain('En producción el tope de gasto es obligatorio');
+    });
+
+    it('sin WhatsApp, la sección solo aparece si ya hay datos', async () => {
+      await startWith({ whatsapp: false });
+      expect(await page()).not.toContain('Tope diario de WhatsApp');
+      await t.db.insert(whatsappUsageDay).values({ day: '2026-09-20', replies: 3 });
+      expect(await page()).toContain('Tope diario de WhatsApp');
+    });
+
+    it('tope diario: 303 y 422 por rango con el mensaje', async () => {
+      await start();
+      for (const value of ['0', '10001', 'abc', '1,5', '']) {
+        const res = await post('/admin/usage/whatsapp-cap', { whatsappDailyCap: value });
+        expect([value, res.statusCode]).toEqual([value, 422]);
+        expect(fieldErrorsIn(res.body)).toEqual(['whatsappDailyCap']);
+        expect(res.body).toContain(WHATSAPP_CAP_MESSAGE);
+      }
+      expect(await readWhatsappCap(t.db)).toBe(200);
+      const ok = await post('/admin/usage/whatsapp-cap', { whatsappDailyCap: '50' });
+      expect(ok.statusCode).toBe(303);
+      expect(ok.headers.location).toBe('/admin/usage');
+      expect(await readWhatsappCap(t.db)).toBe(50);
+      expect(await page()).toContain('Respuestas con el modelo hoy: 0 / 50');
+    });
+
+    it('con audios: aviso del modelo sin precio, alta, cambio y borrado (303 / 404 / 422)', async () => {
+      await startWith({ audio: audio() });
+      const html = await page();
+      expect(html).toContain('<h2>Precios de transcripción</h2>');
+      expect(html).toContain(`El modelo de transcripción «${STT}» no tiene precio.`);
+      expect(html).toContain(`id="transcriptionModel" name="model" type="text" value="${STT}"`);
+
+      const bad = await post('/admin/usage/transcription-prices', { model: ' ', perMinute: '-1' });
+      expect(bad.statusCode).toBe(422);
+      expect(fieldErrorsIn(bad.body).sort()).toEqual(['perMinute', 'transcriptionModel']);
+      expect(await t.db.select().from(transcriptionPrice)).toEqual([]);
+
+      expect(
+        (await post('/admin/usage/transcription-prices', { model: STT, perMinute: '0,006' }))
+          .statusCode,
+      ).toBe(303);
+      await post('/admin/usage/transcription-prices', { model: STT, perMinute: '0.01' });
+      const [row] = await t.db.select().from(transcriptionPrice);
+      expect(row).toMatchObject({ model: STT, microsPerMinute: 10_000n });
+      const after = await page();
+      expect(after).toContain(`${STT} <span class="badge badge-ok">modelo actual</span>`);
+      expect(after).not.toContain(`El modelo de transcripción «${STT}» no tiene precio.`);
+
+      const missing = await post('/admin/usage/transcription-prices/no-existe/delete', {});
+      expect(missing.statusCode).toBe(404);
+      const deleted = await post(`/admin/usage/transcription-prices/${STT}/delete`, {});
+      expect(deleted.statusCode).toBe(303);
+      expect(await t.db.select().from(transcriptionPrice)).toEqual([]);
+    });
+
+    it('sin audios, la sección aparece si ya hay precios (para poder borrarlos)', async () => {
+      await start();
+      await t.db.insert(transcriptionPrice).values({ model: 'antiguo', microsPerMinute: 1n });
+      expect(await page()).toContain('<h2>Precios de transcripción</h2>');
+      expect((await post('/admin/usage/transcription-prices/antiguo/delete', {})).statusCode).toBe(
+        303,
+      );
+    });
+
+    it('cambiar la moneda exige también la tabla de transcripción vacía', async () => {
+      await start();
+      await t.db.insert(transcriptionPrice).values({ model: STT, microsPerMinute: 1n });
+      const res = await post('/admin/usage/settings', { currency: 'EUR' });
+      expect(res.statusCode).toBe(422);
+      expect(fieldErrorsIn(res.body)).toEqual(['currency']);
+    });
+
+    describe('en producción con el negocio activo (FR-003)', () => {
+      async function production(): Promise<TestBot> {
+        const b = await startWith({ production: true, audio: audio() });
+        await post('/admin/usage/prices', price());
+        await post('/admin/usage/transcription-prices', { model: STT, perMinute: '0,006' });
+        await post('/admin/usage/settings', {
+          currency: 'USD',
+          capEnabled: 'on',
+          monthlyCap: '10',
+        });
+        expect((await readUsageSettings(t.db)).capEnabled).toBe(true);
+        return b;
+      }
+
+      it('desactivar el tope da 422 en capEnabled', async () => {
+        await production();
+        const res = await post('/admin/usage/settings', { currency: 'USD', monthlyCap: '10' });
+        expect(res.statusCode).toBe(422);
+        expect(fieldErrorsIn(res.body)).toEqual(['capEnabled']);
+        expect(res.body).toContain(
+          'En producción el tope de gasto es obligatorio mientras el negocio está activo.',
+        );
+        expect((await readUsageSettings(t.db)).capEnabled).toBe(true);
+      });
+
+      it('borrar el precio de LLM_MODEL o de STT_MODEL da 422; otros se borran', async () => {
+        await production();
+        const llm = await post('/admin/usage/prices/delete', { model: TEST_LLM_MODEL });
+        expect(llm.statusCode).toBe(422);
+        expect(llm.body).toContain(PRICE_IN_USE_MESSAGE);
+        const stt = await post(`/admin/usage/transcription-prices/${STT}/delete`, {});
+        expect(stt.statusCode).toBe(422);
+        expect(stt.body).toContain(PRICE_IN_USE_MESSAGE);
+        expect(await t.db.select().from(modelPrice)).toHaveLength(1);
+        expect(await t.db.select().from(transcriptionPrice)).toHaveLength(1);
+
+        await post('/admin/usage/prices', price({ model: 'otro-modelo' }));
+        expect(
+          (await post('/admin/usage/prices/delete', { model: 'otro-modelo' })).statusCode,
+        ).toBe(303);
+      });
+
+      it('con el negocio desactivado se permite', async () => {
+        await production();
+        await t.db.update(business).set({ status: 'draft' });
+        expect(
+          (await post('/admin/usage/prices/delete', { model: TEST_LLM_MODEL })).statusCode,
+        ).toBe(303);
+        expect((await post(`/admin/usage/transcription-prices/${STT}/delete`, {})).statusCode).toBe(
+          303,
+        );
+        expect(
+          (await post('/admin/usage/settings', { currency: 'USD', monthlyCap: '10' })).statusCode,
+        ).toBe(303);
+      });
+
+      it('el tope diario del chat web no baja de 1 (FR-011)', async () => {
+        await production();
+        const res = await post('/admin/web-chat', {
+          allowed_origins: 'https://negocio.example',
+          privacy_url: 'https://negocio.example/privacidad',
+          daily_cap: '0',
+          monthly_cap: '3000',
+        });
+        expect(res.statusCode).toBe(422);
+        expect(fieldErrorsIn(res.body)).toContain('daily_cap');
+      });
+    });
+  });
+
+  describe('012: límites de derivación (US2)', () => {
+    const LIMITS = { dailyMax: '5', forwardIntervalMinutes: '30', noticesDailyMax: '40' };
+
+    it('POST sin CSRF da 403', async () => {
+      const b = await start();
+      const res = await b.app.inject({
+        method: 'POST',
+        url: '/admin/usage/handoff-limits',
+        headers: { cookie: session.cookie, 'content-type': 'application/x-www-form-urlencoded' },
+        payload: encodeForm(LIMITS),
+      });
+      expect(res.statusCode).toBe(403);
+      expect(await readHandoffLimits(t.db)).toEqual(defaultHandoffLimits);
+    });
+
+    it('muestra los límites y los contadores de hoy', async () => {
+      await start();
+      await t.db
+        .insert(handoffDay)
+        .values({ day: '2026-09-24', started: 3, refused: 2, notices: 7, noticesHeld: 1 });
+      const html = await page();
+      expect(html).toContain('<h2>Límites de derivación</h2>');
+      expect(html).toMatch(/name="dailyMax"[^>]*value="20"/);
+      expect(html).toMatch(/name="forwardIntervalMinutes"[^>]*value="15"/);
+      expect(html).toMatch(/name="noticesDailyMax"[^>]*value="60"/);
+      expect(html).toContain('Derivaciones nuevas hoy: 3 / 20');
+      expect(html).toContain('Peticiones sin aviso hoy: 2');
+      expect(html).toContain('Avisos al negocio hoy: 7 / 60');
+      expect(html).toContain('Avisos retenidos hoy: 1');
+    });
+
+    it('422 con un error por campo y su rango; 303 guarda', async () => {
+      await start();
+      const bad = await post('/admin/usage/handoff-limits', {
+        dailyMax: '0',
+        forwardIntervalMinutes: '241',
+        noticesDailyMax: 'muchos',
+      });
+      expect(bad.statusCode).toBe(422);
+      expect(fieldErrorsIn(bad.body).sort()).toEqual([
+        'dailyMax',
+        'forwardIntervalMinutes',
+        'noticesDailyMax',
+      ]);
+      expect(bad.body).toContain('Indica un número entero entre 1 y 200');
+      expect(bad.body).toContain('Indica un número entero entre 5 y 240');
+      expect(bad.body).toContain('Indica un número entero entre 10 y 500');
+      // El formulario se repinta con lo enviado.
+      expect(bad.body).toMatch(/name="noticesDailyMax"[^>]*value="muchos"/);
+      expect(await readHandoffLimits(t.db)).toEqual(defaultHandoffLimits);
+
+      const ok = await post('/admin/usage/handoff-limits', LIMITS);
+      expect(ok.statusCode).toBe(303);
+      expect(ok.headers.location).toBe('/admin/usage');
+      expect(await readHandoffLimits(t.db)).toEqual({
+        dailyMax: 5,
+        forwardIntervalMinutes: 30,
+        noticesDailyMax: 40,
+      });
+      expect(await page()).toContain('Derivaciones nuevas hoy: 0 / 5');
     });
   });
 

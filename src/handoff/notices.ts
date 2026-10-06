@@ -7,6 +7,12 @@
 import { addDays, localNow } from '../conversation/facts.js';
 import type { Channel } from '../conversation/channels.js';
 import { displayPhone, displayTime } from '../conversation/templates.js';
+import {
+  customerQuote,
+  quoteForEmail,
+  quoteReason,
+  quoteSummaryForTemplate,
+} from './customer-text.js';
 import { dayAndMonth } from './schedule.js';
 import type { BusinessNotice, ForwardItem, HandoffKind, NoticeHandoff } from './types.js';
 
@@ -48,19 +54,29 @@ export function sanitizeTemplateVar(value: string): string {
   return clean === '' ? '—' : clean;
 }
 
+/**
+ * Nombre del cliente en los avisos (012, FR-017): en una línea y con sus direcciones desactivadas;
+ * lo escribe el cliente (nombre que dio o perfil de WhatsApp).
+ */
+const customerName = (h: NoticeHandoff): string =>
+  customerQuote(h.customerName).replace(/\s+/gu, ' ').trim() || '—';
+
 export function alertNotice(data: Omit<NoticeHandoff, 'threadRef'>): BusinessNotice {
   return { type: 'alert', handoff: { ...data, threadRef: null } };
 }
 
-/** `{{1}}`–`{{5}}` de `derivacion_aviso`: nombre, teléfono, canal, tipo y motivo. */
+/**
+ * `{{1}}`–`{{5}}` de `derivacion_aviso`: nombre, teléfono, canal, tipo y motivo. El motivo va
+ * delimitado como texto del cliente (012); la plantilla aprobada no cambia.
+ */
 export function alertTemplateVars(notice: BusinessNotice): string[] {
   const h = notice.handoff;
   return [
-    h.customerName,
+    customerName(h),
     displayPhone(h.customerPhone),
     describeChannel(h.channel),
     describeKind(h.kind),
-    h.summary,
+    quoteSummaryForTemplate(sanitizeTemplateVar(h.summary)),
   ].map(sanitizeTemplateVar);
 }
 
@@ -79,12 +95,12 @@ export interface EmailContent {
 
 function customerLines(h: NoticeHandoff, now: Date): string[] {
   return [
-    `Cliente: ${h.customerName}`,
+    `Cliente: ${customerName(h)}`,
     `Teléfono: ${displayPhone(h.customerPhone)}`,
     `Canal: ${describeChannel(h.channel)}`,
     `Tipo: ${describeKind(h.kind)}`,
     `Desde: ${describeSince(h.startedAt, now, h.timezone)}`,
-    `Motivo: ${h.summary}`,
+    quoteReason(h.summary),
   ];
 }
 
@@ -105,7 +121,7 @@ export function alertEmail(
 ): EmailContent {
   const h = notice.handoff;
   return {
-    subject: `Derivación: ${h.customerName} (${describeKind(h.kind)})`,
+    subject: `Derivación: ${customerName(h)} (${describeKind(h.kind)})`,
     text: [
       'El asistente ha pasado una conversación a tu negocio.',
       '',
@@ -138,21 +154,28 @@ export function forwardNotice(
 export const forwardItemText = (item: ForwardItem): string =>
   item.text !== null && item.text.trim() !== '' ? item.text : `[${item.otherType ?? item.kind}]`;
 
+const FORWARD_OPEN = 'El cliente escribió: «';
+const FORWARD_CLOSE = '»';
+
 /**
  * `{{1}}`–`{{3}}` de `derivacion_mensaje`: nombre, teléfono y los textos del lote separados por
- * " / ", recortados a 700 caracteres con la coletilla que corresponda.
+ * " / ", delimitados como texto del cliente (012) y recortados para que la variable no pase de 700
+ * caracteres, con la coletilla que corresponda.
  */
 export function forwardTemplateVars(
   notice: Extract<BusinessNotice, { type: 'forward' }>,
 ): string[] {
   const h = notice.handoff;
-  const joined = sanitizeTemplateVar(notice.items.map(forwardItemText).join(' / '));
+  const joined = sanitizeTemplateVar(
+    notice.items.map((item) => customerQuote(forwardItemText(item))).join(' / '),
+  );
   const cut = notice.emailAvailable ? CUT_WITH_EMAIL : CUT_WITHOUT_EMAIL;
-  const text =
-    joined.length <= FORWARD_TEMPLATE_MAX
-      ? joined
-      : `${joined.slice(0, FORWARD_TEMPLATE_MAX - cut.length).trimEnd()}${cut}`;
-  return [h.customerName, displayPhone(h.customerPhone), text].map(sanitizeTemplateVar);
+  const budget = FORWARD_TEMPLATE_MAX - FORWARD_OPEN.length - FORWARD_CLOSE.length;
+  const inner =
+    joined.length <= budget ? joined : `${joined.slice(0, budget - cut.length).trimEnd()}${cut}`;
+  return [customerName(h), displayPhone(h.customerPhone), FORWARD_OPEN + inner + FORWARD_CLOSE].map(
+    sanitizeTemplateVar,
+  );
 }
 
 /** Email del reenvío: cada mensaje completo, en orden y con su hora local (R7). */
@@ -161,17 +184,18 @@ export function forwardEmail(
   baseUrl: string | null,
 ): EmailContent {
   const h = notice.handoff;
-  // Las líneas de continuación van sangradas: nada del cliente empieza en la columna 0, donde
+  // Texto del cliente sangrado y entre comillas (012): nada suyo empieza en la columna 0, donde
   // están los enlaces «Le atiendo» y «Terminado».
-  const lines = notice.items.map((item) => {
+  const lines = notice.items.flatMap((item) => {
     const time = displayTime(localNow(item.sentAt, h.timezone).time);
-    return `[${time}] ${forwardItemText(item).split(/\r?\n/).join('\n    ')}`;
+    return quoteForEmail(forwardItemText(item), `[${time}] `);
   });
   return {
-    subject: `Mensaje de ${h.customerName} durante la derivación`,
+    subject: `Mensaje de ${customerName(h)} durante la derivación`,
     text: [
-      `${h.customerName} (${displayPhone(h.customerPhone)}) ha escrito durante la derivación:`,
+      `${customerName(h)} (${displayPhone(h.customerPhone)}) ha escrito durante la derivación.`,
       '',
+      'El cliente escribió:',
       ...lines,
       '',
       'Contéstale desde tu teléfono; el asistente no le responde mientras tanto.',
@@ -197,10 +221,10 @@ export function reminderTemplateVars(
 ): string[] {
   const h = notice.handoff;
   return [
-    h.customerName,
+    customerName(h),
     displayPhone(h.customerPhone),
     describeSince(notice.waitingSince, now, h.timezone),
-    h.summary,
+    quoteSummaryForTemplate(sanitizeTemplateVar(h.summary)),
   ].map(sanitizeTemplateVar);
 }
 
@@ -219,7 +243,7 @@ export function reminderEmail(
 ): EmailContent {
   const h = notice.handoff;
   return {
-    subject: `Recordatorio: ${h.customerName} sigue esperando`,
+    subject: `Recordatorio: ${customerName(h)} sigue esperando`,
     text: [
       'Todavía no consta que hayas contactado con este cliente.',
       '',

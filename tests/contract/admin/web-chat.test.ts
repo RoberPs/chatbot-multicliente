@@ -119,7 +119,12 @@ describe('Chat web (/admin/web-chat)', () => {
       [`${ORIGIN}\n${ORIGIN}/`, 'Línea 2: esa web está repetida'],
     ];
     for (const [origins, message] of casos) {
-      const res = await postForm(app, session, '/admin/web-chat', activar({ allowed_origins: origins }));
+      const res = await postForm(
+        app,
+        session,
+        '/admin/web-chat',
+        activar({ allowed_origins: origins }),
+      );
       expect([origins, res.statusCode]).toEqual([origins, 422]);
       expect(res.body).toContain(message);
     }

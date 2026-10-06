@@ -56,9 +56,7 @@ export async function hoursRoutes(app: FastifyInstance): Promise<void> {
       opts.error?.status ?? 200,
     );
 
-  app.get('/hours', async (request, reply) =>
-    renderHours(request, reply, await readState(deps)),
-  );
+  app.get('/hours', async (request, reply) => renderHours(request, reply, await readState(deps)));
 
   app.get<{ Params: Params }>('/closures/:id', async (request, reply) => {
     const state = await readState(deps);

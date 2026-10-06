@@ -5,17 +5,28 @@
  * canal y por día, con el coste estimado según los precios que configura aquí; también fija la
  * moneda de coste y el tope mensual. No es información del negocio: no entra en el snapshot, en
  * los avisos ni en la exportación. Nada de esta pantalla identifica conversaciones ni clientes.
+ *
+ * 012: tope diario de WhatsApp, precios de transcripción y límites de las derivaciones con los
+ * contadores de hoy (contracts/admin-protection.md).
  */
-import type { FastifyInstance, FastifyRequest } from 'fastify';
+import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import type { Channel } from '../../conversation/channels.js';
+import { readHandoffDay, readHandoffLimits, saveHandoffLimits } from '../../handoff/limits.js';
+import { localDay } from '../../knowledge/time/local-date.js';
 import { formatCents, formatMicros, formatPico } from '../../usage/money.js';
 import {
   deletePrice,
+  deleteTranscriptionPrice,
   listPrices,
+  listTranscriptionPrices,
   readUsageSettings,
+  readWhatsappCap,
+  saveTranscriptionPrice,
   saveUsageSettings,
+  saveWhatsappCap,
   upsertPrice,
 } from '../../usage/settings.js';
+import { hasWhatsappUsage, readWhatsappReplies } from '../../usage/whatsapp-usage.js';
 import { spendCapState } from '../../usage/spend-cap.js';
 import {
   currentPeriods,
@@ -26,6 +37,7 @@ import {
 } from '../../usage/summary.js';
 import type { SpendCapLevel, UsageRow, UsageSummary } from '../../usage/types.js';
 import { parseForm } from '../form-parse.js';
+import type { FormErrorResponse } from '../form-errors.js';
 import { formErrorData, readState, renderPage, submitForm } from '../render.js';
 
 const TITLE = 'Consumo';
@@ -98,9 +110,26 @@ function monthLabel(month: string): string {
 
 const dayLabel = (iso: string): string => iso.split('-').reverse().join('/');
 
+/**
+ * Los campos del formulario de precios de transcripción se llaman como los de la 010 (`model`);
+ * en la página se pintan con su propio nombre para no mezclar sus errores.
+ */
+const TRANSCRIPTION_FIELDS: Record<string, string> = {
+  model: 'transcriptionModel',
+  perMinute: 'perMinute',
+};
+
+function renameFields<T>(
+  values: Record<string, T> | undefined,
+  names: Record<string, string>,
+): Record<string, T> {
+  return Object.fromEntries(Object.entries(values ?? {}).map(([k, v]) => [names[k] ?? k, v]));
+}
+
 export async function usageRoutes(app: FastifyInstance): Promise<void> {
   const { db } = app.knowledge;
   const currentModel = app.env.LLM_MODEL;
+  const protection = app.protection;
 
   /**
    * Datos de la página, leídos sin caché. `month` es el `?month` pedido (solo si es un mes
@@ -152,6 +181,33 @@ export async function usageRoutes(app: FastifyInstance): Promise<void> {
     }
 
     const currentHasPrice = prices.some((p) => p.model === currentModel);
+
+    // 012 (R5, R6): tope diario de WhatsApp y precios de transcripción. Sin WhatsApp o sin
+    // audios solo se muestran si ya tienen datos.
+    const whatsappDailyCap = await readWhatsappCap(db);
+    const transcriptionPrices = await listTranscriptionPrices(db);
+    const sttModel = protection.sttModel;
+    const sttHasPrice = sttModel !== null && transcriptionPrices.some((p) => p.model === sttModel);
+    const whatsapp = {
+      show: (app.bot?.whatsapp ?? null) !== null || (await hasWhatsappUsage(db)),
+      today: await readWhatsappReplies(db, localDay(now, timezone)),
+      cap: whatsappDailyCap,
+    };
+    // 012 (US2): límites de derivación y lo que llevan hoy.
+    const limits = await readHandoffLimits(db);
+    const handoffDay = await readHandoffDay(db, localDay(now, timezone));
+    const handoffs = { limits, today: handoffDay };
+    const transcription = {
+      show: sttModel !== null || transcriptionPrices.length > 0,
+      sttModel,
+      sttHasPrice,
+      prices: transcriptionPrices.map((p) => ({
+        model: p.model,
+        current: p.model === sttModel,
+        perMinute: formatMicros(p.microsPerMinute),
+      })),
+    };
+
     return {
       state,
       title: TITLE,
@@ -178,7 +234,17 @@ export async function usageRoutes(app: FastifyInstance): Promise<void> {
         cap: cap.capCents === null ? null : `${formatCents(cap.capCents)} ${cap.currency}`,
         percent: cap.percent,
       },
+      production: protection.production,
+      whatsapp,
+      transcription,
+      handoffs,
       values: {
+        whatsappDailyCap: String(whatsappDailyCap),
+        dailyMax: String(limits.dailyMax),
+        forwardIntervalMinutes: String(limits.forwardIntervalMinutes),
+        noticesDailyMax: String(limits.noticesDailyMax),
+        transcriptionModel: sttModel !== null && !sttHasPrice ? sttModel : '',
+        perMinute: '',
         model: currentHasPrice ? '' : currentModel,
         input: '',
         output: '',
@@ -194,6 +260,61 @@ export async function usageRoutes(app: FastifyInstance): Promise<void> {
 
   app.get('/usage', async (request, reply) =>
     renderPage(request, reply, VIEW, await pageData(request)),
+  );
+
+  /** Repinta la página con los errores del formulario enviado (y sus valores). */
+  const repaint =
+    (request: FastifyRequest, reply: FastifyReply, form?: Record<string, unknown>) =>
+    async (error: FormErrorResponse) =>
+      renderPage(
+        request,
+        reply,
+        VIEW,
+        { ...(await pageData(request, form)), ...formErrorData(error) },
+        error.status,
+      );
+
+  app.post('/usage/whatsapp-cap', async (request, reply) => {
+    const form = parseForm(request.body);
+    return submitForm(request, reply, {
+      run: () => saveWhatsappCap(db, form),
+      redirectTo: '/admin/usage',
+      onError: repaint(request, reply, form),
+    });
+  });
+
+  app.post('/usage/handoff-limits', async (request, reply) => {
+    const form = parseForm(request.body);
+    return submitForm(request, reply, {
+      run: () => saveHandoffLimits(db, form),
+      redirectTo: '/admin/usage',
+      onError: repaint(request, reply, form),
+    });
+  });
+
+  app.post('/usage/transcription-prices', async (request, reply) => {
+    const form = parseForm(request.body);
+    return submitForm(request, reply, {
+      run: () => saveTranscriptionPrice(db, form),
+      redirectTo: '/admin/usage',
+      onError: async (error) =>
+        repaint(
+          request,
+          reply,
+          renameFields(form, TRANSCRIPTION_FIELDS),
+        )({ ...error, errors: renameFields(error.errors, TRANSCRIPTION_FIELDS) }),
+    });
+  });
+
+  app.post<{ Params: { model: string } }>(
+    '/usage/transcription-prices/:model/delete',
+    async (request, reply) =>
+      submitForm(request, reply, {
+        run: () => deleteTranscriptionPrice(db, request.params.model, protection),
+        redirectTo: '/admin/usage',
+        message: 'Precio eliminado',
+        onError: repaint(request, reply),
+      }),
   );
 
   app.post('/usage/prices', async (request, reply) => {
@@ -216,7 +337,7 @@ export async function usageRoutes(app: FastifyInstance): Promise<void> {
     const form = parseForm(request.body);
     const model = typeof form.model === 'string' ? form.model : '';
     return submitForm(request, reply, {
-      run: () => deletePrice(db, model),
+      run: () => deletePrice(db, model, protection),
       redirectTo: '/admin/usage',
       message: 'Precio eliminado',
       onError: async (error) =>
@@ -233,7 +354,7 @@ export async function usageRoutes(app: FastifyInstance): Promise<void> {
   app.post('/usage/settings', async (request, reply) => {
     const form = parseForm(request.body);
     return submitForm(request, reply, {
-      run: () => saveUsageSettings(db, form, currentModel),
+      run: () => saveUsageSettings(db, form, currentModel, protection),
       redirectTo: '/admin/usage',
       onError: async (error) =>
         renderPage(

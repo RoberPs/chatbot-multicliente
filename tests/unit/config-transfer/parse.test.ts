@@ -60,7 +60,11 @@ describe('parseConfigFile', () => {
       }),
       OPTIONS,
     );
-    expect(result).toMatchObject({ ok: false, reason: 'future_version', sourceInstance: 'demo-01' });
+    expect(result).toMatchObject({
+      ok: false,
+      reason: 'future_version',
+      sourceInstance: 'demo-01',
+    });
     if (result.ok) return;
     expect(result.issues).toHaveLength(1);
     expect(result.issues[0]?.message).toContain(
@@ -70,7 +74,10 @@ describe('parseConfigFile', () => {
 
   it('formatVersion 0 o no entero → unsupported_version', () => {
     for (const version of [0, 1.5, '1', null]) {
-      const result = parseConfigFile(variant((f) => (f.formatVersion = version)), OPTIONS);
+      const result = parseConfigFile(
+        variant((f) => (f.formatVersion = version)),
+        OPTIONS,
+      );
       expect(result).toMatchObject({ ok: false, reason: 'unsupported_version' });
     }
   });
@@ -202,12 +209,80 @@ describe('formato 2: diseño del chat (011)', () => {
     const result = parseConfigFile(bytes('v2-chat-design.json'), OPTIONS);
     if (!result.ok) throw new Error(JSON.stringify(result.issues));
     expect(result.fileVersion).toBe(2);
-    expect(result.document.chatDesign).toMatchObject({ shape: 'soft', position: 'left', size: 'large' });
+    expect(result.document.chatDesign).toMatchObject({
+      shape: 'soft',
+      position: 'left',
+      size: 'large',
+    });
     expect(result.document.chatDesign?.images.logo?.type).toBe('image/png');
   });
 
   it('un fichero de la versión 3 se rechaza como versión posterior', () => {
-    const result = parseConfigFile(variant((f) => (f.formatVersion = 3)), OPTIONS);
+    const result = parseConfigFile(
+      variant((f) => (f.formatVersion = 3)),
+      OPTIONS,
+    );
     expect(result).toMatchObject({ ok: false, reason: 'future_version' });
+  });
+});
+
+describe('máximos por lista (012, US6, FR-028)', () => {
+  /** Rellena la lista de `path` hasta `n` elementos copiando el primero (o `make`). */
+  function grow(file: Json, path: string[], n: number, make?: (i: number) => unknown): void {
+    const parent = path.slice(0, -1).reduce<Json>((node, key) => node[key] as Json, file);
+    const key = path.at(-1) ?? '';
+    const list = (parent[key] ?? []) as unknown[];
+    parent[key] = Array.from({ length: n }, (_, i) =>
+      make ? make(i) : structuredClone(list[i % Math.max(1, list.length)] ?? null),
+    );
+  }
+
+  it.each([
+    [['services'], 300, 'Hay 301 servicios; el máximo es 300'],
+    [['faqs'], 300, 'Hay 301 preguntas frecuentes; el máximo es 300'],
+    [['closures'], 366, 'Hay 367 cierres; el máximo es 366'],
+    [['openingHours'], 70, 'Hay 71 franjas de horario; el máximo es 70'],
+    [['policies', 'paymentMethods'], 30, 'Hay 31 formas de pago; el máximo es 30'],
+  ] as const)('%j con un elemento de más → solo el error de longitud', (path, max, message) => {
+    const result = parseConfigFile(
+      variant((file) => {
+        grow(file, [...path], max + 1);
+        // Otro error que no debe aparecer: no se valida el resto.
+        file.business.name = '';
+      }),
+      OPTIONS,
+    );
+    expect(result).toMatchObject({ ok: false, reason: 'invalid' });
+    if (result.ok) return;
+    expect(result.issues.map((i) => i.message)).toEqual([message]);
+    expect(result.issues[0]?.section).toBe(path[0]);
+  });
+
+  it('una lista de cada recurso por encima de su máximo, con el recurso como elemento', () => {
+    const result = parseConfigFile(
+      variant((file) => {
+        grow(file, ['resources'], 1);
+        grow(file, ['resources', '0', 'absences'], 367);
+      }),
+      OPTIONS,
+    );
+    expect(result).toMatchObject({ ok: false, reason: 'invalid' });
+    if (result.ok) return;
+    expect(result.issues).toEqual([
+      expect.objectContaining({
+        section: 'resources',
+        message: 'Hay 367 ausencias del recurso; el máximo es 366',
+      }),
+    ]);
+  });
+
+  it('en su máximo no hay error de longitud', () => {
+    const result = parseConfigFile(
+      variant((file) => { grow(file, ['policies', 'paymentMethods'], 30, (i) => `Pago ${String(i)}`); }),
+      OPTIONS,
+    );
+    if (!result.ok) {
+      expect(result.issues.filter((i) => i.message.startsWith('Hay '))).toEqual([]);
+    }
   });
 });

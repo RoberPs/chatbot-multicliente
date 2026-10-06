@@ -12,7 +12,13 @@ import { z } from 'zod';
 import { INSTANCE_ID_PATTERN } from '../config/env.js';
 import { alertEmailSchema, alertWhatsappSchema } from '../handoff/schemas.js';
 import { BUSINESS_NAME_MAX, businessFields } from '../knowledge/schemas/business.js';
-import { isoDate, localTime, optionalLocalTime, optionalText, trimmedText } from '../knowledge/schemas/common.js';
+import {
+  isoDate,
+  localTime,
+  optionalLocalTime,
+  optionalText,
+  trimmedText,
+} from '../knowledge/schemas/common.js';
 import { dateRangeIssues } from '../knowledge/schemas/date-range-block.js';
 import { faqFields } from '../knowledge/schemas/faq.js';
 import {
@@ -45,12 +51,7 @@ import {
   parsePrivacyUrl,
   REPEATED_ORIGIN_MESSAGE,
 } from '../webchat/schemas.js';
-import {
-  FORMAT_ID,
-  normalizeKey,
-  type ConfigDocument,
-  type ConfigFileEnvelope,
-} from './format.js';
+import { FORMAT_ID, normalizeKey, type ConfigDocument, type ConfigFileEnvelope } from './format.js';
 
 export const MISSING_MESSAGE = 'Falta este campo';
 export const PRICE_MESSAGE = 'El importe debe ser un número entero de céntimos, 0 o más';
@@ -166,7 +167,10 @@ const toneSchema = z.strictObject({
 
 const channelSchema = (region: CountryCode) =>
   z
-    .strictObject({ type: channelTypeSchema, value: z.string({ error: 'Este campo es obligatorio' }) })
+    .strictObject({
+      type: channelTypeSchema,
+      value: z.string({ error: 'Este campo es obligatorio' }),
+    })
     .transform((channel, ctx) => {
       const parsed = channelValueSchema(channel.type, region).safeParse(channel.value);
       if (!parsed.success) {
@@ -272,34 +276,85 @@ export const configFileSchema = (region: CountryCode) =>
       chatDesign: present(chatDesignFileSchema.nullable()),
       alertDestinations: alertDestinationsSchema(region).optional(),
     })
-    .transform(
-      (file): { envelope: ConfigFileEnvelope; document: ConfigDocument } => ({
-        envelope: {
-          format: file.format,
-          formatVersion: file.formatVersion,
-          exportedAt: file.exportedAt,
-          source: file.source,
-          includesAlertDestinations: file.includesAlertDestinations,
-          info: file.info,
-        },
-        document: {
-          business: file.business,
-          openingHours: file.openingHours,
-          closures: file.closures,
-          services: file.services,
-          resources: file.resources,
-          faqs: file.faqs,
-          policies: file.policies,
-          tone: file.tone,
-          handoff: file.handoff,
-          webChat: file.webChat,
-          chatDesign: file.chatDesign,
-          ...(file.alertDestinations ? { alertDestinations: file.alertDestinations } : {}),
-        },
-      }),
-    );
+    .transform((file): { envelope: ConfigFileEnvelope; document: ConfigDocument } => ({
+      envelope: {
+        format: file.format,
+        formatVersion: file.formatVersion,
+        exportedAt: file.exportedAt,
+        source: file.source,
+        includesAlertDestinations: file.includesAlertDestinations,
+        info: file.info,
+      },
+      document: {
+        business: file.business,
+        openingHours: file.openingHours,
+        closures: file.closures,
+        services: file.services,
+        resources: file.resources,
+        faqs: file.faqs,
+        policies: file.policies,
+        tone: file.tone,
+        handoff: file.handoff,
+        webChat: file.webChat,
+        chatDesign: file.chatDesign,
+        ...(file.alertDestinations ? { alertDestinations: file.alertDestinations } : {}),
+      },
+    }));
 
 /** Error de una regla entre elementos, con la ruta en el fichero. */
+/**
+ * Máximos de cada lista del fichero (012, US6, FR-028; contracts/config-import-limits.md). `*` es
+ * cada elemento de la lista anterior. Se comprueban antes del esquema, sin recorrer el resto. Las
+ * webs permitidas del chat ya tienen su máximo en el esquema (008), con el resto de sus errores.
+ */
+export const LIST_LIMITS: ReadonlyArray<{ path: string[]; max: number; noun: string }> = [
+  { path: ['openingHours'], max: 70, noun: 'franjas de horario' },
+  { path: ['closures'], max: 366, noun: 'cierres' },
+  { path: ['services'], max: 300, noun: 'servicios' },
+  { path: ['resources'], max: 100, noun: 'recursos' },
+  { path: ['resources', '*', 'services'], max: 300, noun: 'servicios en el recurso' },
+  { path: ['resources', '*', 'hours'], max: 70, noun: 'franjas de horario del recurso' },
+  { path: ['resources', '*', 'absences'], max: 366, noun: 'ausencias del recurso' },
+  { path: ['faqs'], max: 300, noun: 'preguntas frecuentes' },
+  { path: ['policies', 'paymentMethods'], max: 30, noun: 'formas de pago' },
+  { path: ['handoff', 'channels'], max: 10, noun: 'canales de contacto' },
+  { path: ['handoff', 'hours'], max: 70, noun: 'franjas de horario de derivación' },
+];
+
+/** Listas por encima de su máximo: `Hay 412 servicios; el máximo es 300`, una por lista. */
+export function listLengthIssues(raw: unknown): RawIssue[] {
+  const issues: RawIssue[] = [];
+  const visit = (
+    node: unknown,
+    rest: string[],
+    at: Array<string | number>,
+    limit: (typeof LIST_LIMITS)[number],
+  ) => {
+    const [key, ...tail] = rest;
+    if (key === undefined) {
+      if (Array.isArray(node) && node.length > limit.max) {
+        issues.push({
+          path: at,
+          message: `Hay ${String(node.length)} ${limit.noun}; el máximo es ${String(limit.max)}`,
+        });
+      }
+      return;
+    }
+    if (key === '*') {
+      if (Array.isArray(node))
+        node.forEach((item, i) => {
+          visit(item, tail, [...at, i], limit);
+        });
+      return;
+    }
+    if (typeof node === 'object' && node !== null && !Array.isArray(node)) {
+      visit((node as Record<string, unknown>)[key], tail, [...at, key], limit);
+    }
+  };
+  for (const limit of LIST_LIMITS) visit(raw, limit.path, [], limit);
+  return issues;
+}
+
 export interface RawIssue {
   path: Array<string | number>;
   message: string;
@@ -352,7 +407,12 @@ export function crossCheckConfig(raw: unknown, region: CountryCode): RawIssue[] 
     issues.push({ path: ['services', i, 'name'], message: REPEATED_SERVICE_NAME });
   }
   services.forEach((s, i) => {
-    if (isRecord(s) && s.priceType === 'on_request' && s.priceCents !== null && s.priceCents !== undefined) {
+    if (
+      isRecord(s) &&
+      s.priceType === 'on_request' &&
+      s.priceCents !== null &&
+      s.priceCents !== undefined
+    ) {
       issues.push({ path: ['services', i, 'priceCents'], message: ON_REQUEST_PRICE_MESSAGE });
     }
   });
@@ -407,7 +467,10 @@ export function crossCheckConfig(raw: unknown, region: CountryCode): RawIssue[] 
       if (!value.success) return;
       const key = channelKey(type.data, value.data);
       if (seen.has(key)) {
-        issues.push({ path: ['handoff', 'channels', i, 'value'], message: REPEATED_CHANNEL_MESSAGE });
+        issues.push({
+          path: ['handoff', 'channels', i, 'value'],
+          message: REPEATED_CHANNEL_MESSAGE,
+        });
       }
       seen.add(key);
     });

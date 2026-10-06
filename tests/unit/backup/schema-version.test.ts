@@ -31,12 +31,12 @@ describe('foldEnumAdditions', () => {
     expect(foldEnumAdditions(statements)).toEqual(statements);
   });
 
-  it('con las migraciones del núcleo, message_status nace con forwarded y no queda ningún ADD VALUE', () => {
+  it('con las migraciones del núcleo, message_status nace con forwarded y held y no queda ningún ADD VALUE', () => {
     const folded = foldEnumAdditions(journal().map((m) => m.sql)).flat();
     expect(folded.some((s) => /ADD VALUE/i.test(s))).toBe(false);
     const create = folded.find((s) => s.includes('"message_status" AS ENUM'));
     expect(create).toContain(
-      `AS ENUM('pending', 'answered', 'discarded', 'rate_limited', 'sending', 'sent', 'failed', 'forwarded')`,
+      `AS ENUM('pending', 'answered', 'discarded', 'rate_limited', 'sending', 'sent', 'failed', 'forwarded', 'held')`,
     );
   });
 });

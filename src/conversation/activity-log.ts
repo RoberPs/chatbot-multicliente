@@ -14,15 +14,16 @@ import type {
   RouteName,
   RouteResults,
 } from '../handoff/types.js';
-import type { UsagePurpose } from '../usage/types.js';
+import type { ContactOnlyReason, UsagePurpose } from '../usage/types.js';
 import type { HandoffAction, MessageKind, REPLY_TEMPLATES } from './types.js';
 
 /** `disabled`: chat web desactivado; `quota`: tope del chat web alcanzado (004). */
 /** `spend_cap`: tope mensual de gasto alcanzado (010), solo en la recepción web. */
 export type DiscardReason =
   'not_active' | 'group' | 'outside_window' | 'deactivated' | 'disabled' | 'quota' | 'spend_cap';
+/** `blocked` (012, R6): el estado de protección no deja transcribir; ni se descarga. */
 export type TranscriptionFailure =
-  'too_large' | 'too_long' | 'language' | 'empty' | 'timeout' | 'provider_error';
+  'too_large' | 'too_long' | 'language' | 'empty' | 'timeout' | 'provider_error' | 'blocked';
 export type ReplyTemplate = (typeof REPLY_TEMPLATES)[number];
 /** Motivos de rechazo del chat web antes de la recepción (FR-025, FR-027). */
 export type WebRejection = 'origin' | 'session' | 'session_limit' | 'ip_limit' | 'invalid';
@@ -48,7 +49,17 @@ export type HandoffEvent =
   | {
       event: 'handoff_not_started';
       kind: HandoffKind;
-      reason: 'no_routes' | 'delivery_failed' | 'contact_refused';
+      /** `daily_limit` (012, R7): sin plaza de derivación o de aviso hoy. */
+      reason: 'no_routes' | 'delivery_failed' | 'contact_refused' | 'daily_limit';
+    }
+  /** Derivaciones nuevas del día agotadas; una vez por día local (012, R7). */
+  | { event: 'handoff_daily_limit'; max: number }
+  /** Reenvío aplazado por el intervalo entre avisos o por el tope diario (012, R7.2). */
+  | {
+      event: 'handoff_forward_deferred';
+      handoffId: string;
+      messages: number;
+      reason: 'interval' | 'daily_limit';
     }
   | {
       event: 'handoff_alert_failed';
@@ -83,6 +94,8 @@ export type HandoffEvent =
       cause: HandoffEndCause;
       durationMinutes: number;
       confirmed: boolean;
+      /** Entrantes pendientes que pasaron a `held` al terminar (012, R7.4). */
+      heldMessages?: number;
     }
   | {
       event: 'handoff_action_ignored';
@@ -129,6 +142,25 @@ export type BotEvent =
   | { event: 'usage_record_failed'; purpose: UsagePurpose }
   /** Tope de gasto alcanzado en el mes local `AAAA-MM`; una vez por mes (010, R10). Sin importes. */
   | { event: 'spend_cap_reached'; month: string }
+  // --- Protección frente a abuso (012, data-model.md §3) ---
+  /** No se pudo leer el estado de protección; como mucho uno por minuto (R2). */
+  | { event: 'protection_read_failed'; errorClass: string }
+  /** Respuesta sin modelo a un cliente final por un motivo de solo contacto o el tope diario. */
+  | { event: 'contact_only_reply'; reason: ContactOnlyReason | 'whatsapp_daily' }
+  /** Tope diario de respuestas de WhatsApp alcanzado; una vez por día local (R5). */
+  | { event: 'whatsapp_quota_reached'; cap: number }
+  /** No se pudo guardar el consumo de una transcripción; la respuesta sigue (R6). */
+  | { event: 'transcription_usage_failed' }
+  /** Avisos al negocio retenidos por el tope diario; una vez por día local (R7). */
+  | { event: 'business_notices_held'; max: number }
+  /** Un lote falló y se reintentará tras la espera (R10). `errorClass`: nombre del error. */
+  | { event: 'batch_retry_scheduled'; attempt: number; delayMs: number; errorClass: string }
+  /** Quinto fallo seguido: el lote se abandona con una disculpa (R10). */
+  | { event: 'batch_abandoned'; attempts: number; apologySent: boolean }
+  /** Login con retardo o cola (R16); como mucho uno por minuto, sin dirección ni usuario. */
+  | { event: 'login_throttled'; delayMs: number; queued: number; rejected: number }
+  /** Secretos débiles fuera de producción, al arrancar (R14). Sin valores. */
+  | { event: 'weak_secrets'; findings: Array<{ variable: string; rule: string }> }
   | HandoffEvent;
 
 export type BotEventName = BotEvent['event'];
@@ -152,6 +184,17 @@ export const eventLevels: Record<BotEventName, Level> = {
   web_quota_reached: 'warn',
   usage_record_failed: 'error',
   spend_cap_reached: 'warn',
+  protection_read_failed: 'error',
+  contact_only_reply: 'warn',
+  whatsapp_quota_reached: 'warn',
+  transcription_usage_failed: 'error',
+  business_notices_held: 'warn',
+  batch_retry_scheduled: 'warn',
+  batch_abandoned: 'error',
+  login_throttled: 'warn',
+  weak_secrets: 'warn',
+  handoff_daily_limit: 'warn',
+  handoff_forward_deferred: 'debug',
   handoff_offered: 'info',
   handoff_contact_requested: 'info',
   handoff_started: 'info',

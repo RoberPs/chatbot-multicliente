@@ -8,6 +8,8 @@ import { readHeader } from '../../../src/backup/format.js';
 import { databaseSchema, pendingMigrations } from '../../../src/backup/schema-version.js';
 import { createBackup, restoreBackup } from '../../../src/backup/service.js';
 import {
+  PENDING_AFTER_0003,
+  CURRENT_SCHEMA,
   createDatabaseMigratedUpTo,
   seedSchema0003,
   tempBackupDir,
@@ -48,19 +50,14 @@ describe('copia de un esquema anterior', () => {
     });
     expect(report).toMatchObject({
       schema: '0003_map_url',
-      installedSchema: '0007_chat_design',
-      pendingMigrations: ['0004_handoff', '0005_config_transfer', '0006_usage', '0007_chat_design'],
+      installedSchema: CURRENT_SCHEMA,
+      pendingMigrations: PENDING_AFTER_0003,
       expiredConversations: 0,
     });
 
     await withClient(current.url, async (client) => {
       expect(await databaseSchema(client)).toMatchObject({ tag: '0003_map_url' });
-      expect((await pendingMigrations(client)).map((m) => m.tag)).toEqual([
-        '0004_handoff',
-        '0005_config_transfer',
-        '0006_usage',
-        '0007_chat_design',
-      ]);
+      expect((await pendingMigrations(client)).map((m) => m.tag)).toEqual(PENDING_AFTER_0003);
       for (const table of ['handoff', 'handoff_notice', 'handoff_alerts']) {
         const r = await client.query<{ t: string | null }>(`select to_regclass($1)::text as t`, [
           `public.${table}`,

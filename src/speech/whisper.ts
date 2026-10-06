@@ -70,20 +70,28 @@ export function createWhisperSpeechToText(opts: WhisperOptions): SpeechToText {
       } catch {
         throw new SpeechToTextError(deadline.aborted ? 'timeout' : 'provider_error');
       }
-      if (!res.ok) throw new SpeechToTextError('provider_error', res.status);
+      // Desde aquí el proveedor ha respondido: el consumo se registra aunque falle (012, R6).
+      if (!res.ok) throw new SpeechToTextError('provider_error', res.status, { responded: true });
 
       const json = (await res.json().catch(() => null)) as {
         text?: unknown;
         language?: unknown;
         duration?: unknown;
       } | null;
+      const durationSeconds =
+        json && typeof json.duration === 'number' && Number.isFinite(json.duration)
+          ? json.duration
+          : null;
       if (!json || typeof json.text !== 'string') {
-        throw new SpeechToTextError('provider_error', res.status);
+        throw new SpeechToTextError('provider_error', res.status, {
+          responded: true,
+          durationSeconds,
+        });
       }
       return {
         text: json.text.trim(),
         language: languageCode(typeof json.language === 'string' ? json.language : undefined),
-        durationSeconds: typeof json.duration === 'number' ? json.duration : null,
+        durationSeconds,
       };
     },
   };

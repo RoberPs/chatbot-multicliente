@@ -146,6 +146,21 @@ export async function readChatDesign(tx: DbOrTx): Promise<ResolvedChatDesign> {
 }
 
 /**
+ * Huella y tipo de la imagen de un hueco, sin los bytes (012, US3): la ruta pública comprueba la
+ * versión pedida antes de leer la imagen. `null` sin imagen.
+ */
+export async function readDesignImageMeta(
+  tx: DbOrTx,
+  slot: Slot,
+): Promise<{ sha256: string; mimeType: string } | null> {
+  const [row] = await tx
+    .select({ sha256: chatDesignImage.sha256, mimeType: chatDesignImage.mimeType })
+    .from(chatDesignImage)
+    .where(eq(chatDesignImage.slot, slot));
+  return row ?? null;
+}
+
+/**
  * Bytes de la imagen de un hueco, solo si siguen pasando la validación (R13); `null` si no hay
  * imagen o ya no vale.
  */

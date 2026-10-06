@@ -412,6 +412,18 @@ describe('estado del tope de gasto (010, contracts/health-spend-cap.md)', () => 
     expect(Object.keys(parsed.instances[0] ?? {}).at(-1)).toBe('spendCap');
   });
 
+  it('012: "blocked" se lee y se muestra como «bloqueado» sin cambiar la fila ni la salida', () => {
+    const blocked = withCap('blocked');
+    const none = withCap('none');
+    expect(blocked).toMatchObject({ result: 'ok', review: false, spendCap: 'blocked' });
+    expect({ ...blocked, spendCap: null }).toEqual({ ...none, spendCap: null });
+    expect(exitCode(report([blocked]))).toBe(0);
+    const line = renderTable(report([blocked]))
+      .split('\n')
+      .find((l) => l.startsWith('demo-01'));
+    expect(line?.trim().split(/\s{2,}/).at(-1)).toBe('bloqueado');
+  });
+
   it('no cambia la clasificación, el código de salida ni la anotación', () => {
     const reached = withCap('reached');
     const none = withCap('none');

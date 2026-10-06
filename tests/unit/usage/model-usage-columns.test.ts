@@ -21,6 +21,8 @@ const ALLOWED = [
   'cache_read_tokens',
   'cost_pico',
   'currency',
+  // 012: duración del audio de una transcripción (no identifica a nadie).
+  'audio_ms',
 ];
 
 describe('columnas de model_usage (FR-003)', () => {

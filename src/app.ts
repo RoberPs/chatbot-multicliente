@@ -7,12 +7,14 @@ import view from '@fastify/view';
 import { Eta } from 'eta';
 import Fastify, { type FastifyBaseLogger, type FastifyError, type FastifyInstance } from 'fastify';
 import type { CountryCode } from 'libphonenumber-js';
+import { createLoginThrottle, type LoginThrottle } from './admin/auth/login-throttle.js';
 import { authPlugin, csrfOnPost, requireOperator } from './admin/auth/plugin.js';
 import { authRoutes } from './admin/auth/routes.js';
 import './admin/fastify-types.js';
 import { renderNotFound } from './admin/render.js';
 import { CHAT_DESIGN_PREVIEW_PATHS } from './admin/routes/chat-design.js';
 import { adminRoutes } from './admin/routes/index.js';
+import { clientKey } from './channels/client-key.js';
 import { handoffLinkRoutes } from './channels/handoff-links/routes.js';
 import { healthRoutes } from './channels/health/routes.js';
 import {
@@ -22,7 +24,7 @@ import {
   webChatRoutes,
 } from './channels/web/routes.js';
 import { whatsappWebhook } from './channels/whatsapp/webhook.js';
-import type { Env, WhatsAppEnv } from './config/env.js';
+import { protectionConfigFromEnv, type Env, type WhatsAppEnv } from './config/env.js';
 import type { ActivityLog } from './conversation/activity-log.js';
 import type { Intake } from './conversation/intake.js';
 import type { Clock } from './conversation/ports.js';
@@ -31,6 +33,7 @@ import type { HandoffService } from './handoff/service.js';
 import { createInstanceHealth, type InstanceHealth } from './health/report.js';
 import { readCoreVersion } from './health/version.js';
 import type { KnowledgeReader } from './knowledge/types.js';
+import type { ProtectionConfig } from './usage/protection.js';
 
 const viewsDir = fileURLToPath(new URL('./admin/views', import.meta.url));
 const require = createRequire(import.meta.url);
@@ -83,6 +86,13 @@ export interface BotHttp {
 export interface BuildAppOptions {
   env: Env;
   db: Db;
+  /**
+   * Pool de las lecturas públicas del chat web (012, FR-022); por defecto, el principal. El
+   * arranque le da uno propio y pequeño para que una avalancha no deje sin conexiones al resto.
+   */
+  publicDb?: Db;
+  /** Freno del login del operador (012, US4); las pruebas acortan sus esperas. */
+  loginThrottle?: LoginThrottle;
   logger?: boolean;
   /** Destino de los registros en lugar de la salida estándar (tests de los registros). */
   logStream?: { write(line: string): void };
@@ -96,24 +106,68 @@ export interface BuildAppOptions {
    * defecto, el sondeo real contra `DATABASE_URL` con la versión de `package.json`.
    */
   health?: InstanceHealth;
+  /** Protección frente a abuso (012); por defecto, la que da el entorno (`NODE_ENV`, modelos). */
+  protection?: ProtectionConfig;
 }
 
 /**
  * URL tal como se registra: el token de los enlaces del email es una credencial y va en la
- * ruta, así que se sustituye (005, FR-022).
+ * ruta, así que se sustituye (005, FR-022); de la consulta solo quedan los nombres de los
+ * parámetros, porque sus valores pueden ser secretos (el token de verificación del webhook) o
+ * datos del cliente (012, FR-033).
  */
-export const loggedUrl = (url: string): string =>
-  url.replace(/^\/handoff\/(?!assets\/)[^/?#]+/, '/handoff/:token');
+export function loggedUrl(url: string): string {
+  const at = url.indexOf('?');
+  const path = (at < 0 ? url : url.slice(0, at)).replace(
+    /^\/handoff\/(?!assets\/)[^/#]+/,
+    '/handoff/:token',
+  );
+  if (at < 0) return path;
+  const names = url
+    .slice(at + 1)
+    .split('#')[0]
+    ?.split('&')
+    .map((pair) => pair.split('=')[0] ?? '')
+    .filter((name) => name !== '');
+  return names && names.length > 0 ? `${path}?${names.join('&')}` : path;
+}
+
+/**
+ * Serializador de los errores en los registros (012, FR-032): solo el tipo, el código y el estado
+ * HTTP. Nunca el mensaje, la pila, la causa ni otras propiedades, que pueden llevar teléfonos,
+ * textos del cliente o credenciales.
+ */
+export function serializeError(error: unknown): {
+  type: string;
+  code?: string;
+  statusCode?: number;
+} {
+  if (typeof error !== 'object' || error === null) return { type: typeof error };
+  const { name, code, statusCode } = error as {
+    name?: unknown;
+    code?: unknown;
+    statusCode?: unknown;
+  };
+  return {
+    type: typeof name === 'string' && name !== '' ? name : 'Error',
+    ...(typeof code === 'string' || typeof code === 'number' ? { code: String(code) } : {}),
+    ...(typeof statusCode === 'number' ? { statusCode } : {}),
+  };
+}
 
 export async function buildApp({
   env,
   db,
+  publicDb = db,
+  loginThrottle = createLoginThrottle(),
   logger = true,
   logStream,
   bot = null,
+  protection = protectionConfigFromEnv(env),
   health = createInstanceHealth({
     databaseUrl: env.DATABASE_URL,
     coreVersion: readCoreVersion(),
+    protection,
   }),
 }: BuildAppOptions): Promise<FastifyInstance> {
   const app = Fastify({
@@ -130,6 +184,9 @@ export async function buildApp({
               url: loggedUrl(request.url),
               hostname: request.hostname,
             }),
+            // Los tipos de Fastify piden `message` y `stack`: se omiten a propósito (FR-032).
+            err: (error: FastifyError) =>
+              serializeError(error) as unknown as { type: string; message: string; stack: string },
           },
         }
       : false,
@@ -161,13 +218,20 @@ export async function buildApp({
   app.decorate('bot', channel);
   app.decorate('health', health);
   app.decorate('lifecycle', health.lifecycle);
+  app.decorate('protection', protection);
+  app.decorate('publicDb', publicDb);
+  app.decorate('loginThrottle', loginThrottle);
   // El pool propio del sondeo se cierra con la app.
   app.addHook('onClose', async () => {
     await health.close?.();
   });
 
   await app.register(formbody);
-  await app.register(rateLimit, { global: false });
+  // Clave común de todas las rutas con límite: IPv4 tal cual, IPv6 por su /64 (012, FR-020).
+  await app.register(rateLimit, {
+    global: false,
+    keyGenerator: (request) => clientKey(request.ip),
+  });
   await app.register(view, {
     engine: { eta: new Eta({ views: viewsDir, cache: env.NODE_ENV === 'production' }) },
     templates: viewsDir,

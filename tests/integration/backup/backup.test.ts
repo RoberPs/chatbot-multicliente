@@ -11,6 +11,7 @@ import { BACKUP_NAME_PATTERN } from '../../../src/backup/naming.js';
 import { databaseSchema } from '../../../src/backup/schema-version.js';
 import { createBackup } from '../../../src/backup/service.js';
 import {
+  CURRENT_SCHEMA,
   captureLogger,
   seedInstance,
   tempBackupDir,
@@ -64,7 +65,7 @@ describe('copia bajo demanda (US1)', () => {
     const files = await readdir(dir.path);
     expect(files).toEqual([report.file]);
     expect(report.file).toMatch(BACKUP_NAME_PATTERN);
-    expect(report.file).toBe('test-01__0007_chat_design__20260929T101500Z__manual.cbak');
+    expect(report.file).toBe(`test-01__${CURRENT_SCHEMA}__20260929T101500Z__manual.cbak`);
 
     const path = join(dir.path, report.file);
     const { header } = await readHeader(path);
@@ -101,7 +102,7 @@ describe('copia bajo demanda (US1)', () => {
     expect(report).toMatchObject({
       file: report.file,
       sizeBytes: bytes.length,
-      schema: '0007_chat_design',
+      schema: CURRENT_SCHEMA,
       reason: 'manual',
       createdAt: '2026-09-29T10:15:00.000Z',
     });
@@ -120,7 +121,7 @@ describe('copia bajo demanda (US1)', () => {
         file: report.file,
         reason: 'manual',
         sizeBytes: report.sizeBytes,
-        schema: '0007_chat_design',
+        schema: CURRENT_SCHEMA,
         durationMs: report.durationMs,
         tables: report.tables,
       },
@@ -247,9 +248,9 @@ describe('copia bajo demanda (US1)', () => {
   });
 
   it('borra los .partial propios de más de 1 h, no los recientes ni los de otra instancia', async () => {
-    const old = '.test-01__0007_chat_design__20260101T000000Z__manual.cbak.partial';
-    const recent = '.test-01__0007_chat_design__20260102T000000Z__manual.cbak.partial';
-    const foreign = '.otra-02__0007_chat_design__20260101T000000Z__manual.cbak.partial';
+    const old = `.test-01__${CURRENT_SCHEMA}__20260101T000000Z__manual.cbak.partial`;
+    const recent = `.test-01__${CURRENT_SCHEMA}__20260102T000000Z__manual.cbak.partial`;
+    const foreign = `.otra-02__${CURRENT_SCHEMA}__20260101T000000Z__manual.cbak.partial`;
     for (const name of [old, recent, foreign]) await writeFile(join(dir.path, name), 'x');
     const twoHoursAgo = new Date(Date.now() - 2 * 60 * 60 * 1000);
     await utimes(join(dir.path, old), twoHoursAgo, twoHoursAgo);

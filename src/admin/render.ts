@@ -1,10 +1,11 @@
-import type { FastifyReply, FastifyRequest } from 'fastify';
+import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import { withReadSnapshot } from '../db/client.js';
 import type { KnowledgeDeps } from '../knowledge/services/deps.js';
 import { formatCents } from '../knowledge/money.js';
 import { loadKnowledgeState } from '../knowledge/state.js';
 import type { KnowledgeState, Warning, WarningTargetKind } from '../knowledge/types.js';
 import { computeWarnings } from '../knowledge/warnings.js';
+import { protectionState, protectionWarnings, type ProtectionRead } from '../usage/protection.js';
 import { hasPrice } from '../usage/settings.js';
 import { spendCapState } from '../usage/spend-cap.js';
 import { isHtmx } from './auth/plugin.js';
@@ -65,6 +66,8 @@ function targetLink(kind: WarningTargetKind, id?: string): string {
       return id ? `/admin/services/${id}` : '/admin/services';
     case 'resource':
       return id ? `/admin/resources/${id}` : '/admin/resources';
+    case 'instance':
+      return '/admin/usage';
   }
 }
 
@@ -105,13 +108,18 @@ export async function renderPage(
   const warnings = computeWarnings(data.state);
   const version = await versionLine(request);
   const spend = await spendBanner(request, data.state.business.timezone);
+  const protection = protectionWarnings(
+    await readProtection(request.server, data.state.business.timezone),
+  );
   const html = await reply.viewAsync(view, {
     errors: {},
     values: {},
     ...data,
     warnings,
+    protectionWarnings: protection,
     h: viewHelpers,
     layout: {
+      protection,
       title: data.title,
       businessName: data.state.business.name,
       status: data.state.business.status,
@@ -125,6 +133,18 @@ export async function renderPage(
     },
   });
   return reply.code(status).type('text/html; charset=utf-8').send(html);
+}
+
+/**
+ * Estado de protección de la instancia (012) para el panel, leído sin caché en cada página. Nunca
+ * lanza: si no se puede leer, `spend_unreadable`.
+ */
+export function readProtection(server: FastifyInstance, timezone: string): Promise<ProtectionRead> {
+  return protectionState(server.knowledge.db, {
+    ...server.protection,
+    now: server.bot?.clock.now() ?? new Date(),
+    timezone,
+  });
 }
 
 /**

@@ -256,9 +256,17 @@ export type WarningCode =
   | 'SERVICE_WITHOUT_RESOURCE'
   | 'RESOURCE_HOURS_OUTSIDE_BUSINESS'
   | 'HANDOFF_CONTACT_MISSING'
-  | 'HANDOFF_UNREACHABLE';
+  | 'HANDOFF_UNREACHABLE'
+  // Avisos de protección (012, R3): los calcula `protectionWarnings`, nunca `computeWarnings`.
+  | 'SPEND_CAP_REQUIRED'
+  | 'MODEL_UNPRICED'
+  | 'STT_MODEL_UNPRICED'
+  | 'SPEND_UNREADABLE'
+  | 'BUSINESS_NOTICES_HELD';
 
-export type WarningTargetKind = 'business' | 'service' | 'resource' | 'handoff' | 'handoff_alerts';
+/** `instance`: avisos de la instancia, no de la configuración del negocio (012). */
+export type WarningTargetKind =
+  'business' | 'service' | 'resource' | 'handoff' | 'handoff_alerts' | 'instance';
 
 export interface Warning {
   code: WarningCode;

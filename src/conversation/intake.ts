@@ -10,7 +10,13 @@
 import type { Db } from '../db/client.js';
 import type { KnowledgeReader, KnowledgeSnapshot } from '../knowledge/types.js';
 import { readWebChatSettings, type WebChatSettings } from '../webchat/settings.js';
-import { checkSpendCap } from '../usage/spend-cap.js';
+import {
+  canCallModel,
+  checkProtection,
+  defaultProtectionConfig,
+  type ProtectionConfig,
+} from '../usage/protection.js';
+import type { CapReason } from '../usage/types.js';
 import { capReached, readWebUsage, type QuotaWatch } from '../webchat/usage.js';
 import type { ActivityLog, DiscardReason, EventContext } from './activity-log.js';
 import type { ChannelPolicies, ChannelPolicy } from './channels.js';
@@ -38,6 +44,8 @@ export interface IntakeDeps {
   /** Registra `web_quota_reached` una vez por periodo (compartido con el procesador). */
   quotaWatch?: QuotaWatch;
   settings?: ConversationSettings;
+  /** Producción y modelos de la instancia (012); sin ella, como fuera de producción. */
+  protection?: ProtectionConfig;
 }
 
 /** Resultado por evento, para que la ruta del chat web pueda contestar. */
@@ -57,6 +65,7 @@ class DuplicateMessage extends Error {}
 export function createIntake(deps: IntakeDeps): Intake {
   const { db, reader, clock, activityLog, policies } = deps;
   const settings = deps.settings ?? conversationSettings;
+  const protection = deps.protection ?? defaultProtectionConfig('');
 
   interface Stored {
     conversationId: string;
@@ -122,7 +131,7 @@ export function createIntake(deps: IntakeDeps): Intake {
   function webChecks(snapshot: KnowledgeSnapshot) {
     let web: Promise<WebChatSettings> | null = null;
     let cap: Promise<'day' | 'month' | null> | null = null;
-    let spend: Promise<boolean> | null = null;
+    let spend: Promise<CapReason | null> | null = null;
     const readSettings = () => (web ??= readWebChatSettings(db));
     return {
       readSettings,
@@ -135,17 +144,20 @@ export function createIntake(deps: IntakeDeps): Intake {
           if (period) deps.quotaWatch?.reached(period, current, now, snapshot.business.timezone);
           return period;
         })()),
-      /** Tope mensual de gasto alcanzado (010, R7); emite el evento del mes si toca (R10). */
+      /**
+       * El chat web no puede llamar al modelo: tope de gasto (010, R7) o un motivo de solo
+       * contacto (012, R1); emite los eventos de cada periodo si toca (R10).
+       */
       spendCapReached: (logContext: EventContext) =>
         (spend ??= (async () => {
-          const state = await checkSpendCap(
+          const state = await checkProtection(
             db,
-            clock.now(),
-            snapshot.business.timezone,
+            { ...protection, now: clock.now(), timezone: snapshot.business.timezone },
             activityLog,
             logContext,
           );
-          return state.level === 'reached';
+          const decision = canCallModel(state, 'web');
+          return decision.ok ? null : decision.reason;
         })()),
     };
   }
@@ -160,9 +172,16 @@ export function createIntake(deps: IntakeDeps): Intake {
     if (policy.requiresActiveBusiness && snapshot.status !== 'active') return 'not_active';
     if (policy.requiresWebChatEnabled && !(await web.readSettings()).enabled) return 'disabled';
     if (policy.usageCap && (await web.capReached()) !== null) return 'quota';
-    // 010: los dos topes se aplican a la vez (FR-017); el de gasto, solo en la web (R7).
-    if (policy.spendCap && policy.usageCap && (await web.spendCapReached(logContext))) {
-      return 'spend_cap';
+    // 010: los dos topes se aplican a la vez (FR-017); el de gasto y la protección de la 012,
+    // solo en la web (R7): WhatsApp guarda y decide el procesador.
+    if (policy.spendCap && policy.usageCap) {
+      const blocked = await web.spendCapReached(logContext);
+      if (blocked !== null) {
+        if (blocked !== 'spend_cap') {
+          activityLog.log({ event: 'contact_only_reply', reason: blocked }, logContext);
+        }
+        return 'spend_cap';
+      }
     }
     return null;
   }

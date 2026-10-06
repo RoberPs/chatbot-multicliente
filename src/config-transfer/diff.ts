@@ -101,7 +101,8 @@ const date = (iso: string): string => iso.split('-').reverse().join('/');
 
 /** `24/12/2026 – 26/12/2026` o `02/11/2026 09:00–12:00`. */
 export function formatBlock(b: ConfigDateBlock): string {
-  const dates = b.startDate === b.endDate ? date(b.startDate) : `${date(b.startDate)} – ${date(b.endDate)}`;
+  const dates =
+    b.startDate === b.endDate ? date(b.startDate) : `${date(b.startDate)} – ${date(b.endDate)}`;
   return b.startTime && b.endTime ? `${dates} ${b.startTime}–${b.endTime}` : dates;
 }
 
@@ -203,13 +204,17 @@ function slotsDiff(section: SectionKey, before: WeeklySlot[], after: WeeklySlot[
     if (!had && has) target.added.push({ label: a });
     else if (had && !has) target.removed.push({ label: b });
     else if (had && has && a !== b) {
-      target.modified.push({ label: day(d), fields: [{ field: 'hours', fieldLabel: 'Franjas', before: b, after: a }] });
+      target.modified.push({
+        label: day(d),
+        fields: [{ field: 'hours', fieldLabel: 'Franjas', before: b, after: a }],
+      });
     }
   }
   return target;
 }
 
-const blockKey = (b: ConfigDateBlock) => `${b.startDate}|${b.endDate}|${b.startTime ?? ''}|${b.endTime ?? ''}`;
+const blockKey = (b: ConfigDateBlock) =>
+  `${b.startDate}|${b.endDate}|${b.startTime ?? ''}|${b.endTime ?? ''}`;
 
 function closuresDiff(before: ConfigDocument, after: ConfigDocument): SectionDiff {
   const s = emptySection('closures');
@@ -236,7 +241,12 @@ function servicesDiff(before: ConfigDocument, after: ConfigDocument): SectionDif
       ...change('description', 'Descripción', longText(b.description), longText(a.description)),
       ...change('priceType', 'Tipo de precio', PRICE_TYPES[b.priceType], PRICE_TYPES[a.priceType]),
       ...change('priceCents', 'Precio', money(b.priceCents, bc), money(a.priceCents, ac)),
-      ...change('durationMinutes', 'Duración', formatMinutes(b.durationMinutes), formatMinutes(a.durationMinutes)),
+      ...change(
+        'durationMinutes',
+        'Duración',
+        formatMinutes(b.durationMinutes),
+        formatMinutes(a.durationMinutes),
+      ),
       ...change('bookable', 'Reservable', yesNo(b.bookable), yesNo(a.bookable)),
       ...change('active', 'Activo', yesNo(b.active), yesNo(a.active)),
     ];
@@ -291,10 +301,30 @@ function policiesDiff(before: ConfigDocument, after: ConfigDocument): SectionDif
   else if (b && !a) s.removed.push({ label });
   else if (b && a) {
     const fields = [
-      ...change('cancellationText', 'Texto de cancelación', longText(b.cancellationText), longText(a.cancellationText)),
-      ...change('cancellationNoticeMinutes', 'Aviso para cancelar', formatMinutes(b.cancellationNoticeMinutes), formatMinutes(a.cancellationNoticeMinutes)),
-      ...change('minAdvanceMinutes', 'Antelación mínima', formatMinutes(b.minAdvanceMinutes), formatMinutes(a.minAdvanceMinutes)),
-      ...change('maxAdvanceMinutes', 'Antelación máxima', formatMinutes(b.maxAdvanceMinutes), formatMinutes(a.maxAdvanceMinutes)),
+      ...change(
+        'cancellationText',
+        'Texto de cancelación',
+        longText(b.cancellationText),
+        longText(a.cancellationText),
+      ),
+      ...change(
+        'cancellationNoticeMinutes',
+        'Aviso para cancelar',
+        formatMinutes(b.cancellationNoticeMinutes),
+        formatMinutes(a.cancellationNoticeMinutes),
+      ),
+      ...change(
+        'minAdvanceMinutes',
+        'Antelación mínima',
+        formatMinutes(b.minAdvanceMinutes),
+        formatMinutes(a.minAdvanceMinutes),
+      ),
+      ...change(
+        'maxAdvanceMinutes',
+        'Antelación máxima',
+        formatMinutes(b.maxAdvanceMinutes),
+        formatMinutes(a.maxAdvanceMinutes),
+      ),
       ...change('paymentMethods', 'Formas de pago', list(b.paymentMethods), list(a.paymentMethods)),
     ];
     if (fields.length > 0) s.modified.push({ label, fields });
@@ -314,14 +344,20 @@ function toneDiff(before: ConfigDocument, after: ConfigDocument): SectionDiff {
   else if (b && a) {
     const fields = [
       ...change('addressForm', 'Trato', ADDRESS_FORMS[b.addressForm], ADDRESS_FORMS[a.addressForm]),
-      ...change('styleDescription', 'Estilo', longText(b.styleDescription), longText(a.styleDescription)),
+      ...change(
+        'styleDescription',
+        'Estilo',
+        longText(b.styleDescription),
+        longText(a.styleDescription),
+      ),
     ];
     if (fields.length > 0) s.modified.push({ label, fields });
   }
   return s;
 }
 
-const channelLabel = (c: { type: string; value: string }) => `${CHANNEL_TYPES[c.type] ?? c.type} ${c.value}`;
+const channelLabel = (c: { type: string; value: string }) =>
+  `${CHANNEL_TYPES[c.type] ?? c.type} ${c.value}`;
 
 function handoffDiff(before: ConfigDocument, after: ConfigDocument): SectionDiff {
   const s = emptySection('handoff');
@@ -372,7 +408,10 @@ const ORIGINAL_CHAT_DESIGN: ConfigChatDesign = {
 /** "Imagen (PNG, 128 × 128)", con la huella para saber si ha cambiado. */
 function imageInfo(image: ConfigChatImage | null): { label: string; sha256: string } | null {
   if (!image) return null;
-  const result = validateDesignImage({ bytes: Buffer.from(image.data, 'base64'), truncated: false });
+  const result = validateDesignImage({
+    bytes: Buffer.from(image.data, 'base64'),
+    truncated: false,
+  });
   if (!result.ok) return { label: `Imagen (${IMAGE_FORMATS[image.type]})`, sha256: image.data };
   const { width, height, sha256 } = result.image;
   return { label: `Imagen (${IMAGE_FORMATS[image.type]}, ${width} × ${height})`, sha256 };
@@ -385,7 +424,14 @@ function imageChange(slot: keyof typeof IMAGE_LABELS, b: ConfigChatDesign, a: Co
   const label = IMAGE_LABELS[slot];
   if (before && after && before.label === after.label) {
     // Misma descripción pero otra imagen: se dice que cambia.
-    return [{ field: `images.${slot}`, fieldLabel: label, before: before.label, after: `${after.label}, otra imagen` }];
+    return [
+      {
+        field: `images.${slot}`,
+        fieldLabel: label,
+        before: before.label,
+        after: `${after.label}, otra imagen`,
+      },
+    ];
   }
   return change(`images.${slot}`, label, before?.label ?? EMPTY, after?.label ?? EMPTY);
 }
@@ -399,7 +445,8 @@ function chatDesignDiff(before: ConfigDocument, after: ConfigDocument): SectionD
   const bDesign = before.chatDesign ?? null;
   const aDesign = after.chatDesign ?? null;
   if (!bDesign && aDesign) s.added.push({ label: SECTION_LABELS.chatDesign });
-  if (bDesign && !aDesign) s.removed.push({ label: `${SECTION_LABELS.chatDesign} (vuelve al aspecto original)` });
+  if (bDesign && !aDesign)
+    s.removed.push({ label: `${SECTION_LABELS.chatDesign} (vuelve al aspecto original)` });
   const b = bDesign ?? ORIGINAL_CHAT_DESIGN;
   const a = aDesign ?? ORIGINAL_CHAT_DESIGN;
   const fields = [
@@ -407,7 +454,12 @@ function chatDesignDiff(before: ConfigDocument, after: ConfigDocument): SectionD
     ...change('onPrimaryColor', 'Texto sobre el principal', b.onPrimaryColor, a.onPrimaryColor),
     ...change('backgroundColor', 'Fondo del chat', b.backgroundColor, a.backgroundColor),
     ...change('textColor', 'Texto del chat', b.textColor, a.textColor),
-    ...change('botBubbleColor', 'Fondo de los mensajes del bot', b.botBubbleColor, a.botBubbleColor),
+    ...change(
+      'botBubbleColor',
+      'Fondo de los mensajes del bot',
+      b.botBubbleColor,
+      a.botBubbleColor,
+    ),
     ...change('shape', 'Forma', SHAPE_LABELS[b.shape], SHAPE_LABELS[a.shape]),
     ...change('position', 'Posición', POSITION_LABELS[b.position], POSITION_LABELS[a.position]),
     ...change('size', 'Tamaño', SIZE_LABELS[b.size], SIZE_LABELS[a.size]),
@@ -437,7 +489,11 @@ function alertsDiff(before: ConfigDocument, after: ConfigDocument): SectionDiff 
 }
 
 /** Diferencias por sección y destacados entre la configuración actual y la nueva. */
-export function diffConfig(before: ConfigDocument, after: ConfigDocument, opts: DiffOptions): ConfigDiff {
+export function diffConfig(
+  before: ConfigDocument,
+  after: ConfigDocument,
+  opts: DiffOptions,
+): ConfigDiff {
   const sections = [
     businessDiff(before, after),
     slotsDiff('openingHours', before.openingHours, after.openingHours),

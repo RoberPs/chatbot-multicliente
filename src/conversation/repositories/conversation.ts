@@ -1,4 +1,4 @@
-import { desc, eq, lt, sql } from 'drizzle-orm';
+import { and, desc, eq, gt, lt, sql } from 'drizzle-orm';
 import { conversation, customer } from '../../db/schema.js';
 import { handoffStepSchema, type HandoffStep } from '../../handoff/types.js';
 import type { Channel } from '../channels.js';
@@ -180,9 +180,9 @@ export interface ClaimLimits {
 
 /**
  * Conversaciones listas para responder (data-model.md, R5): con entrantes pendientes y
- * `now − último ≥ espera` o `now − primero ≥ tope`, y sin audios transcribiéndose desde hace
- * menos de 10 s. Bloquea las filas con SKIP LOCKED para
- * que dos procesadores no reclamen la misma.
+ * `now − último ≥ espera` o `now − primero ≥ tope`, sin audios transcribiéndose desde hace
+ * menos de 10 s y con `process_after` vencido o nulo (012: reintento o reenvío agrupado).
+ * Bloquea las filas con SKIP LOCKED para que dos procesadores no reclamen la misma.
  */
 export async function claimReady(tx: DbOrTx, now: Date, limits: ClaimLimits): Promise<string[]> {
   const quietBefore = new Date(now.getTime() - limits.quietMs);
@@ -210,12 +210,50 @@ export async function claimReady(tx: DbOrTx, now: Date, limits: ClaimLimits): Pr
       where a.conversation_id = c.id and a.direction = 'inbound' and a.status = 'pending'
         and a.transcription = 'pending' and a.received_at > ${transcribingSince}
     )
+    and (c.process_after is null or c.process_after <= ${now})
     ${exclude}
     order by c.last_inbound_at
     limit ${limits.limit}
     for update of c skip locked
   `);
   return result.rows.map((r) => r.id);
+}
+
+/** El procesador no reclama la conversación antes de `at` (012, R7.2 y R10); `null`, sin espera. */
+export async function setProcessAfter(tx: DbOrTx, id: string, at: Date | null): Promise<void> {
+  await tx.update(conversation).set({ processAfter: at }).where(eq(conversation.id, id));
+}
+
+/**
+ * Suma un intento fallido al lote y devuelve el número de intentos (012, R10). Sin fila
+ * (conversación borrada) devuelve `null`.
+ */
+export async function addBatchAttempt(tx: DbOrTx, id: string): Promise<number | null> {
+  const [row] = await tx
+    .update(conversation)
+    .set({ batchAttempts: sql`least(${conversation.batchAttempts} + 1, 5)` })
+    .where(eq(conversation.id, id))
+    .returning({ attempts: conversation.batchAttempts });
+  return row?.attempts ?? null;
+}
+
+/** Lote terminado (bien o abandonado): sin intentos ni espera (012, R10). */
+export async function resetBatch(tx: DbOrTx, id: string): Promise<void> {
+  await tx
+    .update(conversation)
+    .set({ batchAttempts: 0, processAfter: null })
+    .where(eq(conversation.id, id));
+}
+
+/**
+ * Un lote salió bien (012, R10): el contador de intentos vuelve a 0. No toca `process_after`, que
+ * puede haberlo puesto este mismo lote (reenvío agrupado).
+ */
+export async function clearBatchAttempts(tx: DbOrTx, id: string): Promise<void> {
+  await tx
+    .update(conversation)
+    .set({ batchAttempts: 0 })
+    .where(and(eq(conversation.id, id), gt(conversation.batchAttempts, 0)));
 }
 
 /** Conversaciones con entrantes pendientes (reanudación al arrancar). */

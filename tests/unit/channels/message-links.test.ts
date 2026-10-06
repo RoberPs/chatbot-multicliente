@@ -1,20 +1,25 @@
 /**
  * Enlaces pulsables en las respuestas del bot (004 FR-020a, research R15).
  *
- * La regla vive dos veces: en el servidor para "Probar el bot" y en un script de navegador para
- * el chat web, que no tiene paso de compilación y no puede importar el módulo. Esta tabla de
- * casos se ejecuta contra las dos para que no se separen.
+ * Desde la 012 (FR-031, SC-008) la regla es una sola: `displayLinks`. El servidor la usa para
+ * «Probar el bot» y el chat web la recibe inyectada en `links.js`; esta tabla y la batería de
+ * enlaces se ejecutan contra los dos para que no se separen.
  */
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { runInNewContext } from 'node:vm';
 import { describe, expect, it } from 'vitest';
 import { splitLinks, type LinkPart } from '../../../src/admin/message-links.js';
+import { injectLinkRule, LINK_RULE_MARKER } from '../../../src/channels/web/link-script.js';
+import { displayLinks } from '../../../src/conversation/link-rule.js';
+import { LINK_CASES } from '../../fixtures/links/battery.js';
 
-const source = readFileSync(
+const raw = readFileSync(
   fileURLToPath(new URL('../../../src/channels/web/assets/links.js', import.meta.url)),
   'utf8',
 );
+/** El fichero tal como se sirve: con la regla en lugar del marcador. */
+const source = injectLinkRule(raw);
 
 /** Ejecuta `links.js` como lo haría el navegador y devuelve su `ChatLinks.split`. */
 function browserSplit(): (text: string) => LinkPart[] {
@@ -116,5 +121,33 @@ describe.each([
         .map((p) => p.text)
         .join(''),
     ).toBe(text);
+  });
+});
+
+describe('una sola regla de enlaces (012, SC-008)', () => {
+  const browser = browserSplit();
+  const hrefs = (parts: LinkPart[]) => parts.flatMap((p) => (p.href ? [p.href] : []));
+
+  it('links.js se sirve con la regla inyectada (sin el marcador)', () => {
+    expect(raw).toContain(LINK_RULE_MARKER);
+    expect(source).not.toContain(LINK_RULE_MARKER);
+  });
+
+  it.each(LINK_CASES.map((c) => [c.name, c.text] as const))(
+    '%s: servidor y navegador pintan exactamente displayLinks',
+    (_name, text) => {
+      const expected = displayLinks(text).map((m) => m.url);
+      expect(hrefs(splitLinks(text))).toEqual(expected);
+      expect(hrefs(browser(text))).toEqual(expected);
+    },
+  );
+
+  it('sin la regla inyectada, links.js no pinta ningún enlace', () => {
+    const window: { ChatLinks?: { split: (text: string) => LinkPart[] } } = {};
+    runInNewContext(raw, { window, URL });
+    const parts = JSON.parse(
+      JSON.stringify(window.ChatLinks?.split('mira https://a.es')),
+    ) as LinkPart[];
+    expect(parts).toEqual([{ text: 'mira https://a.es' }]);
   });
 });

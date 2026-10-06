@@ -6,6 +6,8 @@
  * ventana de 24 h, negocio activo, chat activado, tope) sale de su `ChannelPolicy`.
  */
 import type { Db } from '../db/client.js';
+import { markCustomerNotified, type HandoffWithCustomer } from '../handoff/repositories/handoff.js';
+import { attentionAt } from '../handoff/schedule.js';
 import type { HandoffService } from '../handoff/service.js';
 import type { HandoffKind } from '../handoff/types.js';
 import {
@@ -17,9 +19,18 @@ import {
   offerQuestion,
   phoneRetryReply,
 } from '../handoff/templates.js';
+import { localDay } from '../knowledge/time/local-date.js';
 import type { KnowledgeReader, KnowledgeSnapshot } from '../knowledge/types.js';
 import type { UsageRecording } from '../usage/meter.js';
-import { checkSpendCap } from '../usage/spend-cap.js';
+import {
+  canCallModel,
+  canTranscribe,
+  checkProtection,
+  defaultProtectionConfig,
+  type ProtectionConfig,
+} from '../usage/protection.js';
+import type { CapReason } from '../usage/types.js';
+import { incrementWhatsappReplies } from '../usage/whatsapp-usage.js';
 import { readWebChatSettings } from '../webchat/settings.js';
 import { capReached, incrementWebUsage, readWebUsage, type QuotaWatch } from '../webchat/usage.js';
 import type { ActivityLog, EventContext } from './activity-log.js';
@@ -31,6 +42,7 @@ import * as messages from './repositories/message.js';
 import type { InboundRow } from './repositories/message.js';
 import type { DbOrTx } from './repositories/customer.js';
 import {
+  abandonedBatchReply,
   capResponse,
   composeReply,
   createResponder,
@@ -62,6 +74,11 @@ export interface ProcessorDeps {
   handoff?: HandoffService;
   /** Registro del consumo del modelo (010); sin él no se mide (bot:chat, eval). */
   usage?: UsageRecording;
+  /**
+   * Producción y modelos de la instancia (012, R1): deciden la protección. Sin ella, como fuera
+   * de producción y sin audios.
+   */
+  protection?: ProtectionConfig;
 }
 
 export interface Processor {
@@ -94,6 +111,7 @@ const traceOf = (response: Response, latencyMs: number): ReplyTrace => ({
   groundingRejections: response.groundingRejections,
   modelMs: response.modelMs === undefined ? null : Math.max(0, Math.round(response.modelMs)),
   latencyMs: Math.max(0, Math.round(latencyMs)),
+  ...(response.capReason ? { capReason: response.capReason } : {}),
   ...(response.handoff ? { handoff: response.handoff } : {}),
 });
 
@@ -127,7 +145,7 @@ export function createProcessor(deps: ProcessorDeps): Processor {
         maxWaitMs: settings.batchMaxWaitMs,
         transcriptionWaitMs: settings.transcriptionTimeoutMs,
         limit,
-        excludeIds: [...inFlight.keys(), ...alsoExclude],
+        excludeIds: [...inFlight.keys(), ...alsoExclude, ...waiting()],
       }),
     );
   }
@@ -201,6 +219,8 @@ export function createProcessor(deps: ProcessorDeps): Processor {
     startedAt: Date;
     lastReceived: number;
     inTx?: TxWork;
+    /** La respuesta llamó al modelo: cuenta para el tope diario de WhatsApp (012, R5). */
+    modelCalled?: boolean;
   }): Promise<void> {
     const { conversation, policy, snapshot, response, covered, startedAt, lastReceived } = args;
     const conversationId = conversation.id;
@@ -221,6 +241,10 @@ export function createProcessor(deps: ProcessorDeps): Processor {
       // R9: cada respuesta web cuenta, salvo R-UNAVAILABLE (que es la del tope).
       if (policy.usageCap && snapshot && response.template !== 'R-UNAVAILABLE') {
         await incrementWebUsage(tx, at, snapshot.business.timezone);
+      }
+      // 012 (R5): cada respuesta de WhatsApp con modelo cuenta, haya o no consumo registrado.
+      if (conversation.channel === 'whatsapp' && args.modelCalled && snapshot) {
+        await incrementWhatsappReplies(tx, localDay(at, snapshot.business.timezone));
       }
       return id;
     });
@@ -274,24 +298,33 @@ export function createProcessor(deps: ProcessorDeps): Processor {
     }
   }
 
+  const protectionConfig = deps.protection ?? defaultProtectionConfig(deps.usage?.model ?? '');
+
   /**
-   * Tope mensual de gasto alcanzado ahora (010, R7), con el gasto ya registrado; `false` si el
-   * canal no se corta ("Probar el bot", FR-019). Emite `spend_cap_reached` una vez al mes (R10).
+   * Motivo por el que este lote no puede llamar al modelo ahora (012, R1 – R6): tope de gasto
+   * (010), tope diario de WhatsApp o un motivo de solo contacto; `null` si puede o si el canal no
+   * se corta ("Probar el bot", 010 FR-019). Con audios en el lote, también si no se pueden
+   * transcribir (el transcriptor ya no los descargó). Emite los eventos de cada periodo.
    */
-  async function spendCapReached(
+  async function protectionBlock(
     policy: ChannelPolicy,
+    conversation: ConversationWithCustomer,
     snapshot: KnowledgeSnapshot,
+    pending: InboundRow[],
     logContext: LogContext,
-  ): Promise<boolean> {
-    if (!policy.spendCap) return false;
-    const state = await checkSpendCap(
+  ): Promise<CapReason | null> {
+    if (!policy.spendCap || conversation.channel === 'playground') return null;
+    const state = await checkProtection(
       db,
-      clock.now(),
-      snapshot.business.timezone,
+      { ...protectionConfig, now: clock.now(), timezone: snapshot.business.timezone },
       activityLog,
       logContext,
     );
-    return state.level === 'reached';
+    const withAudio = (deps.audioTranscription ?? false) && pending.some((m) => m.kind === 'audio');
+    const decision = withAudio
+      ? canTranscribe(state, conversation.channel)
+      : canCallModel(state, conversation.channel);
+    return decision.ok ? null : decision.reason;
   }
 
   /**
@@ -353,6 +386,28 @@ export function createProcessor(deps: ProcessorDeps): Processor {
     }
     // 005, FR-013: con una derivación activa el bot calla y reenvía el lote al negocio.
     const active = deps.handoff ? await deps.handoff.active(db, conversationId) : null;
+    if (
+      deps.handoff &&
+      active &&
+      snapshot &&
+      (active.alertsSentAt === null || active.customerNotifiedAt === null)
+    ) {
+      // 012 (R10.4): un reintento tras un fallo a mitad de iniciar la derivación.
+      if (!insideWindow(policy, conversation.lastInboundAt)) {
+        await discardPending(pending, 'outside_window', logContext);
+        return;
+      }
+      await deliver({
+        conversation,
+        policy,
+        snapshot,
+        covered: pending,
+        startedAt: clock.now(),
+        lastReceived: Math.max(...pending.map((m) => m.receivedAt.getTime())),
+        ...(await resumeHandoff(deps.handoff, active, conversation, policy, snapshot)),
+      });
+      return;
+    }
     if (deps.handoff && active) {
       await deps.handoff.forward({
         handoff: active,
@@ -372,21 +427,33 @@ export function createProcessor(deps: ProcessorDeps): Processor {
     const lastReceived = Math.max(...pending.map((m) => m.receivedAt.getTime()));
 
     let response: Response;
+    let modelCalled = false;
+    const webCap = await webCapReached(policy, snapshot);
+    const blocked =
+      snapshot && !webCap
+        ? await protectionBlock(policy, conversation, snapshot, pending, logContext)
+        : null;
     if (!snapshot) {
       response = unreadableSnapshotReply(deps.emergencyContactPhone);
-    } else if (await webCapReached(policy, snapshot)) {
+    } else if (webCap) {
       // SC-006: con el tope alcanzado no se llama al modelo.
       response = unavailableResponse(snapshot, deps.emergencyContactPhone);
-    } else if (await spendCapReached(policy, snapshot, logContext)) {
-      // 010 (FR-016 – FR-018): sin modelo y siempre con contacto. En la web, "no disponible";
-      // en WhatsApp, R-CAP, que deja abrir la derivación con el detector determinista.
-      response = policy.usageCap
-        ? unavailableResponse(snapshot, deps.emergencyContactPhone)
-        : capResponse(
-            snapshot,
-            deps.emergencyContactPhone,
-            pending.map((m) => m.body).filter((t): t is string => t !== null),
-          );
+    } else if (blocked !== null) {
+      // 010 (FR-016 – FR-018) y 012 (R4): sin modelo y siempre con contacto. En la web, "no
+      // disponible"; en WhatsApp, R-CAP, que deja abrir la derivación con el detector determinista.
+      response = {
+        ...(policy.usageCap
+          ? unavailableResponse(snapshot, deps.emergencyContactPhone)
+          : capResponse(
+              snapshot,
+              deps.emergencyContactPhone,
+              pending.map((m) => m.body).filter((t): t is string => t !== null),
+            )),
+        capReason: blocked,
+      };
+      if (blocked !== 'spend_cap') {
+        activityLog.log({ event: 'contact_only_reply', reason: blocked }, logContext);
+      }
     } else {
       response = await responder.respond({
         snapshot,
@@ -403,6 +470,7 @@ export function createProcessor(deps: ProcessorDeps): Processor {
         // FR-018: tras una derivación terminada el bot tiene en cuenta lo hablado y no saluda.
         handoffEnded: deps.handoff ? await deps.handoff.hasEnded(conversationId) : false,
       });
+      modelCalled = true;
       await recordUsage(response, conversation.channel, snapshot.business.timezone, logContext);
     }
 
@@ -420,6 +488,7 @@ export function createProcessor(deps: ProcessorDeps): Processor {
       startedAt,
       lastReceived,
       inTx: turn.inTx,
+      modelCalled,
     });
   }
 
@@ -646,6 +715,63 @@ export function createProcessor(deps: ProcessorDeps): Processor {
     }
   }
 
+  /**
+   * Reintento con una derivación a medio iniciar (012, contracts/outbound-and-retries.md § Como
+   * mucho una vez): sin constancia de la alerta, se termina (`interrupted`) y el cliente recibe
+   * R-HANDOFF-FAIL con el contacto; con la alerta enviada pero sin confirmar al cliente, solo la
+   * confirmación (sin volver a avisar al negocio).
+   */
+  async function resumeHandoff(
+    service: HandoffService,
+    active: HandoffWithCustomer,
+    conversation: ConversationWithCustomer,
+    policy: ChannelPolicy,
+    snapshot: KnowledgeSnapshot,
+  ): Promise<{ response: Response; inTx?: TxWork }> {
+    const business = snapshot.business.name;
+    const form = formOf(snapshot.tone.addressForm);
+    const clearStep: TxWork = (tx) => conversations.setHandoffStep(tx, conversation.id, null);
+    if (active.alertsSentAt === null) {
+      await service.interrupt(active, contextOf(conversation));
+      const complaint = active.kind === 'complaint';
+      return {
+        response: {
+          ...composeReply({
+            snapshot,
+            greeted: conversation.greeted,
+            reason: 'handoff_unavailable',
+            body: complaint ? complaintContactReply(business, form) : failedReply(business, form),
+            template: complaint ? 'R-HANDOFF-COMPLAINT' : 'R-HANDOFF-FAIL',
+          }),
+          handoff: { action: 'not_started', kind: active.kind, routes: {} },
+        },
+        inTx: clearStep,
+      };
+    }
+    const phone =
+      (policy.contactFromChannel ? conversation.channelUserId : conversation.contactPhone) ?? '';
+    const attention = attentionAt(snapshot, active.startedAt);
+    const complaint = active.kind === 'complaint';
+    return {
+      response: {
+        ...composeReply({
+          snapshot,
+          greeted: conversation.greeted,
+          reason: null,
+          body: complaint
+            ? complaintReply(business, phone, form, attention)
+            : confirmedReply(business, phone, form, attention),
+          template: complaint ? 'R-HANDOFF-COMPLAINT' : 'R-HANDOFF-OK',
+        }),
+        handoff: { action: 'started', kind: active.kind, handoffId: active.id, routes: {} },
+      },
+      inTx: async (tx) => {
+        await clearStep(tx);
+        await markCustomerNotified(tx, active.id, clock.now());
+      },
+    };
+  }
+
   /** R-LIMIT con CONTACTO, sin modelo ni espera (FR-004a, R6). Igual en todos los canales. */
   async function rateLimitNotice(conversationId: string): Promise<void> {
     const conversation = await conversations.findWithCustomer(db, conversationId);
@@ -667,10 +793,92 @@ export function createProcessor(deps: ProcessorDeps): Processor {
     });
   }
 
+  /**
+   * Esperas en memoria por si ni siquiera se puede guardar el intento (BD caída, 012 R10): la
+   * conversación no se reclama en bucle mientras tanto.
+   */
+  const backoff = new Map<string, number>();
+  const waiting = (): string[] => {
+    const now = clock.now().getTime();
+    for (const [id, until] of backoff) if (until <= now) backoff.delete(id);
+    return [...backoff.keys()];
+  };
+
+  /**
+   * Quinto fallo seguido (012, R10): R-ERR una sola vez cubriendo los pendientes, con el contacto
+   * del negocio o el de emergencia, y el contador a 0. Un entrante nuevo empieza otro lote.
+   */
+  async function abandon(conversationId: string, attempts: number): Promise<void> {
+    let apologySent = false;
+    const conversation = await conversations.findWithCustomer(db, conversationId).catch(() => null);
+    const logContext = conversation ? contextOf(conversation) : { conversationId };
+    try {
+      const policy = conversation ? policies[conversation.channel] : undefined;
+      const pending = await messages.pendingFor(db, conversationId);
+      if (conversation && policy && pending.length > 0) {
+        if (insideWindow(policy, conversation.lastInboundAt)) {
+          const snapshot = await readSnapshot(contextOf(conversation));
+          const startedAt = clock.now();
+          await deliver({
+            conversation,
+            policy,
+            snapshot,
+            response: abandonedBatchReply(snapshot, deps.emergencyContactPhone),
+            covered: pending,
+            startedAt,
+            lastReceived: Math.max(...pending.map((m) => m.receivedAt.getTime())),
+          });
+          apologySent = true;
+        } else {
+          await discardPending(pending, 'outside_window', contextOf(conversation));
+        }
+      }
+    } catch {
+      // Sin BD tampoco hay disculpa: los pendientes siguen ahí para un lote nuevo.
+    } finally {
+      await conversations.resetBatch(db, conversationId).catch(() => undefined);
+      activityLog.log({ event: 'batch_abandoned', attempts, apologySent }, logContext);
+    }
+  }
+
+  /** Un lote que lanza se reintenta con espera creciente; al quinto, se abandona (012, R10). */
+  async function failed(conversationId: string, error: unknown): Promise<void> {
+    const errorClass = error instanceof Error ? error.name : typeof error;
+    const now = clock.now().getTime();
+    let attempt: number | null;
+    try {
+      attempt = await conversations.addBatchAttempt(db, conversationId);
+    } catch {
+      backoff.set(conversationId, now + (settings.batchRetryDelaysMs[0] ?? 5000));
+      return;
+    }
+    if (attempt === null) return;
+    if (attempt >= settings.batchMaxAttempts) {
+      await abandon(conversationId, attempt);
+      return;
+    }
+    const delayMs =
+      settings.batchRetryDelaysMs[attempt - 1] ?? settings.batchRetryDelaysMs.at(-1) ?? 0;
+    try {
+      await conversations.setProcessAfter(db, conversationId, new Date(now + delayMs));
+    } catch {
+      backoff.set(conversationId, now + delayMs);
+    }
+    activityLog.log(
+      { event: 'batch_retry_scheduled', attempt, delayMs, errorClass },
+      {
+        conversationId,
+      },
+    );
+  }
+
   function track(conversationId: string): Promise<void> {
     const job = processConversation(conversationId)
+      // Saliente guardado, reenvío marcado o mensajes descartados: el contador vuelve a 0.
+      .then(() => conversations.clearBatchAttempts(db, conversationId))
+      .catch((error: unknown) => failed(conversationId, error))
       .catch(() => {
-        // Error inesperado (BD): los pendientes siguen ahí y se reintentan en el barrido.
+        // Ni el fallo se pudo registrar: el barrido lo reintentará.
       })
       .finally(() => inFlight.delete(conversationId));
     inFlight.set(conversationId, job);

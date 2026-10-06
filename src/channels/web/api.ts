@@ -18,7 +18,8 @@ import {
 } from '../../conversation/repositories/message.js';
 import { conversationSettings } from '../../conversation/settings.js';
 import { formOf, unavailableContact } from '../../conversation/templates.js';
-import type { Db } from '../../db/client.js';
+import { isPoolBusy, type Db } from '../../db/client.js';
+import type { KnowledgeReader } from '../../knowledge/types.js';
 import { findActiveByConversation } from '../../handoff/repositories/handoff.js';
 import { activeHandoffNotice } from '../../handoff/templates.js';
 import {
@@ -28,6 +29,7 @@ import {
   type Unavailable,
   type WebChatAvailability,
 } from '../../webchat/availability.js';
+import type { ProtectionConfig } from '../../usage/protection.js';
 import { issueWebSession } from '../../webchat/session-token.js';
 import { requireSameOrigin, requireWebSession } from './guards.js';
 
@@ -45,9 +47,15 @@ export interface WebApiDeps {
   db: Db;
   /** `null` sin `ANTHROPIC_API_KEY`: el chat contesta "no disponible" (R11). */
   bot: BotHttp | null;
+  /** Lector del snapshot sobre el pool de `db` (012); por defecto, el del bot. */
+  reader?: KnowledgeReader | null;
+  /** Último contacto conocido, compartido con el frame (012). */
+  lastContact?: { value: string | null };
   /** Contacto de la instancia cuando no hay bot ni snapshot (FR-022). */
   emergencyPhone: string | null;
   sessionSecret: string;
+  /** Producción y modelos de la instancia (012). */
+  protection?: ProtectionConfig;
 }
 
 /** Límite por IP superado; el cuerpo de la respuesta lo compone el manejador de errores. */
@@ -67,6 +75,7 @@ const IP_LIMITS = {
 
 export async function webChatApi(api: FastifyInstance, deps: WebApiDeps): Promise<void> {
   const { db, bot, emergencyPhone, sessionSecret } = deps;
+  const reader = deps.reader ?? bot?.reader ?? null;
   const activityLog = bot?.activityLog ?? null;
   const now = () => bot?.clock.now() ?? new Date();
 
@@ -76,11 +85,12 @@ export async function webChatApi(api: FastifyInstance, deps: WebApiDeps): Promis
    * cada vez que se comprueba la disponibilidad; si nunca se ha podido leer, va el de
    * emergencia de la instancia (FR-022).
    */
-  let lastContact = unavailableContact(null, emergencyPhone);
+  const contactHolder = deps.lastContact ?? { value: unavailableContact(null, emergencyPhone) };
 
   /**
-   * Configuración de límite por IP de una ruta. La clave es `request.ip` (respetando
-   * `TRUST_PROXY`); la IP no se registra ni se pasa a ninguna capa de dominio (FR-029, R10).
+   * Configuración de límite por IP de una ruta. La clave es la común de la app,
+   * `clientKey(request.ip)` (respetando `TRUST_PROXY`; IPv6 por su /64, 012); la IP no se
+   * registra ni se pasa a ninguna capa de dominio (FR-029, R10).
    *
    * `@fastify/rate-limit` **lanza** lo que devuelve el constructor, así que tiene que ser un
    * `Error` con `statusCode`; el cuerpo del contrato lo da el manejador de errores de abajo.
@@ -119,7 +129,11 @@ export async function webChatApi(api: FastifyInstance, deps: WebApiDeps): Promis
       // Sin la IP en el registro: solo que se ha alcanzado el límite (FR-029).
       activityLog?.log({ event: 'web_rejected', reason: error.reason });
       return reply.code(429).send({
-        unavailable: { reason: 'ip_limit', message: UNAVAILABLE_MESSAGE, contact: lastContact },
+        unavailable: {
+          reason: 'ip_limit',
+          message: UNAVAILABLE_MESSAGE,
+          contact: contactHolder.value,
+        },
       });
     }
     if (status === 413 || error instanceof SyntaxError || status === 400) {
@@ -127,6 +141,8 @@ export async function webChatApi(api: FastifyInstance, deps: WebApiDeps): Promis
       return reply.code(status === 413 ? 413 : 400).send({ error: 'body' });
     }
     if (status < 500) return reply.code(status).send({ error: 'request' });
+    // 012: el pool público no dio conexión a tiempo; el iframe lo reintenta.
+    if (isPoolBusy(error)) return reply.code(503).send({ error: 'busy' });
     // Un fallo repetido del canal público tiene que dejar rastro; el serializador de
     // peticiones no registra la IP y `redact` cubre la cabecera de autorización.
     request.log.error({ err: error }, 'Error en el chat web');
@@ -140,17 +156,19 @@ export async function webChatApi(api: FastifyInstance, deps: WebApiDeps): Promis
 
   /** Estado del chat ahora mismo; sin bot, "no disponible" sin tocar la base. */
   const availability = async (): Promise<WebChatAvailability> => {
-    const state: WebChatAvailability = bot
-      ? await webChatAvailability({
-          tx: db,
-          reader: bot.reader,
-          botPresent: true,
-          emergencyPhone,
-          now: now(),
-          activityLog: bot.activityLog,
-        })
-      : { available: false, unavailable: unavailable('no_bot', null, emergencyPhone) };
-    lastContact = state.available
+    const state: WebChatAvailability =
+      bot && reader
+        ? await webChatAvailability({
+            tx: db,
+            reader,
+            botPresent: true,
+            emergencyPhone,
+            now: now(),
+            activityLog: bot.activityLog,
+            ...(deps.protection ? { protection: deps.protection } : {}),
+          })
+        : { available: false, unavailable: unavailable('no_bot', null, emergencyPhone) };
+    contactHolder.value = state.available
       ? unavailableContact(state.snapshot, emergencyPhone)
       : state.unavailable.contact;
     return state;
@@ -325,9 +343,9 @@ export async function webChatApi(api: FastifyInstance, deps: WebApiDeps): Promis
 
     /** Snapshot para el contacto del objeto `unavailable`; `null` si no se puede leer. */
     async function readableSnapshot() {
-      if (!bot) return null;
+      if (!reader) return null;
       try {
-        return await bot.reader.getSnapshot();
+        return await reader.getSnapshot();
       } catch {
         return null;
       }

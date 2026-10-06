@@ -85,10 +85,7 @@ export function requireSameOrigin({ activityLog }: GuardDeps) {
  * Sesión del visitante en `Authorization: Bearer` (R4). Deja el `channelUserId` en la petición;
  * el token no se guarda ni se registra en ninguna parte.
  */
-export function requireWebSession({
-  secret,
-  activityLog,
-}: GuardDeps & { secret: string }) {
+export function requireWebSession({ secret, activityLog }: GuardDeps & { secret: string }) {
   return async function webSession(request: FastifyRequest, reply: FastifyReply): Promise<void> {
     const header = request.headers.authorization;
     const raw =

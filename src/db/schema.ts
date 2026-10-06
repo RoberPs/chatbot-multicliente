@@ -287,6 +287,8 @@ export const messageStatus = pgEnum('message_status', [
   'sent',
   'failed',
   'forwarded',
+  // 012 (R7.4): entrante pendiente que no se reenvió porque la derivación terminó antes.
+  'held',
 ]);
 export const transcriptionStatus = pgEnum('transcription_status', ['pending', 'done', 'failed']);
 
@@ -332,10 +334,15 @@ export const conversation = pgTable(
     contactPhone: text('contact_phone'),
     /** Paso previo a la derivación (005, R2): `offered` o `collecting`; ver `handoffStepSchema`. */
     handoffStep: jsonb('handoff_step'),
+    /** Intentos fallidos seguidos del lote de pendientes (012, R10). */
+    batchAttempts: smallint('batch_attempts').notNull().default(0),
+    /** El procesador no la reclama antes de este instante (reintento o reenvío agrupado, R7, R10). */
+    processAfter: instant('process_after'),
   },
   (t) => [
     index('conversation_customer_last_inbound_idx').on(t.customerId, t.lastInboundAt.desc()),
     index('conversation_last_message_idx').on(t.lastMessageAt),
+    check('conversation_batch_attempts', sql`${t.batchAttempts} between 0 and 5`),
   ],
 );
 
@@ -465,6 +472,8 @@ export const handoffEndCause = pgEnum('handoff_end_cause', [
   'inactivity',
   'operator',
   'playground',
+  // 012 (R10.4): un reintento no sabe si la alerta de inicio llegó al negocio.
+  'interrupted',
 ]);
 export const handoffNoticeType = pgEnum('handoff_notice_type', ['alert', 'reminder', 'forward']);
 export const handoffRoute = pgEnum('handoff_route', ['whatsapp', 'email', 'simulated']);
@@ -497,6 +506,12 @@ export const handoff = pgTable(
     reminderSentAt: instant('reminder_sent_at'),
     endedAt: instant('ended_at'),
     endCause: handoffEndCause('end_cause'),
+    /** Alguna vía entregó la alerta de inicio (012, R10.4). */
+    alertsSentAt: instant('alerts_sent_at'),
+    /** La confirmación al cliente quedó guardada (012, R10.4). */
+    customerNotifiedAt: instant('customer_notified_at'),
+    /** Último aviso al negocio de esta derivación: alerta, reenvío o recordatorio (012, R7.2). */
+    lastNoticeAt: instant('last_notice_at'),
   },
   (t) => [
     uniqueIndex('handoff_one_active_per_conversation')
@@ -563,7 +578,12 @@ export const configPreImport = pgTable(
 // entra en el snapshot, en los avisos ni en la exportación de la 008 (R15).
 // ---------------------------------------------------------------------------
 
-export const usagePurpose = pgEnum('usage_purpose', ['reply', 'handoff_summary']);
+export const usagePurpose = pgEnum('usage_purpose', [
+  'reply',
+  'handoff_summary',
+  // 012 (R6): una transcripción de audio, valorada por minutos.
+  'transcription',
+]);
 
 /**
  * Una fila por respuesta con modelo o por resumen de derivación (R2). Sin textos ni
@@ -589,9 +609,12 @@ export const modelUsage = pgTable(
     /** Billonésimas (10⁻¹²) de `currency`; nulo = sin precio al registrar (FR-012). */
     costPico: bigint('cost_pico', { mode: 'bigint' }),
     currency: char('currency', { length: 3 }),
+    /** Duración del audio en ms; solo en `purpose = 'transcription'` (012, R6). */
+    audioMs: integer('audio_ms'),
   },
   (t) => [
     index('model_usage_day_idx').on(t.day),
+    check('model_usage_audio_ms', sql`${t.audioMs} is null or ${t.audioMs} >= 0`),
     check('model_usage_calls', sql`${t.calls} >= 1`),
     check(
       'model_usage_tokens',
@@ -633,6 +656,10 @@ export const usageSettings = pgTable(
     /** Primer día del mes local en que ya se registró `spend_cap_reached` (R10). */
     capNotifiedMonth: isoDate('cap_notified_month'),
     updatedAt: updatedAt(),
+    /** Respuestas de WhatsApp con modelo por día local (012, R5). Sin interruptor. */
+    whatsappDailyCap: integer('whatsapp_daily_cap').notNull().default(200),
+    /** Día local en que ya se registró `whatsapp_quota_reached` (012, R5). */
+    whatsappCapNotifiedDay: isoDate('whatsapp_cap_notified_day'),
   },
   (t) => [
     check('usage_settings_singleton', sql`${t.id} = 1`),
@@ -640,6 +667,72 @@ export const usageSettings = pgTable(
     check(
       'usage_settings_cap',
       sql`not ${t.capEnabled} or (${t.monthlyCapCents} is not null and ${t.monthlyCapCents} > 0)`,
+    ),
+    check('usage_settings_whatsapp_cap', sql`${t.whatsappDailyCap} between 1 and 10000`),
+  ],
+);
+
+// ---------------------------------------------------------------------------
+// Protección frente a abuso (feature 012, data-model.md). No es configuración del negocio: no
+// entra en el snapshot, en los avisos ni en la exportación de la 008 (FR-036).
+// ---------------------------------------------------------------------------
+
+/** Precio por minuto de audio de cada modelo de transcripción (R6), en la moneda del consumo. */
+export const transcriptionPrice = pgTable(
+  'transcription_price',
+  {
+    model: text('model').primaryKey(),
+    /** Millonésimas de la moneda por minuto de audio. */
+    microsPerMinute: bigint('micros_per_minute', { mode: 'bigint' }).notNull(),
+    updatedAt: updatedAt(),
+  },
+  (t) => [check('transcription_price_non_negative', sql`${t.microsPerMinute} >= 0`)],
+);
+
+/** Respuestas de WhatsApp que llamaron al modelo, por día local del negocio (R5). */
+export const whatsappUsageDay = pgTable(
+  'whatsapp_usage_day',
+  {
+    day: isoDate('day').primaryKey(),
+    replies: integer('replies').notNull().default(0),
+  },
+  (t) => [check('whatsapp_usage_day_replies', sql`${t.replies} >= 0`)],
+);
+
+/** Límites de las derivaciones (R7): una sola fila, editable en «Consumo». */
+export const handoffLimits = pgTable(
+  'handoff_limits',
+  {
+    id: smallint('id').primaryKey().default(1),
+    dailyMax: integer('daily_max').notNull().default(20),
+    forwardIntervalMinutes: integer('forward_interval_minutes').notNull().default(15),
+    noticesDailyMax: integer('notices_daily_max').notNull().default(60),
+    updatedAt: updatedAt(),
+  },
+  (t) => [
+    check('handoff_limits_singleton', sql`${t.id} = 1`),
+    check('handoff_limits_daily_max', sql`${t.dailyMax} between 1 and 200`),
+    check('handoff_limits_interval', sql`${t.forwardIntervalMinutes} between 5 and 240`),
+    check('handoff_limits_notices', sql`${t.noticesDailyMax} between 10 and 500`),
+  ],
+);
+
+/** Contadores de las derivaciones por día local (R7): solo las reales, nunca las simuladas. */
+export const handoffDay = pgTable(
+  'handoff_day',
+  {
+    day: isoDate('day').primaryKey(),
+    started: integer('started').notNull().default(0),
+    refused: integer('refused').notNull().default(0),
+    notices: integer('notices').notNull().default(0),
+    noticesHeld: integer('notices_held').notNull().default(0),
+    refusedLogged: boolean('refused_logged').notNull().default(false),
+    heldLogged: boolean('held_logged').notNull().default(false),
+  },
+  (t) => [
+    check(
+      'handoff_day_counters',
+      sql`${t.started} >= 0 and ${t.refused} >= 0 and ${t.notices} >= 0 and ${t.noticesHeld} >= 0`,
     ),
   ],
 );
@@ -652,6 +745,8 @@ export const conversationTableNames = [
   'conversation',
   'customer',
   'web_usage_day',
+  'whatsapp_usage_day',
+  'handoff_day',
 ] as const;
 
 /** Todas las tablas de la base de conocimiento, en orden seguro para TRUNCATE en tests. */

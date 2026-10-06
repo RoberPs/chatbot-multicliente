@@ -67,8 +67,16 @@ describe('aviso de derivación', () => {
       '+34 611 22 23 33',
       'chat de la web',
       'quiere hablar con una persona',
-      'Pregunta por el precio del tinte y quiere hablar con alguien.',
+      'Según el cliente: «Pregunta por el precio del tinte y quiere hablar con alguien.»',
     ]);
+  });
+
+  it('012: nombre y motivo con las direcciones desactivadas', () => {
+    const vars = alertTemplateVars(
+      notice({ customerName: 'Ana www.ana.es', summary: 'Mira https://evil.es/x' }),
+    );
+    expect(vars[0]).toBe('Ana www[.]ana[.]es');
+    expect(vars[4]).toBe('Según el cliente: «Mira evil[.]es/x»');
   });
 
   it('variables saneadas: sin saltos, tabuladores, 5 espacios seguidos ni vacías', () => {
@@ -80,7 +88,7 @@ describe('aviso de derivación', () => {
       expect(v.length).toBeGreaterThan(0);
     }
     expect(vars[0]).toBe('Ana María');
-    expect(vars[4]).toBe('uno dos tres');
+    expect(vars[4]).toBe('Según el cliente: «uno dos tres»');
     expect(sanitizeTemplateVar('   ')).toBe('—');
     // Otros controles, separadores Unicode y espacios duros repetidos (T130).
     expect(sanitizeTemplateVar('a\u2028b\u2029c\u000bd\u000ce')).toBe('a b c d e');
@@ -98,7 +106,7 @@ describe('aviso de derivación', () => {
     expect(email.text).toContain('Tipo: quiere hablar con una persona');
     expect(email.text).toContain('Desde: hoy a las 21:40');
     expect(email.text).toContain(
-      'Motivo: Pregunta por el precio del tinte y quiere hablar con alguien.',
+      'Motivo (según el cliente): «Pregunta por el precio del tinte y quiere hablar con alguien.»',
     );
     expect(email.text).toContain(`Le atiendo: https://chat.ejemplo.com/handoff/${TOKEN}/attend`);
     expect(email.text).toContain(`Terminado:  https://chat.ejemplo.com/handoff/${TOKEN}/end`);
@@ -137,7 +145,7 @@ describe('reenvío durante la derivación (US3, FR-014)', () => {
     expect(forwardTemplateVars(n)).toEqual([
       'Lucía',
       '+34 611 22 23 33',
-      'Llego tarde / [image] / Te lo digo por audio / [audio]',
+      'El cliente escribió: «Llego tarde / [image] / Te lo digo por audio / [audio]»',
     ]);
   });
 
@@ -145,14 +153,17 @@ describe('reenvío durante la derivación (US3, FR-014)', () => {
     const long = [item('a'.repeat(400)), item('b'.repeat(400))];
     const withEmail = forwardTemplateVars(forward(long, true))[2] ?? '';
     expect(withEmail).toHaveLength(700);
-    expect(withEmail.endsWith('… (mensaje recortado; el texto completo está en el email)')).toBe(
+    expect(withEmail.startsWith('El cliente escribió: «')).toBe(true);
+    expect(withEmail.endsWith('… (mensaje recortado; el texto completo está en el email)»')).toBe(
       true,
     );
     const withoutEmail = forwardTemplateVars(forward(long, false))[2] ?? '';
     expect(withoutEmail).toHaveLength(700);
-    expect(withoutEmail.endsWith('… (mensaje recortado)')).toBe(true);
+    expect(withoutEmail.endsWith('… (mensaje recortado)»')).toBe(true);
     // Sin saltos de línea ni variables vacías.
-    expect(forwardTemplateVars(forward([item('uno\ndos\t tres')]))[2]).toBe('uno dos tres');
+    expect(forwardTemplateVars(forward([item('uno\ndos\t tres')]))[2]).toBe(
+      'El cliente escribió: «uno dos tres»',
+    );
   });
 
   it('email del reenvío: texto completo, en orden, con hora local y los dos enlaces', () => {
@@ -162,9 +173,10 @@ describe('reenvío durante la derivación (US3, FR-014)', () => {
     ]);
     const email = forwardEmail(n, 'https://bot.ejemplo.com');
     expect(email.subject).toBe('Mensaje de Lucía durante la derivación');
-    expect(email.text).toContain('Lucía (+34 611 22 23 33) ha escrito durante la derivación:');
-    expect(email.text).toContain(`[21:45] Primero ${'x'.repeat(800)}`);
-    expect(email.text.indexOf('[21:45]')).toBeLessThan(email.text.indexOf('[21:47] Segundo'));
+    expect(email.text).toContain('Lucía (+34 611 22 23 33) ha escrito durante la derivación.');
+    expect(email.text).toContain('El cliente escribió:\n');
+    expect(email.text).toContain(`    [21:45] «Primero ${'x'.repeat(800)}»`);
+    expect(email.text.indexOf('[21:45]')).toBeLessThan(email.text.indexOf('[21:47] «Segundo»'));
     expect(email.text).toContain(`Le atiendo: https://bot.ejemplo.com/handoff/${TOKEN}/attend`);
     expect(email.text).toContain(`Terminado:  https://bot.ejemplo.com/handoff/${TOKEN}/end`);
   });
@@ -187,7 +199,7 @@ describe('recordatorio (US5, FR-019)', () => {
       'Lucía',
       '+34 611 22 23 33',
       'ayer a las 21:40',
-      'Pregunta por el precio del tinte y quiere hablar con alguien.',
+      'Según el cliente: «Pregunta por el precio del tinte y quiere hablar con alguien.»',
     ]);
   });
 

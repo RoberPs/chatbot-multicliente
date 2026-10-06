@@ -4,6 +4,7 @@
  */
 import { randomBytes, randomInt } from 'node:crypto';
 import argon2 from 'argon2';
+import { isPlaceholder, secretRule } from '../config/secret-rules.js';
 
 export type QualityCode =
   'weak_secret' | 'example_database' | 'weak_argon2_params' | 'llm_key_format';
@@ -13,50 +14,9 @@ export interface QualityFinding {
   severity: 'error' | 'warning';
 }
 
-const PLACEHOLDER_WORDS = [
-  'changeme',
-  'example',
-  'ejemplo',
-  'placeholder',
-  'pendiente',
-  'todo',
-  'xxx',
-  'secret',
-  'password',
-  'test',
-];
-const WORDS = PLACEHOLDER_WORDS.join('|');
-/** a) tras quitar cifras y separadores, solo quedan palabras de relleno. */
-const ONLY_WORDS = new RegExp(`^(?:${WORDS})+$`);
-/** c) una palabra al principio o entre separadores `_ - . espacio`. */
-const WORD_AT_EDGE = new RegExp(`^(?:${WORDS})|[_\\-. ](?:${WORDS})(?:[_\\-. ]|$)`);
-const ANY_WORD = new RegExp(WORDS);
+// Las reglas de relleno, longitud y variedad son las del arranque (012): `secret-rules.ts`.
+export { isPlaceholder };
 
-/** d) un solo carácter repetido o una secuencia `0123…`/`abcd…` (con vuelta de 9 a 0 y de z a a). */
-function isRunOrRepeat(value: string): boolean {
-  if (value.length < 2) return true;
-  if (/^(.)\1*$/.test(value)) return true;
-  for (let i = 1; i < value.length; i++) {
-    const prev = value[i - 1] ?? '';
-    const cur = value[i] ?? '';
-    const next = cur.charCodeAt(0) === prev.charCodeAt(0) + 1;
-    const wrap = (prev === '9' && cur === '0') || (prev === 'z' && cur === 'a');
-    if (!next && !wrap) return false;
-  }
-  return true;
-}
-
-/** Valor de relleno según las reglas a–d de R3 (sin distinguir mayúsculas). */
-export function isPlaceholder(value: string): boolean {
-  const lower = value.trim().toLowerCase();
-  const letters = lower.replace(/[0-9_\-. ]/g, '');
-  if (letters !== '' && ONLY_WORDS.test(letters)) return true;
-  if (lower.length < 24 && ANY_WORD.test(lower)) return true;
-  if (WORD_AT_EDGE.test(lower)) return true;
-  return isRunOrRepeat(lower);
-}
-
-const HEX_64 = /^[0-9a-f]{64}$/i;
 /** `$argon2id$v=19$<parámetros>$<sal>$<hash>`; los parámetros, en cualquier orden. */
 const ARGON2ID = /^\$argon2id\$v=19\$([a-z]=\d+(?:,[a-z]=\d+)*)\$[A-Za-z0-9+/]+\$[A-Za-z0-9+/]+$/;
 
@@ -75,21 +35,6 @@ function argon2Params(params: string): { m: number; t: number } | null {
 const ARGON2_MIN_MEMORY = 19456;
 const ARGON2_MIN_TIME = 2;
 
-const distinct = (value: string): number => new Set(value.toLowerCase()).size;
-
-/** Longitud y variedad mínimas de los valores que da un tercero. */
-const MINIMUMS: Record<string, { length: number; distinct?: number }> = {
-  WHATSAPP_VERIFY_TOKEN: { length: 32, distinct: 10 },
-  WHATSAPP_APP_SECRET: { length: 32 },
-  WHATSAPP_ACCESS_TOKEN: { length: 40 },
-  ANTHROPIC_API_KEY: { length: 40 },
-  STT_API_KEY: { length: 20 },
-  /** Contraseña del operador generada (nunca se escribe; solo se valida al generarla). */
-  OPERATOR_PASSWORD: { length: 24, distinct: 10 },
-  /** Contraseña de DATABASE_URL. */
-  DATABASE_URL: { length: 16 },
-};
-
 /**
  * Calidad de un secreto según su variable. Para `DATABASE_URL`, `value` es su contraseña. Solo
  * devuelve códigos, nunca el valor.
@@ -107,7 +52,7 @@ export function secretQuality(variable: string, value: string): QualityFinding[]
     variable === 'BACKUP_KEYS_PREVIOUS' ||
     variable === 'HEALTH_SECRET'
   ) {
-    if (!HEX_64.test(trimmed) || distinct(trimmed) <= 8) add('weak_secret');
+    if (secretRule(variable, trimmed) !== null) add('weak_secret');
     return findings;
   }
   if (variable === 'OPERATOR_PASSWORD_HASH') {
@@ -118,17 +63,12 @@ export function secretQuality(variable: string, value: string): QualityFinding[]
     }
     return findings;
   }
-  if (variable === 'DATABASE_URL' && trimmed === 'chatbot') {
+  const rule = secretRule(variable, trimmed);
+  if (variable === 'DATABASE_URL' && rule === 'example_value') {
     add('example_database');
     return findings;
   }
-
-  const minimum = MINIMUMS[variable];
-  if (minimum) {
-    if (trimmed.length < minimum.length) add('weak_secret');
-    if (minimum.distinct !== undefined && distinct(trimmed) < minimum.distinct) add('weak_secret');
-  }
-  if (trimmed === '' || isPlaceholder(trimmed)) add('weak_secret');
+  if (rule !== null) add('weak_secret');
   if (variable === 'ANTHROPIC_API_KEY' && !trimmed.startsWith('sk-ant-')) {
     add('llm_key_format', 'warning');
   }

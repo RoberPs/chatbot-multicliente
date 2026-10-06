@@ -6,7 +6,13 @@
 import { asc } from 'drizzle-orm';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { createRetention } from '../../../src/conversation/retention.js';
-import { business, modelPrice, modelUsage, usageSettings } from '../../../src/db/schema.js';
+import {
+  business,
+  modelPrice,
+  modelUsage,
+  usageSettings,
+  whatsappUsageDay,
+} from '../../../src/db/schema.js';
 import { createTestDatabase, resetDb, type TestDatabase } from '../../helpers/db.js';
 import { ManualClock, RecordingActivityLog } from '../../helpers/fakes.js';
 
@@ -88,5 +94,20 @@ describe('retención de model_usage', () => {
     expect(await days()).toEqual([]);
     expect(await t.db.select().from(modelPrice)).toHaveLength(1);
     expect(await t.db.select().from(usageSettings)).toHaveLength(1);
+  });
+
+  it('012: purga whatsapp_usage_day de hace más de 400 días en la misma pasada', async () => {
+    // 2026-09-24 − 400 días = 2025-08-20.
+    await t.db.insert(whatsappUsageDay).values([
+      { day: '2025-08-19', replies: 5 },
+      { day: '2025-08-20', replies: 6 },
+      { day: '2026-09-24', replies: 7 },
+    ]);
+    await purgeAt('2026-09-24T08:00:00Z');
+    const rows = await t.db
+      .select({ day: whatsappUsageDay.day })
+      .from(whatsappUsageDay)
+      .orderBy(asc(whatsappUsageDay.day));
+    expect(rows.map((r) => r.day)).toEqual(['2025-08-20', '2026-09-24']);
   });
 });

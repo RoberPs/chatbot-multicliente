@@ -16,7 +16,10 @@ export interface ConfigLogger {
 }
 
 export type SectionCounts = Record<SectionKey, number>;
-export type SectionChanges = Record<SectionKey, { added: number; modified: number; removed: number }>;
+export type SectionChanges = Record<
+  SectionKey,
+  { added: number; modified: number; removed: number }
+>;
 export type PreviewOutcome = 'will_apply' | 'blocked_critical' | 'blocked_web_chat';
 export type RejectStage = 'upload' | 'confirm';
 export type CancelReason = 'operator' | 'expired';

@@ -34,9 +34,10 @@ describe('respuestas simultáneas cerca del tope', () => {
     const b = (bot = await createTestBot(t, {
       settings: { processorConcurrency: CONCURRENCY },
     }));
-    // Las respuestas tardan de verdad: se solapan dentro de la misma pasada.
+    // Las respuestas tardan de verdad: se solapan dentro de la misma pasada. Con margen para
+    // que las cuatro comprobaciones (una consulta cada una) terminen antes que el primer modelo.
     for (let i = 0; i < CONCURRENCY; i++) {
-      b.model.queue({ reply: reply('Respuesta.'), realDelayMs: 50, usage: tokens(1_000_000, 0) });
+      b.model.queue({ reply: reply('Respuesta.'), realDelayMs: 500, usage: tokens(1_000_000, 0) });
     }
     b.model.reportUsage(tokens(1_000_000, 0));
     await t.db.insert(modelPrice).values({

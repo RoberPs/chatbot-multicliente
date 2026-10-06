@@ -359,7 +359,13 @@ export function buildLargeDocument(size: {
     },
     openingHours: TEN_SLOTS,
     closures: [
-      { startDate: '2026-12-24', endDate: '2026-12-26', startTime: null, endTime: null, reason: null },
+      {
+        startDate: '2026-12-24',
+        endDate: '2026-12-26',
+        startTime: null,
+        endTime: null,
+        reason: null,
+      },
     ],
     services,
     resources: Array.from({ length: size.resources }, (_, i) => ({
@@ -407,13 +413,17 @@ export function multipartBody(parts: MultipartPart[]): { payload: Buffer; conten
     const disposition = `form-data; name="${part.name}"${
       part.filename === undefined ? '' : `; filename="${part.filename}"`
     }`;
-    const type = part.filename === undefined ? '' : `Content-Type: ${part.type ?? 'application/json'}\r\n`;
+    const type =
+      part.filename === undefined ? '' : `Content-Type: ${part.type ?? 'application/json'}\r\n`;
     chunks.push(Buffer.from(`--${boundary}\r\nContent-Disposition: ${disposition}\r\n${type}\r\n`));
     chunks.push(Buffer.isBuffer(part.value) ? part.value : Buffer.from(part.value));
     chunks.push(Buffer.from('\r\n'));
   }
   chunks.push(Buffer.from(`--${boundary}--\r\n`));
-  return { payload: Buffer.concat(chunks), contentType: `multipart/form-data; boundary=${boundary}` };
+  return {
+    payload: Buffer.concat(chunks),
+    contentType: `multipart/form-data; boundary=${boundary}`,
+  };
 }
 
 /** Fichero analizado y validado, listo para `previewImport` / `applyImport`. */

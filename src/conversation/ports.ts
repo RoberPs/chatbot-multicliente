@@ -41,12 +41,20 @@ export interface Transcript {
 }
 
 export class SpeechToTextError extends Error {
+  /** El proveedor respondió (y puede haber cobrado): el consumo se registra igual (012, R6). */
+  readonly responded: boolean;
+  /** Duración que informó el proveedor en su respuesta, si la dio. */
+  readonly durationSeconds: number | null;
+
   constructor(
     readonly reason: 'timeout' | 'provider_error',
     readonly status?: number,
+    details: { responded?: boolean; durationSeconds?: number | null } = {},
   ) {
     super(`Fallo de la transcripción: ${reason}${status === undefined ? '' : ` (${status})`}`);
     this.name = 'SpeechToTextError';
+    this.responded = details.responded ?? false;
+    this.durationSeconds = details.durationSeconds ?? null;
   }
 }
 
@@ -61,6 +69,8 @@ export interface SpeechToText {
 export interface SendOptions {
   /** Se consulta antes de cada reintento; `false` corta (ventana de 24 h cerrada). */
   canRetry?: () => boolean;
+  /** Plazo de quien llama, combinado con el propio del canal (012, R11). */
+  signal?: AbortSignal;
 }
 
 export class ChannelSendError extends Error {
@@ -94,8 +104,15 @@ export class MediaTooLargeError extends Error {
 }
 
 export interface MediaFetcher {
-  /** Devuelve el audio en memoria; lanza MediaTooLargeError si supera el límite. */
-  fetchAudio(mediaId: string, maxBytes: number): Promise<{ data: Buffer; mimeType: string }>;
+  /**
+   * Devuelve el audio en memoria; lanza MediaTooLargeError si supera el límite. La descarga
+   * respeta `signal`: el plazo de la transcripción la cubre entera (012, R11).
+   */
+  fetchAudio(
+    mediaId: string,
+    maxBytes: number,
+    opts?: { signal?: AbortSignal },
+  ): Promise<{ data: Buffer; mimeType: string }>;
 }
 
 export interface Clock {

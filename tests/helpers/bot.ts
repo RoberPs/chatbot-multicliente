@@ -19,6 +19,7 @@ import {
   conversationSettings,
   type ConversationSettings,
 } from '../../src/conversation/settings.js';
+import type { Db } from '../../src/db/client.js';
 import { message, webChatSettings } from '../../src/db/schema.js';
 import { activateBusiness } from '../../src/knowledge/services/business-status.js';
 import { createKnowledgeReader } from '../../src/knowledge/snapshot.js';
@@ -33,6 +34,7 @@ import { createTokenCipher } from '../../src/handoff/tokens.js';
 import type { WebChatSettings } from '../../src/webchat/settings.js';
 import { createQuotaWatch } from '../../src/webchat/usage.js';
 import { createUsageMeter, type UsageMeter } from '../../src/usage/meter.js';
+import type { ProtectionConfig } from '../../src/usage/protection.js';
 import { hairSalon } from '../fixtures/hair-salon.js';
 import { loadFixture } from '../fixtures/load.js';
 import type { BusinessFixture } from '../fixtures/types.js';
@@ -52,6 +54,8 @@ import {
 import { CUSTOMER_WA, postWebhook, testWhatsApp, textMessage, webhookPayload } from './whatsapp.js';
 
 export const EMERGENCY_PHONE = TEST_EMERGENCY_PHONE;
+
+type Widen<T> = T extends number ? number : T;
 
 /** Modelo con el que se registra el consumo en los tests (010). */
 export const TEST_LLM_MODEL = 'modelo-de-prueba';
@@ -120,8 +124,8 @@ export interface TestBotOptions {
   start?: string;
   reader?: KnowledgeReader;
   chatModel?: ChatModel;
-  /** Ajustes del procesador distintos de los de producción (plazos cortos). */
-  settings?: Partial<ConversationSettings>;
+  /** Ajustes del procesador distintos de los de producción (plazos cortos, otros límites). */
+  settings?: { [K in keyof ConversationSettings]?: Widen<ConversationSettings[K]> };
   /** Activa los audios (AUDIO_TRANSCRIPTION=on) con estos dobles. */
   audio?: { stt: FakeSpeechToText; media: FakeMediaFetcher };
   /** Además de guardarlos en `log`, escribe los eventos con el registro real en este logger. */
@@ -140,7 +144,14 @@ export interface TestBotOptions {
   handoffTimeouts?: { routeMs?: number; summaryMs?: number };
   /** Medidor del consumo (010); por defecto el real sobre la BD de prueba. */
   usageMeter?: UsageMeter;
+  /** Como en producción (012): tope obligatorio y precios exigidos. Por defecto, no. */
+  production?: boolean;
+  /** Pool de las lecturas públicas del chat (012); por defecto, el de la BD de prueba. */
+  publicDb?: Db;
 }
+
+/** Modelo de transcripción de los tests con audios (012). */
+export const TEST_STT_MODEL = 'whisper-1';
 
 export const TEST_SESSION_SECRET = 'secreto-de-sesion-de-prueba-con-32-caracteres';
 
@@ -167,7 +178,8 @@ export async function createTestBot(t: TestDatabase, opts: TestBotOptions = {}):
       }
     : log;
   const reader = opts.reader ?? createKnowledgeReader(t.db);
-  const settings = { ...conversationSettings, ...opts.settings };
+  // Los literales de `conversationSettings` (`as const`) se aceptan con cualquier número.
+  const settings = { ...conversationSettings, ...opts.settings } as ConversationSettings;
   const audioTranscription = opts.audio !== undefined;
   const withWhatsApp = opts.whatsapp ?? true;
   const policies = buildChannelPolicies({ whatsappSender: withWhatsApp ? sender : null });
@@ -184,6 +196,11 @@ export async function createTestBot(t: TestDatabase, opts: TestBotOptions = {}):
   const usage = {
     meter: opts.usageMeter ?? createUsageMeter({ db: t.db, activityLog }),
     model: TEST_LLM_MODEL,
+  };
+  const protection: ProtectionConfig = {
+    production: opts.production ?? false,
+    llmModel: TEST_LLM_MODEL,
+    sttModel: audioTranscription ? TEST_STT_MODEL : null,
   };
   const handoff = createHandoffService({
     db: t.db,
@@ -217,6 +234,7 @@ export async function createTestBot(t: TestDatabase, opts: TestBotOptions = {}):
       quotaWatch,
       handoff,
       usage,
+      protection,
     });
   const processor = makeProcessor();
   const wake = (id: string) => {
@@ -230,6 +248,7 @@ export async function createTestBot(t: TestDatabase, opts: TestBotOptions = {}):
         activityLog,
         wake,
         settings,
+        protection: { config: protection, reader, clock, meter: usage.meter },
       })
     : null;
   const intake = createIntake({
@@ -238,7 +257,9 @@ export async function createTestBot(t: TestDatabase, opts: TestBotOptions = {}):
     clock,
     activityLog,
     policies,
+    settings,
     quotaWatch,
+    protection,
     wake,
     notifyRateLimit: (id) => {
       void processor.sendRateLimitNotice(id);
@@ -267,6 +288,8 @@ export async function createTestBot(t: TestDatabase, opts: TestBotOptions = {}):
     },
     // El panel usa el mismo modelo con el que se registra el consumo (010).
     { LLM_MODEL: TEST_LLM_MODEL },
+    undefined,
+    { protection, ...(opts.publicDb ? { publicDb: opts.publicDb } : {}) },
   );
   let sequence = 0;
 

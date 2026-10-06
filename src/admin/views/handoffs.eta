@@ -44,7 +44,7 @@
   <% } else { %>
     <table class="handoffs">
       <thead>
-        <tr><th scope="col">Cliente</th><th scope="col">Canal</th><th scope="col">Tipo</th><th scope="col">Inicio</th><th scope="col">Confirmada</th><th scope="col">Recordatorio enviado</th><th scope="col"><span class="sr-only">Acciones</span></th></tr>
+        <tr><th scope="col">Cliente</th><th scope="col">Canal</th><th scope="col">Tipo</th><th scope="col">Inicio</th><th scope="col">Confirmada</th><th scope="col">Recordatorio enviado</th><th scope="col">Pendientes de reenviar</th><th scope="col"><span class="sr-only">Acciones</span></th></tr>
       </thead>
       <tbody>
         <% it.active.forEach(function (r) { %>
@@ -55,6 +55,7 @@
             <td><%= r.startedAt %></td>
             <td><%= r.confirmed %></td>
             <td><%= r.reminder %></td>
+            <td data-pending="<%= r.pending %>"><%= r.pendingText || '—' %></td>
             <td>
               <form method="post" action="/admin/handoffs/<%= r.id %>/end"
                     hx-post="/admin/handoffs/<%= r.id %>/end" hx-target="closest tr" hx-swap="outerHTML"
@@ -67,6 +68,30 @@
         <% }) %>
       </tbody>
     </table>
-    <p class="meta">El motivo de cada derivación solo lo recibe el negocio en su aviso.</p>
+    <p class="meta">El motivo de cada derivación solo lo recibe el negocio en su aviso. Lo que el cliente escribe durante la derivación se reenvía agrupado, como mucho un aviso cada intervalo (se ajusta en «Consumo» → «Límites de derivación»).</p>
+  <% } %>
+</section>
+
+<section class="card">
+  <h2>Mensajes retenidos</h2>
+  <% if (it.held.length === 0) { %>
+    <p class="meta">No hay mensajes retenidos.</p>
+  <% } else { %>
+    <p class="hint">Mensajes que el cliente escribió mientras esperaban su reenvío agrupado y que no llegaron al negocio porque la derivación terminó antes. El asistente no los contesta.</p>
+    <table class="handoffs" data-held-list>
+      <thead>
+        <tr><th scope="col">Cliente</th><th scope="col">Canal</th><th scope="col">Retenido (no reenviado)</th><th scope="col">Último</th></tr>
+      </thead>
+      <tbody>
+        <% it.held.forEach(function (r) { %>
+          <tr data-held-conversation="<%= r.conversationId %>">
+            <td><%= r.customer %></td>
+            <td><%= r.channel %></td>
+            <td><%= r.held %></td>
+            <td><%= r.lastAt %></td>
+          </tr>
+        <% }) %>
+      </tbody>
+    </table>
   <% } %>
 </section>

@@ -13,6 +13,10 @@ export const conversationSettings = {
   processorSweepMs: 1 * SECOND,
   /** Barrido de la derivación: fin por inactividad y recordatorios (005, R14). */
   handoffSweepMs: 60 * SECOND,
+  /** Esperas entre intentos de un lote que falla (012, R10): 5 s, 30 s, 2 min y 10 min. */
+  batchRetryDelaysMs: [5 * SECOND, 30 * SECOND, 2 * MINUTE, 10 * MINUTE] as readonly number[],
+  /** Al quinto fallo seguido el lote se abandona con una disculpa. */
+  batchMaxAttempts: 5 as number,
   /** Conversaciones procesándose a la vez (R5). */
   processorConcurrency: 4,
   /** Mensajes de la conversación que se pasan al modelo (R4). */

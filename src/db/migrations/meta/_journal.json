@@ -57,6 +57,13 @@
       "when": 1790923001901,
       "tag": "0007_chat_design",
       "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "7",
+      "when": 1791201320076,
+      "tag": "0008_abuse_protection",
+      "breakpoints": true
     }
   ]
 }

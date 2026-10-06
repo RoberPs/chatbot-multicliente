@@ -11,8 +11,9 @@
 import { readFileSync } from 'node:fs';
 import { sql } from 'drizzle-orm';
 import type { FastifyInstance } from 'fastify';
-import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
+import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 import { modelPrice, modelUsage, usageSettings, webUsageDay } from '../../src/db/schema.js';
+import { readDesignImageBytes } from '../../src/webchat/design/store.js';
 import { get, login } from '../helpers/app.js';
 import { createTestBot, TEST_LLM_MODEL, type TestBot } from '../helpers/bot.js';
 import {
@@ -26,6 +27,12 @@ import {
   seedChatDesignWithImages,
 } from '../helpers/chat-design.js';
 import { createTestDatabase, type TestDatabase } from '../helpers/db.js';
+
+// Espía de la lectura de los bytes (012, US3): la imagen se comprueba antes por sus metadatos.
+vi.mock('../../src/webchat/design/store.js', async (importOriginal) => {
+  const original = await importOriginal<typeof import('../../src/webchat/design/store.js')>();
+  return { ...original, readDesignImageBytes: vi.fn(original.readDesignImageBytes) };
+});
 
 const ORIGIN = 'https://negocio.example';
 const WEB_ON = {
@@ -428,6 +435,28 @@ describe('diseño del chat web: imágenes (US3)', () => {
     await clearChatDesign(t.db);
     const gone = await bot.app.inject({ method: 'GET', url: imageUrl('logo', logo) });
     expect(gone.statusCode).toBe(404);
+  });
+
+  it('012: con otra huella, otra extensión o sin imagen, 404 sin leer los bytes; con la vigente, sí', async () => {
+    bot = await createTestBot(t, { webChat: WEB_ON });
+    const images = await seedChatDesignWithImages(t.db, { logo: 'valid.png' });
+    const logo = must(images.logo);
+    const hash = logo.sha256.slice(0, 16);
+    const bytesRead = vi.mocked(readDesignImageBytes);
+    bytesRead.mockClear();
+    for (const url of [
+      `/chat/design/logo/${'0'.repeat(16)}.png`,
+      `/chat/design/logo/${hash}.jpg`,
+      `/chat/design/avatar/${hash}.png`,
+    ]) {
+      const res = await bot.app.inject({ method: 'GET', url });
+      expect([url, res.statusCode, res.body]).toEqual([url, 404, 'No encontrado']);
+    }
+    expect(bytesRead).not.toHaveBeenCalled();
+    const ok = await bot.app.inject({ method: 'GET', url: imageUrl('logo', logo) });
+    expect(ok.statusCode).toBe(200);
+    expect(ok.headers['cache-control']).toBe('public, max-age=31536000, immutable');
+    expect(bytesRead).toHaveBeenCalledTimes(1);
   });
 
   it('una imagen guardada cuyos bytes ya no valen no se sirve (R13)', async () => {

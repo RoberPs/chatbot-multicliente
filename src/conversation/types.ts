@@ -93,6 +93,16 @@ export type HandoffAction = (typeof HANDOFF_ACTIONS)[number];
 
 const routeResult = z.enum(['sent', 'failed']);
 
+/** Motivos de una respuesta sin modelo (012, `CapReason`). */
+export const CAP_REASONS = [
+  'spend_unreadable',
+  'cap_disabled',
+  'model_unpriced',
+  'stt_unpriced',
+  'spend_cap',
+  'whatsapp_daily',
+] as const;
+
 /**
  * Cómo se compuso una respuesta (FR-009, R7). Se guarda en cada saliente; sin textos ni
  * valores rechazados por el verificador.
@@ -108,6 +118,8 @@ export const replyTraceSchema = z
     groundingRejections: z.number().int().min(0).max(2),
     modelMs: z.number().int().min(0).nullable(),
     latencyMs: z.number().int().min(0),
+    /** Por qué se respondió sin modelo (012, R4): tope, tope diario o motivo de solo contacto. */
+    capReason: z.enum(CAP_REASONS).optional(),
     /** Derivación en esta respuesta (005): acción, tipo y resultado por vía, sin textos. */
     handoff: z
       .object({

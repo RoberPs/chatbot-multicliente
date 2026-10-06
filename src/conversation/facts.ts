@@ -167,6 +167,8 @@ export function buildAllowedFacts(
       }
       const set = allowed[`${fact.category}s` as keyof AllowedFacts] as Set<string> | undefined;
       set?.add(fact.value);
+      // Una dirección registrada vale también por host + ruta (012).
+      if (fact.category === 'url') for (const v of fact.alternatives ?? []) allowed.urls.add(v);
       if (fact.category === 'phone') for (const v of phoneVariants(fact.raw)) allowed.phones.add(v);
     }
   }

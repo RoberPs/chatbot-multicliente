@@ -51,7 +51,9 @@ describe('US1: derivación simulada en el playground', () => {
     expect(notices[0]).toMatchObject({ route: 'simulated', type: 'alert', status: 'sent' });
     expect(notices[0]?.body).toContain('Derivación: Operador (quiere hablar con una persona)');
     expect(notices[0]?.body).toContain('Canal: prueba del panel');
-    expect(notices[0]?.body).toContain('Motivo: Quiere hablar con una persona para una prueba.');
+    expect(notices[0]?.body).toContain(
+      'Motivo (según el cliente): «Quiere hablar con una persona para una prueba.»',
+    );
 
     const [, last] = await t.db
       .select({ replyTrace: message.replyTrace })

@@ -8,6 +8,9 @@
 <% if (it.layout.spend && it.layout.spend.kind === 'reached') { %>
   <p class="notice" role="status">Los clientes finales están recibiendo solo el contacto del negocio porque se ha alcanzado el tope de gasto. Lo que pruebes aquí sigue usando el modelo y suma al gasto.</p>
 <% } %>
+<% if (it.contactOnly) { %>
+  <p class="notice" role="status" data-contact-only><%= it.contactOnly %> Lo que pruebes aquí sigue usando el modelo.</p>
+<% } %>
 <% if (it.state.business.status !== 'active') { %>
   <p class="notice" role="status">El negocio está en preparación: los clientes reales no reciben respuesta hasta que lo actives. Aquí puedes probarlo igualmente.</p>
 <% } %>

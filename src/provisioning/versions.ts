@@ -45,10 +45,11 @@ export interface VersionRow {
   matches: boolean | null;
   review: boolean;
   /**
-   * Nivel del tope de gasto del informe (010); `null` si no viene, es desconocido o la fila no
-   * tiene informe completo. No interviene en la clasificación ni en la revisión.
+   * Nivel del tope de gasto del informe (010) o `blocked` si responde solo con el contacto (012);
+   * `null` si no viene, es desconocido o la fila no tiene informe completo. No interviene en la
+   * clasificación ni en la revisión.
    */
-  spendCap: SpendCapLevel | null;
+  spendCap: SpendCapValue | null;
 }
 
 export interface VersionsReport {
@@ -83,8 +84,17 @@ const fullSchema = z.strictObject({
   spendCap: z.unknown().optional(),
 });
 
-const SPEND_CAP_LEVELS: readonly SpendCapLevel[] = ['none', 'normal', 'warning', 'reached'];
-const spendCapOf = (value: unknown): SpendCapLevel | null =>
+/** Valores de `spendCap`: los niveles de la 010 y `blocked` (012, R17). */
+type SpendCapValue = SpendCapLevel | 'blocked';
+
+const SPEND_CAP_LEVELS: readonly SpendCapValue[] = [
+  'none',
+  'normal',
+  'warning',
+  'reached',
+  'blocked',
+];
+const spendCapOf = (value: unknown): SpendCapValue | null =>
   SPEND_CAP_LEVELS.find((level) => level === value) ?? null;
 
 /** Tamaño máximo del cuerpo de `/health` que se lee. */
@@ -265,11 +275,12 @@ function matchLabel(row: VersionRow): string {
 }
 
 /** Columna Tope (010, contracts/health-spend-cap.md). */
-const SPEND_CAP_LABELS: Record<SpendCapLevel, string> = {
+const SPEND_CAP_LABELS: Record<SpendCapValue, string> = {
   none: 'sin tope',
   normal: 'normal',
   warning: '≥80 %',
   reached: 'alcanzado',
+  blocked: 'bloqueado',
 };
 
 const pad = (text: string, size: number) => text + ' '.repeat(Math.max(0, size - text.length));

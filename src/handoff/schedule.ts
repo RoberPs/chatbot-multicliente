@@ -65,6 +65,11 @@ function localToInstant(date: ISODate, minutes: number, timezone: string): numbe
   throw new Error('Zona horaria sin horas válidas');
 }
 
+/** Las 00:00 locales del día siguiente al de `at` (012: cuando vuelven las plazas del día). */
+export function nextLocalMidnight(at: Date, timezone: string): Date {
+  return new Date(localToInstant(addDays(localNow(at, timezone).date, 1), 0, timezone));
+}
+
 interface Window {
   start: number;
   end: number;

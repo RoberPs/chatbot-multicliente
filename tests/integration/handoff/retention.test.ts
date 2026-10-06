@@ -1,11 +1,18 @@
 /**
  * FR-023 (005): la retención de 30 días borra la conversación derivada y con ella sus
  * derivaciones (activas o terminadas), los avisos al negocio y los datos de contacto y el paso
- * de la derivación, que viven en la conversación.
+ * de la derivación, que viven en la conversación. Los contadores diarios de la 012 duran 400 días.
  */
+import { asc } from 'drizzle-orm';
 import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
 import { createRetention } from '../../../src/conversation/retention.js';
-import { conversation, handoff, handoffNotice, message } from '../../../src/db/schema.js';
+import {
+  conversation,
+  handoff,
+  handoffDay,
+  handoffNotice,
+  message,
+} from '../../../src/db/schema.js';
 import { createTestBot, type TestBot } from '../../helpers/bot.js';
 import { createTestDatabase, type TestDatabase } from '../../helpers/db.js';
 import { reply } from '../../helpers/fakes.js';
@@ -48,7 +55,8 @@ describe('retención de la derivación (FR-023)', () => {
     await b.sendVia('web', 'Otra vez: quiero hablar con alguien');
     await b.settle();
     await b.sendVia('web', 'Sigo aquí');
-    await b.settle();
+    // Reenvío agrupado (012): sale al cumplirse el intervalo.
+    await b.settle(15 * 60 * 1000);
     expect(await t.db.select().from(handoff)).toHaveLength(2);
     expect((await t.db.select().from(handoffNotice)).length).toBeGreaterThanOrEqual(5);
 
@@ -73,5 +81,21 @@ describe('retención de la derivación (FR-023)', () => {
     });
     const bodies = (await t.db.select().from(message)).map((m) => m.body ?? '');
     expect(bodies.join('\n')).not.toContain('Lucía');
+  });
+
+  it('012: purga handoff_day de hace más de 400 días en la misma pasada', async () => {
+    const b = (bot = await createTestBot(t));
+    // 2026-09-24 − 400 días = 2025-08-20.
+    await t.db.insert(handoffDay).values([
+      { day: '2025-08-19', started: 1 },
+      { day: '2025-08-20', started: 2 },
+      { day: '2026-09-24', started: 3 },
+    ]);
+    await createRetention({ db: t.db, clock: b.clock, activityLog: b.log }).purge();
+    const rows = await t.db
+      .select({ day: handoffDay.day })
+      .from(handoffDay)
+      .orderBy(asc(handoffDay.day));
+    expect(rows.map((r) => r.day)).toEqual(['2025-08-20', '2026-09-24']);
   });
 });

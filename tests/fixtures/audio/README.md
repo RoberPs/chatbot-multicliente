@@ -25,3 +25,18 @@ pnpm test:eval audio     # necesita ANTHROPIC_API_KEY y STT_API_KEY en .env
 ```
 
 La suite se omite si falta alguna de las dos claves o alguno de los ficheros, e indica cuáles.
+
+## Ficheros generados (012)
+
+Los genera [generate.ts](generate.ts) (`pnpm tsx tests/fixtures/audio/generate.ts`) y se
+versionan. Son Ogg con un flujo Opus mínimo que no se puede reproducir: solo sirven para calcular
+la duración por la última `granule_position` (research R6.3,
+`tests/unit/usage/transcription-cost.test.ts`).
+
+| Fichero | Contenido | Duración esperada |
+|---|---|---|
+| `voice-3s.ogg` | Nota de voz de 3 páginas de audio; última `granule_position` = 3 × 48 000 | 3 000 ms |
+| `voice-119s.ogg` | Nota de voz de 119 páginas; última `granule_position` = 119 × 48 000 | 119 000 ms |
+| `no-granule.ogg` | Páginas de audio sin paquete terminado (`granule_position` = −1) | sin duración |
+| `truncated.ogg` | `voice-3s.ogg` cortado a mitad de la última página | sin duración |
+| `not-ogg.bin` | Texto, no es Ogg | sin duración |

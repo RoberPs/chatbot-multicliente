@@ -73,7 +73,7 @@ describe('plantilla derivacion_aviso', () => {
               { type: 'text', text: 'quiere hablar con una persona' },
               {
                 type: 'text',
-                text: 'Pregunta por el precio del tinte. Quiere hablar con alguien.',
+                text: 'Según el cliente: «Pregunta por el precio del tinte. Quiere hablar con alguien.»',
               },
             ],
           },
@@ -176,7 +176,7 @@ describe('plantilla derivacion_mensaje (US3)', () => {
     expect(body.template.components[0]?.parameters).toEqual([
       { type: 'text', text: 'Lucía Pérez' },
       { type: 'text', text: '+34 611 22 23 33' },
-      { type: 'text', text: 'Llego tarde / [image]' },
+      { type: 'text', text: 'El cliente escribió: «Llego tarde / [image]»' },
     ]);
     expect(body.template.components.slice(1).map((c) => c.type)).toEqual(['button', 'button']);
   });
@@ -205,7 +205,7 @@ describe('plantilla derivacion_recordatorio (US5)', () => {
     ]);
     expect(first?.parameters[3]).toEqual({
       type: 'text',
-      text: 'Pregunta por el precio del tinte. Quiere hablar con alguien.',
+      text: 'Según el cliente: «Pregunta por el precio del tinte. Quiere hablar con alguien.»',
     });
     expect(buttons.map((b) => b.parameters[0]?.payload)).toEqual([
       `h1:attend:${TOKEN}`,

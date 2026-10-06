@@ -1,7 +1,8 @@
 /**
  * SC-007 (research R13): con 200 servicios, 50 recursos (~10 franjas y ~20 servicios cada uno)
  * y 200 preguntas, la vista previa y la aplicación tardan menos de 5 s cada una (objetivo
- * interno < 1 s) y la exportación menos de 1 s.
+ * interno < 1 s) y la exportación menos de 1 s. 012: con las listas en su máximo, la vista previa
+ * también (la aplicación completa ya la mide el primer caso).
  */
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import {
@@ -31,7 +32,9 @@ describe('rendimiento de la importación (SC-007)', () => {
   beforeAll(async () => {
     t = await createTestDatabase();
     await seedFullBusiness(t.deps, { status: 'draft', webChatEnabled: false });
-    source = importSource(fileFromDocument(buildLargeDocument({ services: 200, resources: 50, faqs: 200 })));
+    source = importSource(
+      fileFromDocument(buildLargeDocument({ services: 200, resources: 50, faqs: 200 })),
+    );
   });
   afterAll(async () => {
     await t.close();
@@ -62,5 +65,16 @@ describe('rendimiento de la importación (SC-007)', () => {
     expect(preview.ms).toBeLessThan(5000);
     expect(apply.ms).toBeLessThan(5000);
     expect(exported.ms).toBeLessThan(1000);
+  });
+
+  it('012: con las listas principales en su máximo, validar y previsualizar < 5 s (SC-007)', async () => {
+    const atMax = importSource(
+      fileFromDocument(buildLargeDocument({ services: 300, resources: 100, faqs: 300 })),
+    );
+    const preview = await time(() =>
+      previewImport(t.db, atMax, { includeAlerts: false, instanceId: null }),
+    );
+    console.info(`SC-007 (012, en el máximo): vista previa ${preview.ms.toFixed(0)} ms`);
+    expect(preview.ms).toBeLessThan(5000);
   });
 });

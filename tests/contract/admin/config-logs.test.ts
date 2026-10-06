@@ -5,7 +5,14 @@
  */
 import type { FastifyInstance } from 'fastify';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { buildTestApp, get, loggedEvents, login, postForm, type Session } from '../../helpers/app.js';
+import {
+  buildTestApp,
+  get,
+  loggedEvents,
+  login,
+  postForm,
+  type Session,
+} from '../../helpers/app.js';
 import {
   FULL_ALERTS,
   fixtureJson,
@@ -18,8 +25,22 @@ import { createTestDatabase, type TestDatabase } from '../../helpers/db.js';
 
 const CATALOG: Record<string, string[]> = {
   config_exported: ['includesAlerts', 'counts'],
-  config_import_previewed: ['sourceInstance', 'formatVersion', 'sameInstance', 'counts', 'changes', 'outcome'],
-  config_import_applied: ['sourceInstance', 'formatVersion', 'includesAlerts', 'changes', 'criticalWarnings', 'warnings'],
+  config_import_previewed: [
+    'sourceInstance',
+    'formatVersion',
+    'sameInstance',
+    'counts',
+    'changes',
+    'outcome',
+  ],
+  config_import_applied: [
+    'sourceInstance',
+    'formatVersion',
+    'includesAlerts',
+    'changes',
+    'criticalWarnings',
+    'warnings',
+  ],
   config_import_rejected: ['stage', 'reason', 'issues', 'sourceInstance'],
   config_import_cancelled: ['reason', 'sourceInstance'],
 };
@@ -62,7 +83,13 @@ describe('registros de exportar e importar sin datos (FR-024)', () => {
 
   beforeAll(async () => {
     t = await createTestDatabase();
-    app = await buildTestApp(t.db, 'postgres://no-usada', null, instanceEnv('produccion-01'), lines);
+    app = await buildTestApp(
+      t.db,
+      'postgres://no-usada',
+      null,
+      instanceEnv('produccion-01'),
+      lines,
+    );
     await seedFullBusiness(t.deps, { alerts: FULL_ALERTS, webChatEnabled: false });
     session = await login(app);
   });
@@ -90,16 +117,27 @@ describe('registros de exportar e importar sin datos (FR-024)', () => {
     await postForm(app, session, '/admin/config/export', { include_alerts: 'on' });
 
     // Subida inválida (con los textos en los errores) y versión futura.
-    const invalid = fixtureJson('valid-full-with-alerts.json') as Record<string, Array<Record<string, unknown>>>;
+    const invalid = fixtureJson('valid-full-with-alerts.json') as Record<
+      string,
+      Array<Record<string, unknown>>
+    >;
     invalid.services![0]!.priceCents = -1;
     invalid.resources![0]!.services = ['Servicio A inexistente'];
     await upload(Buffer.from(JSON.stringify(invalid)));
-    await upload(Buffer.from(JSON.stringify({ ...fixtureJson('valid-full.json'), formatVersion: 9 })));
+    await upload(
+      Buffer.from(JSON.stringify({ ...fixtureJson('valid-full.json'), formatVersion: 9 })),
+    );
     await upload(Buffer.from('no es json: Negocio de ejemplo +34910123456'));
 
     // Vista previa con destinos, cambio concurrente rechazado, aplicación y cancelación.
-    const changed = fixtureJson('valid-full-with-alerts.json') as Record<string, Array<Record<string, unknown>>>;
-    changed.faqs!.push({ question: '¿Pregunta con +34910123456?', answer: 'Escribe a hola@example.com' });
+    const changed = fixtureJson('valid-full-with-alerts.json') as Record<
+      string,
+      Array<Record<string, unknown>>
+    >;
+    changed.faqs!.push({
+      question: '¿Pregunta con +34910123456?',
+      answer: 'Escribe a hola@example.com',
+    });
     const path = (await upload(Buffer.from(JSON.stringify(changed)))).headers.location ?? '';
     const page = await get(app, session, `${path}?alerts=1`);
     const base = /name="base" value="([^"]+)"/.exec(page.body)?.[1] ?? '';
@@ -114,9 +152,13 @@ describe('registros de exportar e importar sin datos (FR-024)', () => {
     expect(new Set(events.map((e) => e.event))).toEqual(new Set(Object.keys(CATALOG)));
     for (const event of events) {
       const allowed = [...LOGGER_FIELDS, ...(CATALOG[String(event.event)] ?? [])];
-      expect(Object.keys(event).filter((k) => !allowed.includes(k)), String(event.event)).toEqual([]);
+      expect(
+        Object.keys(event).filter((k) => !allowed.includes(k)),
+        String(event.event),
+      ).toEqual([]);
       const text = JSON.stringify(event);
-      for (const value of SENSITIVE) expect(text, `${String(event.event)}: ${value}`).not.toContain(value);
+      for (const value of SENSITIVE)
+        expect(text, `${String(event.event)}: ${value}`).not.toContain(value);
     }
   });
 });

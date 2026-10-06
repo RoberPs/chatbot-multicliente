@@ -7,11 +7,18 @@
  * `src/channels/web`.
  */
 import type { ActivityLog } from '../conversation/activity-log.js';
+import { isPoolBusy } from '../db/client.js';
 import { unavailableContact } from '../conversation/templates.js';
 import type { DbOrTx } from '../conversation/repositories/customer.js';
 import type { KnowledgeReader, KnowledgeSnapshot } from '../knowledge/types.js';
 import { readWebChatSettings, type WebChatSettings } from './settings.js';
-import { checkSpendCap, spendCapState } from '../usage/spend-cap.js';
+import {
+  canCallModel,
+  checkProtection,
+  defaultProtectionConfig,
+  protectionState,
+  type ProtectionConfig,
+} from '../usage/protection.js';
 import { capReached, readWebUsage } from './usage.js';
 
 /** Por qué no se puede atender; `ip_limit` lo añade la capa HTTP (US4). */
@@ -52,11 +59,14 @@ export interface AvailabilityDeps {
   now: Date;
   /** Registro del evento `spend_cap_reached` (010, R10); sin él solo se lee el estado. */
   activityLog?: ActivityLog;
+  /** Producción y modelos de la instancia (012); sin ella, como fuera de producción. */
+  protection?: ProtectionConfig;
 }
 
 /**
  * Comprueba en el orden del contrato: bot, snapshot, chat activado, negocio activo, tope de
- * respuestas (004) y tope de gasto (010). Los dos topes se ven igual: `quota` (FR-017).
+ * respuestas (004) y protección (tope de gasto de la 010 y motivos de solo contacto de la 012).
+ * Todo lo que impide llamar al modelo se ve igual: `quota` (FR-017).
  */
 export async function webChatAvailability({
   tx,
@@ -65,6 +75,7 @@ export async function webChatAvailability({
   emergencyPhone,
   now,
   activityLog,
+  protection = defaultProtectionConfig(''),
 }: AvailabilityDeps): Promise<WebChatAvailability> {
   const no = (reason: UnavailableReason, snapshot: KnowledgeSnapshot | null) => ({
     available: false as const,
@@ -75,7 +86,9 @@ export async function webChatAvailability({
   let snapshot: KnowledgeSnapshot;
   try {
     snapshot = await reader.getSnapshot();
-  } catch {
+  } catch (error) {
+    // 012: sin conexión a tiempo no es falta de información; quien llama responde «ocupado».
+    if (isPoolBusy(error)) throw error;
     // FR-022: sin información del negocio se atiende con el contacto de emergencia.
     return no('no_bot', null);
   }
@@ -88,9 +101,10 @@ export async function webChatAvailability({
   if (capReached(await readWebUsage(tx, now, timezone), settings) !== null) {
     return no('quota', snapshot);
   }
-  const spend = activityLog
-    ? await checkSpendCap(tx, now, timezone, activityLog, { channel: 'web' })
-    : await spendCapState(tx, now, timezone);
-  if (spend.level === 'reached') return no('quota', snapshot);
+  const input = { ...protection, now, timezone };
+  const state = activityLog
+    ? await checkProtection(tx, input, activityLog, { channel: 'web' })
+    : await protectionState(tx, input);
+  if (!canCallModel(state, 'web').ok) return no('quota', snapshot);
   return { available: true, settings, snapshot };
 }

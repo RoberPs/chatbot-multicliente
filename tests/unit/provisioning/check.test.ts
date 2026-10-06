@@ -152,7 +152,7 @@ describe('validate: tabla SC-002 (cada incoherencia y cada repetición → no ap
     [
       'clave de copias igual a la sesión',
       ((e) => ({ ...e, BACKUP_KEY: e.SESSION_SECRET ?? '' }))(fresh()),
-      'backup_key_equals_session:BACKUP_KEY',
+      'secret_reused:BACKUP_KEY',
     ],
     ['INSTANCE_ID mal formado', fresh({ INSTANCE_ID: 'Demo_09' }), 'core_rule:INSTANCE_ID'],
     // FR-002
@@ -176,12 +176,12 @@ describe('validate: tabla SC-002 (cada incoherencia y cada repetición → no ap
     [
       'secreto de salud igual a la sesión',
       ((e) => ({ ...e, HEALTH_SECRET: e.SESSION_SECRET ?? '' }))(fresh()),
-      'health_secret_equals_session:HEALTH_SECRET',
+      'secret_reused:HEALTH_SECRET',
     ],
     [
       'secreto de salud igual a la clave de copias',
       ((e) => ({ ...e, HEALTH_SECRET: (e.BACKUP_KEY ?? '').toUpperCase() }))(fresh()),
-      'health_secret_equals_backup_key:HEALTH_SECRET',
+      'secret_reused:HEALTH_SECRET',
     ],
     ['sin PUBLIC_BASE_URL', fresh({ PUBLIC_BASE_URL: '' }), 'missing:PUBLIC_BASE_URL'],
     [
@@ -194,22 +194,22 @@ describe('validate: tabla SC-002 (cada incoherencia y cada repetición → no ap
     [
       'clave del modelo de relleno',
       fresh({ ANTHROPIC_API_KEY: 'sk-ant-test-0123456789abcdefghijklmnopqrstuvwxyz' }),
-      'weak_secret:ANTHROPIC_API_KEY',
+      'secret_trivial:ANTHROPIC_API_KEY',
     ],
     [
       'token de WhatsApp corto',
       fresh({ ...whatsappVars(), WHATSAPP_ACCESS_TOKEN: 'changeme123' }),
-      'weak_secret:WHATSAPP_ACCESS_TOKEN',
+      'secret_trivial:WHATSAPP_ACCESS_TOKEN',
     ],
     [
       'contraseña de BD corta',
       fresh({ DATABASE_URL: 'postgres://chatbot_demo_09:corta@db.interna:5432/chatbot_demo_09' }),
-      'weak_secret:DATABASE_URL',
+      'secret_too_short:DATABASE_URL',
     ],
     [
       'BD de ejemplo',
       fresh({ DATABASE_URL: 'postgres://chatbot:chatbot@db.interna:5432/chatbot' }),
-      'example_database:DATABASE_URL',
+      'secret_example_value:DATABASE_URL',
     ],
     [
       'hash que no es Argon2id',
@@ -220,7 +220,7 @@ describe('validate: tabla SC-002 (cada incoherencia y cada repetición → no ap
     [
       'secreto repetido dentro del entorno',
       ((w) => fresh({ ...w, WHATSAPP_APP_SECRET: w.WHATSAPP_VERIFY_TOKEN ?? '' }))(whatsappVars()),
-      'secret_reused_within:WHATSAPP_VERIFY_TOKEN',
+      'secret_reused:WHATSAPP_VERIFY_TOKEN',
     ],
     // FR-005 con el inventario
     [
@@ -280,14 +280,15 @@ describe('validate: tabla SC-002 (cada incoherencia y cada repetición → no ap
     expect(result.errors.filter((e) => e.variable === 'HEALTH_SECRET').length).toBeGreaterThan(0);
   });
 
-  it('HEALTH_SECRET igual a SESSION_SECRET: un solo error, sin secret_reused_within', () => {
+  it('HEALTH_SECRET igual a SESSION_SECRET: un solo error, secret_reused con la otra variable (012)', () => {
     const env = ((e) => ({ ...e, HEALTH_SECRET: e.SESSION_SECRET ?? '' }))(fresh());
     const keys = errorKeys(run(env));
     expect(keys.filter((k) => k.includes('HEALTH_SECRET'))).toEqual([
-      'health_secret_equals_session:HEALTH_SECRET',
+      'secret_reused:HEALTH_SECRET',
     ]);
-    expect(keys.some((k) => k.startsWith('secret_reused_within'))).toBe(false);
-    const finding = run(env).errors.find((e) => e.code === 'health_secret_equals_session');
+    const finding = run(env).errors.find((e) => e.code === 'secret_reused');
+    expect(finding).toMatchObject({ variable: 'HEALTH_SECRET', otherVariable: 'SESSION_SECRET' });
+    expect(finding?.message).toBe('HEALTH_SECRET coincide con SESSION_SECRET del mismo entorno.');
     expect(finding?.action).toContain('openssl rand -hex 32');
   });
 

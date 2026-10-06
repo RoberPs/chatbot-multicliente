@@ -1,8 +1,11 @@
 import type { BotHttp } from '../app.js';
+import type { LoginThrottle } from './auth/login-throttle.js';
 import type { Env } from '../config/env.js';
+import type { Db } from '../db/client.js';
 import type { Lifecycle } from '../health/lifecycle.js';
 import type { InstanceHealth } from '../health/report.js';
 import type { KnowledgeDeps } from '../knowledge/services/deps.js';
+import type { ProtectionConfig } from '../usage/protection.js';
 
 declare module 'fastify' {
   interface FastifyInstance {
@@ -16,6 +19,12 @@ declare module 'fastify' {
     health: InstanceHealth;
     /** Ciclo de vida: `starting` → `ready` → `stopping` (lo fija el arranque). */
     lifecycle: Lifecycle;
+    /** Producción y modelos que deciden la protección frente a abuso (012, R1). */
+    protection: ProtectionConfig;
+    /** Pool de las lecturas públicas del chat web (012); puede ser el principal. */
+    publicDb: Db;
+    /** Freno del login del operador (012, US4). */
+    loginThrottle: LoginThrottle;
   }
 }
 

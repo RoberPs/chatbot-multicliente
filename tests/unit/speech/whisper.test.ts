@@ -91,7 +91,32 @@ describe('Whisper', () => {
     const { client } = stt(() => Promise.reject(new TypeError('fetch failed')));
     const error = await client.transcribe(audio, { signal: signal() }).catch((e: unknown) => e);
     expect(error).toBeInstanceOf(SpeechToTextError);
-    expect(error).toMatchObject({ reason: 'provider_error' });
+    expect(error).toMatchObject({ reason: 'provider_error', responded: false });
     expect((error as SpeechToTextError).status).toBeUndefined();
+  });
+
+  it('un error tras responder el proveedor lo indica, con la duración si la dio (012, R6)', async () => {
+    const http = await stt(async () => json({ error: { message: 'x' } }, 500))
+      .client.transcribe(audio, { signal: signal() })
+      .catch((e: unknown) => e);
+    expect(http).toMatchObject({ responded: true, durationSeconds: null });
+    const invalid = await stt(async () => json({ duration: 7.5 }))
+      .client.transcribe(audio, { signal: signal() })
+      .catch((e: unknown) => e);
+    expect(invalid).toMatchObject({ reason: 'provider_error', responded: true, durationSeconds: 7.5 });
+  });
+
+  it('el plazo vencido no cuenta como respuesta del proveedor', async () => {
+    const { client } = stt(
+      (init) =>
+        new Promise((_resolve, reject) => {
+          init.signal?.addEventListener('abort', () => {
+            reject(new DOMException('abortado', 'AbortError'));
+          });
+        }),
+      20,
+    );
+    const error = await client.transcribe(audio, { signal: signal() }).catch((e: unknown) => e);
+    expect(error).toMatchObject({ reason: 'timeout', responded: false });
   });
 });

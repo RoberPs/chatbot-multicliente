@@ -50,7 +50,11 @@ const chatDesign = (d: ConfigChatDesign) => ({
   welcomeText: d.welcomeText,
   placeholder: d.placeholder,
   sendLabel: d.sendLabel,
-  images: { logo: image(d.images.logo), avatar: image(d.images.avatar), icon: image(d.images.icon) },
+  images: {
+    logo: image(d.images.logo),
+    avatar: image(d.images.avatar),
+    icon: image(d.images.icon),
+  },
 });
 
 const resource = (r: ConfigResource) => ({

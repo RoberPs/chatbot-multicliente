@@ -16,15 +16,8 @@ const fixture = (name: string) =>
 
 /** Separa el sobre y el documento de un fichero de ejemplo. */
 function split(name: string): { envelope: ConfigFileEnvelope; doc: ConfigDocument } {
-  const {
-    format,
-    formatVersion,
-    exportedAt,
-    source,
-    includesAlertDestinations,
-    info,
-    ...doc
-  } = fixture(name);
+  const { format, formatVersion, exportedAt, source, includesAlertDestinations, info, ...doc } =
+    fixture(name);
   return {
     envelope: {
       format,
@@ -109,9 +102,7 @@ describe('configFingerprint (R9)', () => {
   it('es SHA-256 hex y determinista, sin depender del orden de las claves', () => {
     expect(fp).toMatch(/^[0-9a-f]{64}$/);
     expect(configFingerprint(base)).toBe(fp);
-    expect(
-      configFingerprint({ ...base, document: shuffleKeys(doc) as ConfigDocument }),
-    ).toBe(fp);
+    expect(configFingerprint({ ...base, document: shuffleKeys(doc) as ConfigDocument })).toBe(fp);
   });
 
   it('cambia con cualquier cambio de la configuración o de los estados', () => {

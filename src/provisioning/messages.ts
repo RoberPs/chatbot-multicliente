@@ -78,12 +78,13 @@ export const CHECK_ERROR_CODES = [
   'smtp_incomplete',
   'llm_key_required',
   'trust_proxy_all',
-  'backup_key_equals_session',
-  'health_secret_equals_session',
-  'health_secret_equals_backup_key',
   'weak_secret',
   'example_database',
-  'secret_reused_within',
+  'secret_too_short',
+  'secret_example_value',
+  'secret_trivial',
+  'secret_reused',
+  'health_secret_required',
   'duplicate_instance_id',
   'duplicate_database',
   'duplicate_database_user',
@@ -129,6 +130,25 @@ const MISSING_ACTIONS: Record<string, string> = {
   ANTHROPIC_API_KEY: 'Añade la clave del modelo de lenguaje de la instancia.',
   STT_API_KEY: 'Añade la clave de la API de transcripción o pon AUDIO_TRANSCRIPTION=off.',
 };
+
+/** Cómo sustituir un secreto débil, según su tipo (012). */
+function secretAction(c: MessageContext): string {
+  switch (c.variable) {
+    case 'SESSION_SECRET':
+    case 'BACKUP_KEY':
+    case 'BACKUP_KEYS_PREVIOUS':
+    case 'HEALTH_SECRET':
+      return OPENSSL;
+    case 'DATABASE_URL':
+      return 'Usa una contraseña aleatoria de al menos 16 caracteres (pnpm instance:db la genera).';
+    case 'SMTP_URL':
+      return 'Usa la contraseña real del servidor de correo, de al menos 16 caracteres.';
+    case 'WHATSAPP_VERIFY_TOKEN':
+      return 'Genera uno nuevo con openssl rand -hex 24 y cámbialo también en Meta.';
+    default:
+      return 'Usa el valor real que da el proveedor.';
+  }
+}
 
 const PENDING: Record<string, { message: string; detail?: string; action: string }> = {
   ANTHROPIC_API_KEY: {
@@ -186,21 +206,6 @@ export const CHECK_CATALOG: Record<CheckCode, CatalogEntry> = {
     detail: () => 'no admite true.',
     action: () => 'Indica el número de saltos (p. ej. 1) o las IP/CIDR del proxy.',
   },
-  backup_key_equals_session: {
-    message: () => 'BACKUP_KEY es igual a SESSION_SECRET.',
-    detail: () => 'es igual a SESSION_SECRET.',
-    action: () => 'Genera una BACKUP_KEY nueva con openssl rand -hex 32.',
-  },
-  health_secret_equals_session: {
-    message: () => 'HEALTH_SECRET es igual a SESSION_SECRET.',
-    detail: () => 'es igual a SESSION_SECRET.',
-    action: () => 'Genera un HEALTH_SECRET nuevo con openssl rand -hex 32.',
-  },
-  health_secret_equals_backup_key: {
-    message: () => 'HEALTH_SECRET es igual a BACKUP_KEY.',
-    detail: () => 'es igual a BACKUP_KEY.',
-    action: () => 'Genera un HEALTH_SECRET nuevo con openssl rand -hex 32.',
-  },
   weak_secret: {
     message: (c) => `${v(c)} está vacío, es de relleno o es demasiado corto para su tipo.`,
     detail: () => 'está vacío, es de relleno o es demasiado corto para su tipo.',
@@ -221,10 +226,30 @@ export const CHECK_CATALOG: Record<CheckCode, CatalogEntry> = {
     detail: () => 'es la de .env.example (usuario y contraseña chatbot).',
     action: () => 'Crea una base de datos propia con pnpm instance:db <id>.',
   },
-  secret_reused_within: {
-    message: (c) => `${v(c)} es igual a ${variableLabel(c.otherVariable)} del mismo entorno.`,
-    detail: (c) => `es igual a ${variableLabel(c.otherVariable)} del mismo entorno.`,
-    action: () => 'Cada secreto debe tener un valor propio: genera uno nuevo.',
+  secret_too_short: {
+    message: (c) => `${v(c)} es demasiado corta o poco variada para su tipo.`,
+    detail: () => 'es demasiado corta o poco variada para su tipo.',
+    action: (c) => secretAction(c),
+  },
+  secret_example_value: {
+    message: (c) => `${v(c)} tiene un valor de ejemplo (.env.example o la documentación).`,
+    detail: () => 'tiene un valor de ejemplo (.env.example o la documentación).',
+    action: (c) => secretAction(c),
+  },
+  secret_trivial: {
+    message: (c) => `${v(c)} tiene un valor de relleno, repetido o en secuencia.`,
+    detail: () => 'tiene un valor de relleno, repetido o en secuencia.',
+    action: (c) => secretAction(c),
+  },
+  secret_reused: {
+    message: (c) => `${v(c)} coincide con ${variableLabel(c.otherVariable)} del mismo entorno.`,
+    detail: (c) => `coincide con ${variableLabel(c.otherVariable)} del mismo entorno.`,
+    action: (c) => `Cada secreto debe tener un valor propio. ${secretAction(c)}`,
+  },
+  health_secret_required: {
+    message: () => 'Falta HEALTH_SECRET: es obligatoria en producción.',
+    detail: () => 'es obligatoria en producción.',
+    action: () => MISSING_ACTIONS.HEALTH_SECRET ?? OPENSSL,
   },
   duplicate_instance_id: {
     message: (c) =>

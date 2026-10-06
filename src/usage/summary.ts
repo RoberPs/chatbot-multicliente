@@ -9,7 +9,13 @@ import type { DbOrTx } from '../conversation/repositories/customer.js';
 import { modelUsage } from '../db/schema.js';
 import { localDay, localMonthRange } from '../knowledge/time/local-date.js';
 import { usageCutoff } from './retention.js';
-import { addTokenUsage, ZERO_TOKENS, type UsageRow, type UsageSummary } from './types.js';
+import {
+  addTokenUsage,
+  ZERO_TOKENS,
+  type UsagePurpose,
+  type UsageRow,
+  type UsageSummary,
+} from './types.js';
 
 export interface DayRange {
   first: string;
@@ -42,7 +48,7 @@ export const emptyRow = (): UsageRow => ({
 /** Fila agregada de la consulta: un grupo de canal, propósito, modelo y moneda. */
 interface Group {
   channel: Channel;
-  purpose: 'reply' | 'handoff_summary';
+  purpose: UsagePurpose;
   model: string;
   currency: string | null;
   records: number;
@@ -56,8 +62,9 @@ interface Group {
 
 function addGroup(row: UsageRow, g: Group): void {
   row.calls += g.calls;
+  // Las transcripciones (012) suman llamadas y coste, pero no son respuestas ni resúmenes.
   if (g.purpose === 'reply') row.replies += g.records;
-  else row.summaries += g.records;
+  else if (g.purpose === 'handoff_summary') row.summaries += g.records;
   row.tokens = addTokenUsage(row.tokens, {
     input: g.input,
     output: g.output,

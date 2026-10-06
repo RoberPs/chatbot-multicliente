@@ -194,9 +194,7 @@ describe('Derivaciones activas (US4, FR-016a)', () => {
     expect(res.statusCode).toBe(303);
     keep(res);
     const after = await get(b.app, session, '/admin/handoffs');
-    expect(after.body).toContain(
-      'Derivación terminada; el asistente vuelve a atender a Cliente.',
-    );
+    expect(after.body).toContain('Derivación terminada; el asistente vuelve a atender a Cliente.');
     expect(activeIds(after.body)).toEqual([]);
     expect(b.log.named('handoff_ended')).toEqual([
       expect.objectContaining({ cause: 'operator', confirmed: false }),
@@ -217,12 +215,50 @@ describe('Derivaciones activas (US4, FR-016a)', () => {
     expect(missing.statusCode).toBe(404);
   });
 
+  it('012: pendientes de reenviar por el intervalo con su hora prevista y, al terminar, retenidos', async () => {
+    const { b, session } = await withHandoffs();
+    await b.send('Primer texto del cliente');
+    b.clock.advance(1000);
+    await b.send('Segundo texto del cliente');
+    await b.settle();
+
+    const page = await get(b.app, session, '/admin/handoffs');
+    const [id] = activeIds(page.body);
+    const row = page.body.split(`data-handoff="${String(id)}"`)[1]?.split('</tr>')[0] ?? '';
+    // La alerta salió a las 10:00 (Madrid): el reenvío agrupado, a las 10:15.
+    expect(row).toContain('data-pending="2"');
+    expect(row).toMatch(/2 mensajes; se reenvían el 24\/09\/2026, 10:15/);
+    expect(page.body).not.toContain('Primer texto del cliente');
+
+    const ended = await postForm(b.app, session, `/admin/handoffs/${String(id)}/end`);
+    expect(ended.statusCode).toBe(303);
+    const after = await get(b.app, session, '/admin/handoffs');
+    expect(after.body).toContain('Mensajes retenidos');
+    const held = after.body.split('data-held-list')[1]?.split('</table>')[0] ?? '';
+    expect(held).toContain('Cliente (+34 600 11 12 22)');
+    expect(held).toMatch(/data-held-conversation="[0-9a-f-]+"[\s\S]*?>2</);
+    expect(after.body).not.toContain('Primer texto del cliente');
+  });
+
+  it('012: sin retenidos, la sección lo dice', async () => {
+    const { b, session } = await withHandoffs();
+    const page = await get(b.app, session, '/admin/handoffs');
+    expect(page.body).toContain('Mensajes retenidos');
+    expect(page.body).toContain('No hay mensajes retenidos.');
+  });
+
   it('con htmx la respuesta sustituye la fila (vacía)', async () => {
     const { b, session } = await withHandoffs();
     const [id] = activeIds((await get(b.app, session, '/admin/handoffs')).body);
-    const res = await postForm(b.app, session, `/admin/handoffs/${id}/end`, {}, {
-      'hx-request': 'true',
-    });
+    const res = await postForm(
+      b.app,
+      session,
+      `/admin/handoffs/${id}/end`,
+      {},
+      {
+        'hx-request': 'true',
+      },
+    );
     expect(res.statusCode).toBe(200);
     expect(res.body).toBe('');
   });

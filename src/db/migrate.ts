@@ -85,7 +85,8 @@ export async function runMigrations(
     }
   }
 
-  const db = createDb(databaseUrl);
+  // Sin statement_timeout: una migración larga no se corta (012, R9).
+  const db = createDb(databaseUrl, null);
   try {
     try {
       await migrate(db, { migrationsFolder: folder });

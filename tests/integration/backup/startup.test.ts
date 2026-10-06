@@ -11,6 +11,7 @@ import { INSTANCE_RUNNING, tryAdvisoryLock } from '../../../src/backup/locks.js'
 import { loadEnv } from '../../../src/config/env.js';
 import { startInstance } from '../../../src/startup.js';
 import {
+  PENDING_AFTER_0003,
   captureLogger,
   cliEnv,
   createDatabaseMigratedUpTo,
@@ -97,7 +98,7 @@ describe('arranque de la instancia', () => {
       {
         channel: 'backup',
         event: 'migration_blocked',
-        pending: ['0004_handoff', '0005_config_transfer', '0006_usage', '0007_chat_design'],
+        pending: PENDING_AFTER_0003,
         failure: 'backup_not_configured',
       },
     ]);
@@ -184,5 +185,51 @@ describe('arranque de la instancia', () => {
     const lock = await tryAdvisoryLock(test.url, INSTANCE_RUNNING);
     expect(lock).not.toBeNull();
     await lock?.release();
+  });
+
+  it('012: fuera de production arranca con secretos débiles y registra weak_secrets sin valores', async () => {
+    const test = await createTestDatabase();
+    opened.push(test);
+    const source = cliEnv(test.url, '/no/usado', noBackup);
+    const session = source.SESSION_SECRET ?? '';
+    const env = loadEnv({ ...source, HEALTH_SECRET: session });
+    const logger = captureLogger();
+    const instance = await startInstance({
+      env,
+      logger,
+      buildApp: quietApp,
+      listen: async () => undefined,
+    });
+    await instance.stop();
+    const [event] = logger.events('weak_secrets');
+    expect(event?.findings).toEqual(
+      expect.arrayContaining([{ variable: 'HEALTH_SECRET', rule: 'reused' }]),
+    );
+    expect(logger.text()).not.toContain(session);
+  });
+
+  it('012: en production, con un secreto débil o sin HEALTH_SECRET, no arranca y nombra la variable sin el valor', () => {
+    const production = cliEnv('postgres://chatbot_x:Hq4Lm8Rt2Vx6Zb9Cd3@db/x', '/var/copias', {
+      NODE_ENV: 'production',
+      WHATSAPP_PHONE_NUMBER_ID: '1',
+      WHATSAPP_ACCESS_TOKEN: 'changeme',
+      WHATSAPP_APP_SECRET: '4f9c2e7a1b8d3f6a0c5e9b2d7f4a1c8e',
+      WHATSAPP_VERIFY_TOKEN: '7d3a9f1c5e8b2d6a0f4c9e3b7a1d5f8c2e6b0a4d9f3c7e1b',
+      WHATSAPP_GRAPH_VERSION: 'v23.0',
+      ANTHROPIC_API_KEY: 'sk-ant-api03-Hq4Lm8Rt2Vx6Zb9Cd3Fg7Jk1Np5Sw0Yu4Ea8Ic2Mo6Qs9',
+      EMERGENCY_CONTACT_PHONE: '+34600111222',
+    });
+    let message = '';
+    try {
+      loadEnv(production);
+    } catch (error) {
+      message = (error as Error).message;
+    }
+    expect(message).toBe(
+      'Configuración de la instancia no válida:\n' +
+        '- WHATSAPP_ACCESS_TOKEN: tiene un valor de relleno, repetido o en secuencia\n' +
+        '- HEALTH_SECRET: es obligatoria en producción',
+    );
+    expect(message).not.toContain('changeme');
   });
 });

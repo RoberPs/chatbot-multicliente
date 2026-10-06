@@ -19,7 +19,8 @@ export interface ResponseUsage {
   tokens: TokenUsage;
 }
 
-export type UsagePurpose = 'reply' | 'handoff_summary';
+/** `transcription`: un audio transcrito, valorado por minutos (012, R6). */
+export type UsagePurpose = 'reply' | 'handoff_summary' | 'transcription';
 
 export interface UsageRecordInput {
   channel: Channel;
@@ -56,6 +57,48 @@ export interface SpendCapState {
   currency: string;
   /** Porcentaje del tope consumido, redondeado hacia abajo; nulo sin tope. */
   percent: number | null;
+}
+
+// ---------------------------------------------------------------------------
+// Protección frente a abuso (012, data-model.md §2.1 y §2.3)
+// ---------------------------------------------------------------------------
+
+/**
+ * Motivos por los que los clientes finales reciben solo el contacto (FR-001, FR-004, FR-008).
+ * `stt_unpriced` solo afecta a los audios.
+ */
+export type ContactOnlyReason = 'cap_disabled' | 'model_unpriced' | 'stt_unpriced' | 'spend_unreadable';
+
+/** Por qué un canal no puede llamar al modelo ahora. */
+export type CapReason = ContactOnlyReason | 'spend_cap' | 'whatsapp_daily';
+
+/** Límites de las derivaciones de la instancia (`handoff_limits`, R7). */
+export interface HandoffLimits {
+  /** Derivaciones nuevas por día local (1–200). */
+  dailyMax: number;
+  /** Minutos entre avisos de una misma derivación (5–240). */
+  forwardIntervalMinutes: number;
+  /** Avisos al negocio por día local (10–500). */
+  noticesDailyMax: number;
+}
+
+/** Estado de protección: se calcula en cada comprobación y nunca se guarda (R1, R2). */
+export interface ProtectionState {
+  production: boolean;
+  contactOnly: ContactOnlyReason[];
+  /** Nivel del tope de gasto (010); `null` si no se pudo leer. */
+  spendCap: SpendCapState | null;
+  whatsapp: { today: number; cap: number; reached: boolean } | null;
+  /** Contadores de derivación del día local; `null` si no se pudieron leer. */
+  handoffs: {
+    started: number;
+    refused: number;
+    notices: number;
+    held: number;
+    limits: HandoffLimits;
+  } | null;
+  /** Modelos que nombran los avisos críticos (sin precio). */
+  unpricedModels: { llm: string | null; stt: string | null };
 }
 
 /** Totales de un grupo de registros (un canal, los clientes finales o la instancia). */

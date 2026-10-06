@@ -3,6 +3,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { databaseSchema, installedSchema } from '../../../src/backup/schema-version.js';
 import { migrateMain } from '../../../src/db/migrate.js';
 import {
+  PENDING_AFTER_0003,
   cliEnv,
   createDatabaseMigratedUpTo,
   seedSchema0003,
@@ -39,7 +40,7 @@ describe('pnpm db:migrate', () => {
     const io = testIO(cliEnv(old.url, dir.path, noBackup));
     expect(await migrateMain(io)).toBe(1);
     expect(io.stderr).toEqual([
-      'No se aplican las migraciones pendientes (0004_handoff, 0005_config_transfer, 0006_usage, 0007_chat_design): no se pudo hacer la copia previa (backup_not_configured). El esquema no ha cambiado.',
+      `No se aplican las migraciones pendientes (${PENDING_AFTER_0003.join(', ')}): no se pudo hacer la copia previa (backup_not_configured). El esquema no ha cambiado.`,
     ]);
     expect(await withClient(old.url, (c) => databaseSchema(c))).toMatchObject({
       tag: '0003_map_url',

@@ -10,6 +10,7 @@ import { readHeader } from '../../../src/backup/format.js';
 import { createBackup, verifyBackup, type BackupReport } from '../../../src/backup/service.js';
 import { main } from '../../../src/cli/verify.js';
 import {
+  CURRENT_SCHEMA,
   captureLogger,
   cliEnv,
   databasesLike,
@@ -59,7 +60,7 @@ describe('comprobación de una copia', () => {
       file: backup.file,
       restorable: true,
       sourceInstance: 'test-01',
-      schema: '0007_chat_design',
+      schema: CURRENT_SCHEMA,
       createdAt: header.createdAt,
       tables: header.tables.map((t) => ({ name: t.name, rows: t.rows })),
     });
@@ -71,7 +72,7 @@ describe('comprobación de una copia', () => {
         event: 'verify_completed',
         file: backup.file,
         restorable: true,
-        schema: '0007_chat_design',
+        schema: CURRENT_SCHEMA,
         durationMs: report.durationMs,
       },
     ]);
@@ -129,7 +130,7 @@ describe('comprobación de una copia', () => {
     expect(await main([backup.file], ok)).toBe(0);
     expect(ok.stdout[0]).toBe(`Comprobación: ${backup.file}`);
     expect(ok.stdout[1]).toMatch(
-      /^ {2}RESTAURABLE · instancia test-01 · esquema 0007_chat_design · núcleo /,
+      new RegExp(`^ {2}RESTAURABLE · instancia test-01 · esquema ${CURRENT_SCHEMA} · núcleo `),
     );
     expect(ok.stdout[2]).toMatch(/tablas; recuentos iguales a la copia\)$/);
     expect(ok.stdout[3]).toBe('  Base de datos temporal eliminada.');

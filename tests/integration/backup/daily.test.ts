@@ -12,6 +12,7 @@ import { createBackupScheduler } from '../../../src/backup/scheduler.js';
 import { createBackup } from '../../../src/backup/service.js';
 import { business } from '../../../src/db/schema.js';
 import {
+  CURRENT_SCHEMA,
   captureLogger,
   seedInstance,
   tempBackupDir,
@@ -68,7 +69,7 @@ describe('copia diaria', () => {
 
     clock.set('2026-09-29T01:05:00Z'); // 03:05 local
     await s.tick();
-    expect(await dailies()).toEqual(['test-01__0007_chat_design__20260929T010500Z__daily.cbak']);
+    expect(await dailies()).toEqual([`test-01__${CURRENT_SCHEMA}__20260929T010500Z__daily.cbak`]);
 
     clock.advance(60_000);
     await s.tick();

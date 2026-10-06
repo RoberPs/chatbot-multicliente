@@ -19,7 +19,13 @@ import {
   type SectionKey,
   type Updater,
 } from './format.js';
-import { configFileSchema, crossCheckConfig, MISSING_MESSAGE, type RawIssue } from './schema.js';
+import {
+  configFileSchema,
+  crossCheckConfig,
+  listLengthIssues,
+  MISSING_MESSAGE,
+  type RawIssue,
+} from './schema.js';
 
 export interface ParseOptions {
   /** Región para los teléfonos escritos sin prefijo (la de la instancia). */
@@ -50,7 +56,14 @@ const isRecord = (v: unknown): v is Record<string, unknown> =>
   typeof v === 'object' && v !== null && !Array.isArray(v);
 
 function fileIssue(code: FileRejectReason, message: string): ImportIssue {
-  return { section: 'file', sectionLabel: SECTION_LABELS.file, item: null, field: null, message, code };
+  return {
+    section: 'file',
+    sectionLabel: SECTION_LABELS.file,
+    item: null,
+    field: null,
+    message,
+    code,
+  };
 }
 
 function reject(
@@ -115,7 +128,13 @@ function formatPath(path: ReadonlyArray<PropertyKey>): string {
   }, '');
 }
 
-const LIST_SECTIONS = new Set<SectionKey>(['openingHours', 'closures', 'services', 'resources', 'faqs']);
+const LIST_SECTIONS = new Set<SectionKey>([
+  'openingHours',
+  'closures',
+  'services',
+  'resources',
+  'faqs',
+]);
 
 /** Nombre o pregunta del elemento entre « », o su posición si no la tiene. */
 function itemLabel(section: SectionKey, element: unknown, index: number): string {
@@ -166,14 +185,30 @@ function toIssue(path: ReadonlyArray<PropertyKey>, message: string, raw: unknown
   };
 }
 
+/**
+ * Posiciones de las claves de cada objeto del fichero, calculadas una vez por objeto (012, R15):
+ * ordenar los errores no recorre las claves en cada comparación.
+ */
+type KeyPositions = WeakMap<object, Map<string, number>>;
+
 /** Posición de una clave en el objeto del fichero (las que faltan, al final). */
-function keyPosition(node: unknown, key: string): number {
-  const position = isRecord(node) ? Object.keys(node).indexOf(key) : -1;
-  return position < 0 ? Number.MAX_SAFE_INTEGER : position;
+function keyPosition(cache: KeyPositions, node: unknown, key: string): number {
+  if (!isRecord(node)) return Number.MAX_SAFE_INTEGER;
+  let positions = cache.get(node);
+  if (!positions) {
+    positions = new Map(Object.keys(node).map((k, i) => [k, i]));
+    cache.set(node, positions);
+  }
+  return positions.get(key) ?? Number.MAX_SAFE_INTEGER;
 }
 
 /** Compara dos rutas por el orden en que aparecen en el fichero. */
-function compareInFile(raw: unknown, a: RawIssue['path'], b: RawIssue['path']): number {
+function compareInFile(
+  cache: KeyPositions,
+  raw: unknown,
+  a: RawIssue['path'],
+  b: RawIssue['path'],
+): number {
   let node: unknown = raw;
   for (let i = 0; i < Math.max(a.length, b.length); i++) {
     const ka = a[i];
@@ -182,11 +217,12 @@ function compareInFile(raw: unknown, a: RawIssue['path'], b: RawIssue['path']): 
     if (kb === undefined) return 1;
     if (ka !== kb) {
       if (typeof ka === 'number' && typeof kb === 'number') return ka - kb;
-      const pa = keyPosition(node, String(ka));
-      const pb = keyPosition(node, String(kb));
+      const pa = keyPosition(cache, node, String(ka));
+      const pb = keyPosition(cache, node, String(kb));
       return pa !== pb ? pa - pb : String(ka).localeCompare(String(kb));
     }
-    node = isRecord(node) || Array.isArray(node) ? (node as Record<string, unknown>)[ka] : undefined;
+    node =
+      isRecord(node) || Array.isArray(node) ? (node as Record<string, unknown>)[ka] : undefined;
   }
   return 0;
 }
@@ -209,18 +245,29 @@ export function validateConfigFile(
 ):
   | { ok: true; envelope: ConfigFileEnvelope; document: ConfigDocument }
   | { ok: false; issues: ImportIssue[] } {
+  // 012 (FR-028): una lista por encima de su máximo se rechaza sin validar nada más.
+  const lengths = listLengthIssues(raw);
+  if (lengths.length > 0) {
+    return { ok: false, issues: lengths.map((i) => toIssue(i.path, i.message, raw)) };
+  }
+
   const parsed = configFileSchema(region).safeParse(raw, { error: errorMap });
-  const raws = [...(parsed.success ? [] : zodIssues(parsed.error)), ...crossCheckConfig(raw, region)];
+  const raws = [
+    ...(parsed.success ? [] : zodIssues(parsed.error)),
+    ...crossCheckConfig(raw, region),
+  ];
   if (parsed.success && raws.length === 0) return { ok: true, ...parsed.data };
 
-  // Sin repetir el mismo motivo en el mismo sitio, y en el orden del fichero.
-  const unique = raws.filter(
-    (issue, i) =>
-      raws.findIndex(
-        (other) => other.message === issue.message && formatPath(other.path) === formatPath(issue.path),
-      ) === i,
-  );
-  unique.sort((a, b) => compareInFile(raw, a.path, b.path));
+  // Sin repetir el mismo motivo en el mismo sitio (lineal, 012), y en el orden del fichero.
+  const seen = new Set<string>();
+  const unique = raws.filter((issue) => {
+    const key = `${formatPath(issue.path)}|${issue.message}`;
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+  const cache: KeyPositions = new WeakMap();
+  unique.sort((a, b) => compareInFile(cache, raw, a.path, b.path));
   return { ok: false, issues: unique.map((i) => toIssue(i.path, i.message, raw)) };
 }
 

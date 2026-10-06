@@ -123,12 +123,16 @@ export interface ReadOptions {
 export async function readConfigDocument(tx: Tx, opts: ReadOptions): Promise<ConfigDocument> {
   const state = await loadKnowledgeState(tx);
   const settings = await readWebChatSettings(tx);
-  const doc = documentFromState(state, {
-    allowedOrigins: settings.allowedOrigins,
-    privacyUrl: settings.privacyUrl,
-    dailyCap: settings.dailyCap,
-    monthlyCap: settings.monthlyCap,
-  }, await readChatDesignDocument(tx));
+  const doc = documentFromState(
+    state,
+    {
+      allowedOrigins: settings.allowedOrigins,
+      privacyUrl: settings.privacyUrl,
+      dailyCap: settings.dailyCap,
+      monthlyCap: settings.monthlyCap,
+    },
+    await readChatDesignDocument(tx),
+  );
   if (!opts.includeAlerts) return doc;
   const alerts = await readHandoffAlerts(tx);
   return { ...doc, alertDestinations: { whatsapp: alerts.whatsapp, email: alerts.email } };
@@ -149,12 +153,16 @@ export async function readConfigWithInfo(
   const settings = await readWebChatSettings(tx);
   const alerts = await readHandoffAlerts(tx);
   const document = {
-    ...documentFromState(state, {
-      allowedOrigins: settings.allowedOrigins,
-      privacyUrl: settings.privacyUrl,
-      dailyCap: settings.dailyCap,
-      monthlyCap: settings.monthlyCap,
-    }, await readChatDesignDocument(tx)),
+    ...documentFromState(
+      state,
+      {
+        allowedOrigins: settings.allowedOrigins,
+        privacyUrl: settings.privacyUrl,
+        dailyCap: settings.dailyCap,
+        monthlyCap: settings.monthlyCap,
+      },
+      await readChatDesignDocument(tx),
+    ),
     alertDestinations: { whatsapp: alerts.whatsapp, email: alerts.email },
   };
   return {

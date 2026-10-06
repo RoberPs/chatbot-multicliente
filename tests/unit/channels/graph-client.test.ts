@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import {
   createGraphClient,
+  GRAPH_TIMEOUTS,
   MediaTooLargeError,
 } from '../../../src/channels/whatsapp/graph-client.js';
 import { ChannelSendError } from '../../../src/conversation/ports.js';
@@ -115,5 +116,76 @@ describe('cliente de la Graph API: audios', () => {
       MediaTooLargeError,
     );
     expect(pulls).toBeLessThanOrEqual(1);
+  });
+});
+
+describe('cliente de la Graph API: plazos (012, US5)', () => {
+  /** Servidor que acepta y no contesta: la petición solo termina al abortarse. */
+  function hanging() {
+    const signals: AbortSignal[] = [];
+    const fetch = vi.fn(
+      (_url: string, init?: RequestInit) =>
+        new Promise<Response>((_resolve, reject) => {
+          const signal = init?.signal;
+          if (!signal) return;
+          signals.push(signal);
+          signal.addEventListener('abort', () => { reject(new Error('abortada')); }, { once: true });
+        }),
+    );
+    return { fetch, signals };
+  }
+
+  const fast = (fetch: typeof globalThis.fetch) =>
+    createGraphClient({
+      phoneNumberId: '1098',
+      accessToken: 'tok',
+      graphVersion: 'v23.0',
+      fetch,
+      retryDelaysMs: [10, 40, 400],
+      timeouts: { requestMs: 30, totalSendMs: 200, mediaMetaMs: 20 },
+    });
+
+  it('los plazos del contrato: 10 s por petición, 30 s el envío y 5 s los metadatos', () => {
+    expect(GRAPH_TIMEOUTS).toEqual({ requestMs: 10_000, totalSendMs: 30_000, mediaMetaMs: 5_000 });
+  });
+
+  it('sin respuesta, cada petición se aborta y sendText termina dentro del plazo total con ChannelSendError', async () => {
+    const { fetch, signals } = hanging();
+    const started = Date.now();
+    const error = await fast(fetch as unknown as typeof globalThis.fetch)
+      .sendText('+34600111222', 'Hola')
+      .catch((e: unknown) => e);
+    const elapsed = Date.now() - started;
+    expect(error).toBeInstanceOf(ChannelSendError);
+    expect(elapsed).toBeLessThan(350);
+    // 3 intentos: 30 + 10 + 30 + 40 + 30 ms caben en 200 (con holgura); la espera de 400 ya no.
+    expect((error as ChannelSendError).attempts).toBe(3);
+    expect(signals.every((s) => s.aborted)).toBe(true);
+  });
+
+  it('los metadatos de un audio se cortan a su plazo', async () => {
+    const { fetch } = hanging();
+    const started = Date.now();
+    await expect(
+      fast(fetch as unknown as typeof globalThis.fetch).fetchAudio('media-1', 1000),
+    ).rejects.toThrow();
+    expect(Date.now() - started).toBeLessThan(200);
+  });
+
+  it('la señal del llamador corta la petición en curso', async () => {
+    const { fetch, signals } = hanging();
+    const caller = new AbortController();
+    const pending = createGraphClient({
+      phoneNumberId: '1098',
+      accessToken: 'tok',
+      graphVersion: 'v23.0',
+      fetch: fetch as unknown as typeof globalThis.fetch,
+    })
+      .fetchAudio('media-1', 1000, { signal: caller.signal })
+      .catch((e: unknown) => e);
+    await new Promise((resolve) => setTimeout(resolve, 5));
+    caller.abort();
+    expect(await pending).toBeInstanceOf(Error);
+    expect(signals[0]?.aborted).toBe(true);
   });
 });

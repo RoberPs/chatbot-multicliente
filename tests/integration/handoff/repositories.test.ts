@@ -266,7 +266,10 @@ describe('repositorios de la derivación', () => {
       });
       ids.push(must(id));
     }
-    await t.db.update(message).set({ status: 'answered' }).where(eq(message.id, must(ids[0])));
+    await t.db
+      .update(message)
+      .set({ status: 'answered' })
+      .where(eq(message.id, must(ids[0])));
     await messages.markForwarded(t.db, [must(ids[1])]);
 
     const hist = await messages.history(t.db, c, 10);

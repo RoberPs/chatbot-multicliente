@@ -20,9 +20,11 @@
   <% } %>
 </section>
 
+<% /* 012: los avisos críticos de protección también bloquean la activación; se listan con los demás. */ %>
+<% const allWarnings = (it.protectionWarnings || []).filter(function (w) { return w.severity === 'critical'; }).concat(it.warnings); %>
 <section class="card" id="avisos">
-  <h2>Avisos (<%= it.warnings.length %>)</h2>
-  <%~ include('/partials/warnings-list', { warnings: it.warnings, h: it.h, id: 'warnings-list', emptyText: 'No hay avisos: la información registrada está completa.' }) %>
+  <h2>Avisos (<%= allWarnings.length %>)</h2>
+  <%~ include('/partials/warnings-list', { warnings: allWarnings, h: it.h, id: 'warnings-list', emptyText: 'No hay avisos: la información registrada está completa.' }) %>
 </section>
 
 <section class="card">

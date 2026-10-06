@@ -25,7 +25,10 @@ function capture() {
 }
 
 const file = JSON.parse(
-  readFileSync(join(import.meta.dirname, '..', '..', 'fixtures', 'config', 'valid-full-with-alerts.json'), 'utf8'),
+  readFileSync(
+    join(import.meta.dirname, '..', '..', 'fixtures', 'config', 'valid-full-with-alerts.json'),
+    'utf8',
+  ),
 ) as unknown;
 const parsed = validateConfigFile(file, 'ES');
 if (!parsed.ok) throw new Error('fixture no válido');
@@ -122,20 +125,50 @@ describe('eventos del catálogo', () => {
     });
     expect(lines[0]).toMatchObject({ level: 'info', msg: 'config_import_applied' });
     expect(Object.keys(lines[0]?.obj ?? {}).sort()).toEqual(
-      ['channel', 'event', 'sourceInstance', 'formatVersion', 'includesAlerts', 'changes', 'criticalWarnings', 'warnings'].sort(),
+      [
+        'channel',
+        'event',
+        'sourceInstance',
+        'formatVersion',
+        'includesAlerts',
+        'changes',
+        'criticalWarnings',
+        'warnings',
+      ].sort(),
     );
   });
 
   it('config_import_rejected (warn) con stage, reason e issues', () => {
     const { logger, lines } = capture();
-    configImportRejected(logger, { stage: 'upload', reason: 'invalid', issues: 3, sourceInstance: 'demo-01' });
+    configImportRejected(logger, {
+      stage: 'upload',
+      reason: 'invalid',
+      issues: 3,
+      sourceInstance: 'demo-01',
+    });
     configImportRejected(logger, { stage: 'confirm', reason: 'changed' });
     expect(lines.map((l) => [l.level, l.obj])).toEqual([
       [
         'warn',
-        { channel: 'config', event: 'config_import_rejected', stage: 'upload', reason: 'invalid', issues: 3, sourceInstance: 'demo-01' },
+        {
+          channel: 'config',
+          event: 'config_import_rejected',
+          stage: 'upload',
+          reason: 'invalid',
+          issues: 3,
+          sourceInstance: 'demo-01',
+        },
       ],
-      ['warn', { channel: 'config', event: 'config_import_rejected', stage: 'confirm', reason: 'changed', sourceInstance: null }],
+      [
+        'warn',
+        {
+          channel: 'config',
+          event: 'config_import_rejected',
+          stage: 'confirm',
+          reason: 'changed',
+          sourceInstance: null,
+        },
+      ],
     ]);
   });
 
@@ -152,8 +185,15 @@ describe('eventos del catálogo', () => {
 
   it('un sourceInstance que no cumple INSTANCE_ID_PATTERN sale como null', () => {
     const { logger, lines } = capture();
-    configImportCancelled(logger, { reason: 'operator', sourceInstance: 'Negocio de ejemplo +34910123456' });
-    configImportRejected(logger, { stage: 'upload', reason: 'future_version', sourceInstance: 'a b' });
+    configImportCancelled(logger, {
+      reason: 'operator',
+      sourceInstance: 'Negocio de ejemplo +34910123456',
+    });
+    configImportRejected(logger, {
+      stage: 'upload',
+      reason: 'future_version',
+      sourceInstance: 'a b',
+    });
     expect(lines.map((l) => l.obj.sourceInstance)).toEqual([null, null]);
   });
 
@@ -172,7 +212,10 @@ describe('eventos del catálogo', () => {
 
 describe('diseño del chat en los registros (011)', () => {
   const v2 = JSON.parse(
-    readFileSync(join(import.meta.dirname, '..', '..', 'fixtures', 'config', 'v2-chat-design.json'), 'utf8'),
+    readFileSync(
+      join(import.meta.dirname, '..', '..', 'fixtures', 'config', 'v2-chat-design.json'),
+      'utf8',
+    ),
   ) as unknown;
   const withDesign = validateConfigFile(v2, 'ES');
   if (!withDesign.ok) throw new Error('fixture no válido');
@@ -208,7 +251,12 @@ describe('diseño del chat en los registros (011)', () => {
     const text = JSON.stringify(lines);
     const design = withDesign.document.chatDesign;
     if (!design?.chatName || !design.welcomeText || !design.images.logo) throw new Error('fixture');
-    const secrets = [design.chatName, design.welcomeText, design.primaryColor, design.images.logo.data.slice(0, 20)];
+    const secrets = [
+      design.chatName,
+      design.welcomeText,
+      design.primaryColor,
+      design.images.logo.data.slice(0, 20),
+    ];
     for (const secret of secrets) expect(text).not.toContain(secret);
   });
 });

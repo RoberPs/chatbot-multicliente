@@ -25,7 +25,7 @@ import type {
 } from '../../src/handoff/ports.js';
 import { readHandoffAlerts } from '../../src/handoff/settings.js';
 import type { BusinessNotice, HandoffKind, RouteName } from '../../src/handoff/types.js';
-import type { UsageMeter } from '../../src/usage/meter.js';
+import type { TranscriptionRecordInput, UsageMeter } from '../../src/usage/meter.js';
 import type { TokenUsage, UsageRecordInput } from '../../src/usage/types.js';
 
 export class ManualClock implements Clock {
@@ -243,8 +243,11 @@ export class FakeMediaFetcher implements MediaFetcher {
   readonly calls: string[] = [];
   constructor(private readonly size = 1024) {}
 
-  async fetchAudio(mediaId: string, maxBytes: number) {
+  /** Señal de cada descarga (012: el plazo de la transcripción la cubre). */
+  readonly signals: Array<AbortSignal | undefined> = [];
+  async fetchAudio(mediaId: string, maxBytes: number, opts: { signal?: AbortSignal } = {}) {
     this.calls.push(mediaId);
+    this.signals.push(opts.signal);
     if (this.size > maxBytes) throw new MediaTooLargeError();
     return { data: Buffer.alloc(this.size), mimeType: 'audio/ogg' };
   }
@@ -382,8 +385,12 @@ export class FakeSummarizer implements HandoffSummarizer {
 /** Medidor de consumo sin BD (010): guarda lo que se le pide registrar. */
 export class RecordingUsageMeter implements UsageMeter {
   readonly records: UsageRecordInput[] = [];
+  readonly transcriptions: TranscriptionRecordInput[] = [];
   async record(input: UsageRecordInput): Promise<void> {
     this.records.push(structuredClone(input));
+  }
+  async recordTranscription(input: TranscriptionRecordInput): Promise<void> {
+    this.transcriptions.push(structuredClone(input));
   }
 }
 
@@ -391,6 +398,10 @@ export class RecordingUsageMeter implements UsageMeter {
 export class FailingUsageMeter implements UsageMeter {
   attempts = 0;
   async record(): Promise<void> {
+    this.attempts += 1;
+    throw new Error('fallo del medidor');
+  }
+  async recordTranscription(): Promise<void> {
     this.attempts += 1;
     throw new Error('fallo del medidor');
   }

@@ -124,3 +124,31 @@ curl "localhost:3000/webhooks/whatsapp?hub.mode=subscribe&hub.verify_token=XYZ&h
 - `pnpm test:eval` no es necesario: el prompt no cambia; las rutas sin modelo se prueban con dobles.
 - Antes de cerrar: README (estado de la 012) y `docs/operacion-multicliente.md` (9.1, 9.2, P8 hecha,
   §4.1, §5 y la sección de límites de derivación), avisando antes al usuario.
+
+## Recorrido del 2026-10-06 (T113) y desviaciones
+
+Comprobado sin servidor:
+
+- Escenario 8: con `NODE_ENV=production` y `SESSION_SECRET` de 64 `a`, `pnpm instance:check` da
+  **NO APTO** y el arranque se niega con la misma regla. El texto real es
+  `- SESSION_SECRET: tiene un valor de relleno, repetido o en secuencia` (además de la regla del
+  esquema `SESSION_SECRET no parece aleatoria`), no «es trivial (…)».
+- Escenarios 1–7: cubiertos por las pruebas automáticas (nombres reales abajo).
+
+Pendiente a mano (necesita arrancar el servidor sobre la BD de desarrollo, que aplica la 0008 con
+su copia previa): el bucle de `curl` del frame (60 × 200 y 20 × 429), el registro del webhook con
+`hub.verify_token` y `/health` con `spendCap: "blocked"`.
+
+Desviaciones respecto a lo escrito arriba:
+
+- Las pruebas no se llaman como en los comandos: US2 →
+  `daily-limit`, `grouped-forward`, `held-messages`, `reminder-limits`, `customer-quote`,
+  `at-most-once`; US3 → `web-chat-public-routes`, `pools`, `saturation`; US4 → `login-throttle`,
+  `auth`, `login-attack`; US5 → `graph-client`, `outbound-timeouts`, `processor-retries`; US6 →
+  `parse`, `linear-cost`, `performance`; US7/US8 → `link-rule`, `grounding`, `message-links`,
+  `logging`, `logger-calls`, `secret-rules`, `startup-parity`.
+- Pruebas reducidas para que la batería no se alargue: el agrupado usa 30 mensajes con el
+  intervalo mínimo (no 100); la saturación, 1 000 peticiones (las 10 000 quedan para la prueba a
+  mano); el ataque al login, 40 fallos desde 10 direcciones con el retardo acortado.
+- `webChat.allowedOrigins` no entra en la comprobación previa de longitudes: su máximo ya estaba
+  en el esquema de la 008, con sus demás errores.

@@ -151,6 +151,66 @@ describe('registro técnico del bot', () => {
     });
   });
 
+  describe('eventos de la protección frente a abuso (012)', () => {
+    const protectionEvents: Array<[BotEvent, string]> = [
+      [{ event: 'protection_read_failed', errorClass: 'TimeoutError' }, 'error'],
+      [{ event: 'contact_only_reply', reason: 'cap_disabled' }, 'warn'],
+      [{ event: 'contact_only_reply', reason: 'whatsapp_daily' }, 'warn'],
+      [{ event: 'whatsapp_quota_reached', cap: 200 }, 'warn'],
+      [{ event: 'transcription_failed', reason: 'blocked' }, 'warn'],
+      [{ event: 'transcription_usage_failed' }, 'error'],
+      [{ event: 'business_notices_held', max: 60 }, 'warn'],
+      [{ event: 'batch_retry_scheduled', attempt: 2, delayMs: 30_000, errorClass: 'Error' }, 'warn'],
+      [{ event: 'batch_abandoned', attempts: 5, apologySent: true }, 'error'],
+      [{ event: 'login_throttled', delayMs: 750, queued: 3, rejected: 0 }, 'warn'],
+      [{ event: 'weak_secrets', findings: [{ variable: 'BACKUP_KEY', rule: 'trivial' }] }, 'warn'],
+      [{ event: 'usage_record_failed', purpose: 'transcription' }, 'error'],
+    ];
+
+    it.each(protectionEvents)('nivel de %o', (event, level) => {
+      const { logger, lines } = capture();
+      createActivityLog(logger, SECRET).log(event);
+      expect(lines[0]?.level).toBe(level);
+      expect(eventLevels[event.event]).toBe(level);
+    });
+
+    it('se serializan solo con campos cerrados: sin direcciones, usuarios ni valores', () => {
+      const { logger, lines } = capture();
+      const log = createActivityLog(logger, SECRET);
+      for (const [event] of protectionEvents) log.log(event);
+      const keys = new Set(lines.flatMap((l) => Object.keys(l.obj)));
+      expect([...keys].sort()).toEqual(
+        [
+          'apologySent',
+          'attempt',
+          'attempts',
+          'cap',
+          'channel',
+          'delayMs',
+          'errorClass',
+          'event',
+          'findings',
+          'max',
+          'purpose',
+          'queued',
+          'reason',
+          'rejected',
+        ].sort(),
+      );
+    });
+
+    it('el tipo no acepta campos fuera del catálogo', () => {
+      const log = createActivityLog(capture().logger, SECRET);
+      // @ts-expect-error: el registro del login no lleva la dirección del cliente.
+      log.log({ event: 'login_throttled', delayMs: 0, queued: 0, rejected: 0, ip: '203.0.113.7' });
+      // @ts-expect-error: los secretos débiles no llevan su valor.
+      log.log({ event: 'weak_secrets', findings: [{ variable: 'X', rule: 'y', value: 'z' }] });
+      // @ts-expect-error: un motivo que no está en el catálogo.
+      log.log({ event: 'contact_only_reply', reason: 'otro' });
+      expect(true).toBe(true);
+    });
+  });
+
   describe('eventos de la derivación (005)', () => {
     const handoffId = '0f8fad5b-d9cb-469f-a165-70867728950e';
     const handoffEvents: Array<[BotEvent, string]> = [
@@ -168,6 +228,13 @@ describe('registro técnico del bot', () => {
         'info',
       ],
       [{ event: 'handoff_not_started', kind: 'complaint', reason: 'no_routes' }, 'warn'],
+      [{ event: 'handoff_not_started', kind: 'person', reason: 'daily_limit' }, 'warn'],
+      [{ event: 'handoff_daily_limit', max: 20 }, 'warn'],
+      [{ event: 'handoff_forward_deferred', handoffId, messages: 3, reason: 'interval' }, 'debug'],
+      [
+        { event: 'handoff_forward_deferred', handoffId, messages: 1, reason: 'daily_limit' },
+        'debug',
+      ],
       [
         {
           event: 'handoff_alert_failed',
@@ -202,6 +269,17 @@ describe('registro técnico del bot', () => {
           cause: 'business',
           durationMinutes: 30,
           confirmed: true,
+        },
+        'info',
+      ],
+      [
+        {
+          event: 'handoff_ended',
+          handoffId,
+          cause: 'interrupted',
+          durationMinutes: 1,
+          confirmed: false,
+          heldMessages: 2,
         },
         'info',
       ],
@@ -246,6 +324,9 @@ describe('registro técnico del bot', () => {
         'text',
         'name',
         'phone',
+        'daily_limit',
+        'interval',
+        'interrupted',
       ]);
       const strings: string[] = [];
       const walk = (v: unknown): void => {

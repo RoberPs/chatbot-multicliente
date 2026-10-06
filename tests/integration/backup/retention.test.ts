@@ -9,6 +9,7 @@ import { applyRetention } from '../../../src/backup/retention.js';
 import { createBackup } from '../../../src/backup/service.js';
 import { main } from '../../../src/cli/backups.js';
 import {
+  CURRENT_SCHEMA,
   captureLogger,
   cliEnv,
   seedInstance,
@@ -56,8 +57,8 @@ async function backupsAged(days: number[], instanceId = 'test-01', now = new Dat
 
 const strangers = {
   foreign: 'notas-del-operador.txt',
-  similar: 'test-01__0007_chat_design__20260101T000000Z__manual.cbak.bak',
-  partial: '.test-01__0007_chat_design__20260101T000000Z__manual.cbak.partial',
+  similar: `test-01__${CURRENT_SCHEMA}__20260101T000000Z__manual.cbak.bak`,
+  partial: `.test-01__${CURRENT_SCHEMA}__20260101T000000Z__manual.cbak.partial`,
 };
 
 describe('retención de las copias', () => {
@@ -138,7 +139,7 @@ describe('retención de las copias', () => {
     expect(rows).toHaveLength(2);
     expect(rows[0]).toMatch(
       new RegExp(
-        `^${String(aged[3])} · [\\d,]+ (B|KB|MB) · \\d{4}-\\d{2}-\\d{2} \\d{2}:\\d{2} \\(Europe/Madrid\\) · manual · 0007_chat_design · válida: sí · caduca: `,
+        `^${String(aged[3])} · [\\d,]+ (B|KB|MB) · \\d{4}-\\d{2}-\\d{2} \\d{2}:\\d{2} \\(Europe/Madrid\\) · manual · ${CURRENT_SCHEMA} · válida: sí · caduca: `,
       ),
     );
     expect(list.stdout.join('\n')).not.toContain('otra-02');

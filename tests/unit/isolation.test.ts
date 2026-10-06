@@ -19,15 +19,18 @@ describe('aislamiento: conexiones a BD', () => {
     const bad: string[] = [];
     for (const file of files(SRC)) {
       const text = readFileSync(file, 'utf8');
-      for (const match of text.matchAll(/createDb\(([^)]*)\)/g)) {
-        const arg = (match[1] ?? '').trim();
+      // También el pool público (012), que envuelve a createDb en db/client.ts.
+      for (const match of text.matchAll(/(?:createDb|createPublicDb)\(([^)]*)\)/g)) {
+        // Solo la URL: el segundo argumento son los límites del pool (012).
+        const arg = (match[1] ?? '').split(',')[0]?.trim() ?? '';
         if (arg.startsWith('databaseUrl:')) continue; // la propia declaración de la función
         calls.push(`${relative(SRC, file)}: ${arg}`);
         if (!ALLOWED_ARGS.has(arg)) bad.push(`${relative(SRC, file)}: createDb(${arg})`);
         if (
           arg === 'databaseUrl' &&
           !text.includes('DATABASE_URL') &&
-          !file.endsWith('migrate.ts')
+          !file.endsWith('migrate.ts') &&
+          !file.endsWith('client.ts')
         ) {
           bad.push(`${relative(SRC, file)}: databaseUrl no procede de DATABASE_URL`);
         }

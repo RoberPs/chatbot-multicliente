@@ -54,7 +54,8 @@
     <span class="badge <%= it.cap.level === 'reached' ? 'badge-warn' : it.cap.level === 'none' ? 'badge-draft' : 'badge-ok' %>"><%= it.cap.label %></span>
     Gasto del mes: <%= it.cap.spent %> · Tope: <%= it.cap.cap || 'sin fijar' %><% if (it.cap.percent !== null) { %> · <%= it.cap.percent %> %<% } %>
   </p>
-  <p class="hint">Común a todos los canales; incluye «Probar el bot» y los resúmenes de derivación. Al alcanzarlo, el bot responde en WhatsApp y en el chat web solo con el contacto del negocio hasta el mes siguiente o hasta que subas el tope.</p>
+  <p class="hint">Común a todos los canales; incluye «Probar el bot», los resúmenes de derivación y las transcripciones de audios. Al alcanzarlo, el bot responde en WhatsApp y en el chat web solo con el contacto del negocio hasta el mes siguiente o hasta que subas el tope.</p>
+  <p class="hint" data-cap-required>En producción el tope de gasto es obligatorio: sin él, o sin el precio del modelo actual, los clientes reciben solo el contacto del negocio y el negocio no se puede activar.</p>
 </section>
 
 <form class="stack card" method="post" action="/admin/usage/settings">
@@ -141,8 +142,112 @@
       <%~ include('/partials/field-error', { message: it.h.err(e, f[0]) }) %>
     </div>
     <% }) %>
+    <%~ include('/partials/field-error', { message: it.h.err(e, 'prices') }) %>
     <div class="actions">
       <button type="submit">Guardar precio</button>
     </div>
   </form>
 </section>
+
+<% if (it.whatsapp.show) { %>
+<form class="stack card" method="post" action="/admin/usage/whatsapp-cap" data-section="whatsapp-cap">
+  <%~ include('/partials/csrf', { token: it.layout.csrf }) %>
+  <h2>Tope diario de WhatsApp</h2>
+  <p data-whatsapp-today>Respuestas con el modelo hoy: <%= it.whatsapp.today %> / <%= it.whatsapp.cap %></p>
+  <p class="hint">Al llegar al tope, el bot responde por WhatsApp solo con el contacto del negocio hasta las 00:00 (hora del negocio). Las peticiones de hablar con una persona se siguen derivando.</p>
+  <div>
+    <label for="whatsappDailyCap">Respuestas con el modelo al día</label>
+    <input id="whatsappDailyCap" name="whatsappDailyCap" type="text" inputmode="numeric" value="<%= it.h.str(v.whatsappDailyCap) %>">
+    <%~ include('/partials/field-error', { message: it.h.err(e, 'whatsappDailyCap') }) %>
+  </div>
+  <div class="actions">
+    <button type="submit">Guardar</button>
+  </div>
+</form>
+<% } %>
+
+<form class="stack card" method="post" action="/admin/usage/handoff-limits" data-section="handoff-limits">
+  <%~ include('/partials/csrf', { token: it.layout.csrf }) %>
+  <h2>Límites de derivación</h2>
+  <ul data-handoff-today>
+    <li>Derivaciones nuevas hoy: <%= it.handoffs.today.started %> / <%= it.handoffs.limits.dailyMax %></li>
+    <li>Peticiones sin aviso hoy: <%= it.handoffs.today.refused %></li>
+    <li>Avisos al negocio hoy: <%= it.handoffs.today.notices %> / <%= it.handoffs.limits.noticesDailyMax %></li>
+    <li>Avisos retenidos hoy: <%= it.handoffs.today.noticesHeld %></li>
+  </ul>
+  <p class="hint">Cuando se alcanza un límite, el cliente recibe el contacto del negocio en lugar del aviso. Lo que escribe durante una derivación se reenvía agrupado, como mucho una vez por intervalo. Los días cuentan en la hora del negocio.</p>
+  <div>
+    <label for="dailyMax">Derivaciones nuevas al día (1–200)</label>
+    <input id="dailyMax" name="dailyMax" type="text" inputmode="numeric" value="<%= it.h.str(v.dailyMax) %>">
+    <%~ include('/partials/field-error', { message: it.h.err(e, 'dailyMax') }) %>
+  </div>
+  <div>
+    <label for="forwardIntervalMinutes">Minutos entre avisos de una derivación (5–240)</label>
+    <input id="forwardIntervalMinutes" name="forwardIntervalMinutes" type="text" inputmode="numeric" value="<%= it.h.str(v.forwardIntervalMinutes) %>">
+    <%~ include('/partials/field-error', { message: it.h.err(e, 'forwardIntervalMinutes') }) %>
+  </div>
+  <div>
+    <label for="noticesDailyMax">Avisos al negocio al día (10–500)</label>
+    <input id="noticesDailyMax" name="noticesDailyMax" type="text" inputmode="numeric" value="<%= it.h.str(v.noticesDailyMax) %>">
+    <%~ include('/partials/field-error', { message: it.h.err(e, 'noticesDailyMax') }) %>
+  </div>
+  <div class="actions">
+    <button type="submit">Guardar</button>
+  </div>
+</form>
+
+<% if (it.transcription.show) { %>
+<section class="card" data-section="transcription-prices">
+  <h2>Precios de transcripción</h2>
+  <p class="hint">Precio por minuto de audio, en <%= it.currency %>. Cada audio transcrito suma al gasto del mes.</p>
+  <% if (it.transcription.sttModel !== null && !it.transcription.sttHasPrice) { %>
+    <p class="notice" role="status">El modelo de transcripción «<%= it.transcription.sttModel %>» no tiene precio. Añádelo abajo: el nombre ya está puesto.</p>
+  <% } %>
+  <%~ include('/partials/field-error', { message: it.h.err(e, 'transcriptionPrices') }) %>
+  <% if (it.transcription.prices.length > 0) { %>
+  <div class="table-scroll">
+  <table>
+    <thead>
+      <tr>
+        <th scope="col">Modelo</th>
+        <th scope="col">Precio por minuto</th>
+        <th scope="col"><span class="visually-hidden">Acciones</span></th>
+      </tr>
+    </thead>
+    <tbody>
+      <% it.transcription.prices.forEach(function (p) { %>
+      <tr>
+        <th scope="row"><%= p.model %><% if (p.current) { %> <span class="badge badge-ok">modelo actual</span><% } %></th>
+        <td><%= p.perMinute %></td>
+        <td>
+          <form class="inline" method="post" action="/admin/usage/transcription-prices/<%= encodeURIComponent(p.model) %>/delete" hx-confirm="¿Eliminar el precio de <%= p.model %>? Lo ya registrado conserva su coste.">
+            <%~ include('/partials/csrf', { token: it.layout.csrf }) %>
+            <button type="submit" class="danger small">Eliminar</button>
+          </form>
+        </td>
+      </tr>
+      <% }) %>
+    </tbody>
+  </table>
+  </div>
+  <% } %>
+
+  <form class="stack" method="post" action="/admin/usage/transcription-prices">
+    <%~ include('/partials/csrf', { token: it.layout.csrf }) %>
+    <h3>Añadir o cambiar un precio de transcripción</h3>
+    <div>
+      <label for="transcriptionModel">Modelo</label>
+      <input id="transcriptionModel" name="model" type="text" value="<%= it.h.str(v.transcriptionModel) %>" maxlength="200">
+      <%~ include('/partials/field-error', { message: it.h.err(e, 'transcriptionModel') }) %>
+    </div>
+    <div>
+      <label for="perMinute">Precio por minuto (<%= it.currency %>)</label>
+      <input id="perMinute" name="perMinute" type="text" inputmode="decimal" value="<%= it.h.str(v.perMinute) %>">
+      <%~ include('/partials/field-error', { message: it.h.err(e, 'perMinute') }) %>
+    </div>
+    <div class="actions">
+      <button type="submit">Guardar precio</button>
+    </div>
+  </form>
+</section>
+<% } %>

@@ -364,6 +364,43 @@ Qué ocurre con el tope activo:
 - El estado del tope de todo el parque se ve en la columna **Tope** de `pnpm instance:versions`
   ([sección 5](#5-actualizar-el-núcleo)).
 
+**En producción (feature 012) el tope es obligatorio** y falla cerrado:
+
+- Con `NODE_ENV=production`, sin tope activo, sin precio para `LLM_MODEL` o, con
+  `AUDIO_TRANSCRIPTION=on`, sin precio de transcripción para `STT_MODEL`, el negocio **no se puede
+  activar** y, si ya estaba activo, los clientes reciben solo el contacto (WhatsApp `R-CAP`, chat web
+  «no disponible»). El panel lo muestra en una banda roja en todas las pantallas y `/health` da
+  `spendCap: "blocked"` (`bloqueado` en `instance:versions`).
+- Si el gasto no se puede leer (consulta fallida o de más de 2 s), tampoco se llama al modelo.
+- Con el negocio activo en producción no se puede desactivar el tope ni borrar esos precios.
+- **Tope diario de WhatsApp** (por defecto 200 respuestas con modelo al día, 1–10 000): al llegar,
+  WhatsApp responde `R-CAP` hasta las 00:00 locales; las peticiones de persona se siguen derivando.
+  Se ajusta en «Consumo» → «Tope diario de WhatsApp».
+- **Precios de transcripción** (por minuto de audio, en la moneda de coste): cada audio transcrito
+  suma al gasto del mes y se comprueba el tope **antes** de descargarlo. Se ponen en «Consumo» →
+  «Precios de transcripción».
+- Nada de esto viaja en la exportación de la configuración (008); sí entra en las copias.
+
+### 4.2 Límites de derivación (012)
+
+Cada instancia limita lo que un cliente final puede hacer llegar al negocio. Se ajustan en
+«Consumo» → «Límites de derivación», que muestra también los contadores de hoy (derivaciones
+nuevas, peticiones sin aviso, avisos y avisos retenidos). Valen desde el siguiente mensaje.
+
+| Límite | Por defecto | Mínimo | Máximo | Al alcanzarlo |
+|---|---|---|---|---|
+| Derivaciones nuevas al día | 20 | 1 | 200 | El cliente recibe `R-HANDOFF-FAIL` con el contacto del negocio; el negocio no recibe nada |
+| Minutos entre avisos de una derivación | 15 | 5 | 240 | Lo que escribe el cliente espera y sale en **un** aviso agrupado al cumplirse el intervalo |
+| Avisos al negocio al día | 60 | 10 | 500 | Los reenvíos esperan a las 00:00 locales; los recordatorios no se envían (el cliente sí recibe su aviso de retraso); el panel avisa |
+
+- Cuentan las alertas, los reenvíos y los recordatorios (uno por aviso, salga por una o por dos
+  vías). «Probar el bot» ni cuenta ni se limita.
+- Si una derivación termina con mensajes esperando el intervalo, quedan **retenidos (no
+  reenviados)**: se ven en «Derivaciones» → «Mensajes retenidos» y el bot no los contesta.
+- En los avisos, el texto del cliente va entre comillas y con las direcciones desactivadas
+  (`ejemplo[.]com`).
+- Como los precios, estos límites no viajan en la exportación de la configuración.
+
 ---
 
 ## 5. Actualizar el núcleo
@@ -421,6 +458,8 @@ Herramientas que usa:
 | `pnpm instance:sync <id> <entorno>` y `pnpm instance:check <entorno>` | `APTO`, con `HEALTH_SECRET` presente y no repetido | Corregir lo que indique |
 | `pnpm instance:versions` | Todas las instancias en `Correcto` y «Coincide: sí» (si falta la anotación, `--annotate`) | Resolver antes de empezar: una instancia ya degradada no es un buen punto de partida |
 | Si un monitor o balanceador consulta `/health`, revisar su intervalo | Cada 10 s o más (límite: 30 por minuto y por IP) | Ampliar el intervalo: con menos recibe `429` y da la instancia por caída |
+| Antes de la tanda que lleve la 012 o posterior: tope de gasto y precios en «Consumo» de cada instancia | Tope activo y precio de `LLM_MODEL` (y de `STT_MODEL` con audios) | Sin ellos, la instancia actualizada responde solo con el contacto y no deja activar el negocio ([sección 4.1](#41-consumo-precios-y-tope-en-el-panel-010)) |
+| `pnpm instance:check <entorno>` con el núcleo nuevo | `APTO`: ningún secreto corto, de ejemplo, trivial o repetido y `HEALTH_SECRET` presente | Rotar los secretos que indique **antes** de desplegar: desde la 012 la instancia de producción **no arranca** con ellos (mismas reglas que `instance:check`) |
 
 `instance:health-secret` genera el secreto, lo escribe en el entorno sin tocar el resto del
 fichero y **no lo muestra**; con `--rotate` lo cambia. Las instancias nuevas ya nacen con él
@@ -624,7 +663,7 @@ Todas son de **núcleo**: genéricas, sin nombres de cliente ni de sector.
 
 ### 9.1 Specs ya realizadas
 
-Estado tomado del [README](../README.md) a 2026-10-05.
+Estado tomado del [README](../README.md) a 2026-10-06.
 
 | Nº | Feature | Estado | Qué aporta a la operación multicliente |
 |---|---|---|---|
@@ -639,6 +678,7 @@ Estado tomado del [README](../README.md) a 2026-10-05.
 | 009 | Versión visible y actualización escalonada | Completada (2026-10-01) | **Era la propuesta P6**: `GET /health` con dos niveles (`HEALTH_SECRET`), versión en el pie del panel, `pnpm instance:versions` e `instance:health-secret`, y procedimiento de publicación por tandas con vuelta atrás ([sección 5](#5-actualizar-el-núcleo)) |
 | 010 | Consumo y coste por instancia | Completada (2026-10-01) | **Era la propuesta P4**: consumo del modelo por canal sin textos, pantalla **Consumo** con precios por modelo y moneda de coste, tope mensual de gasto con salida a una persona, y su estado en `/health` y en `instance:versions` ([sección 4.1](#41-consumo-precios-y-tope-en-el-panel-010)) |
 | 011 | Diseño del chat web | Completada (2026-10-05) | No venía de ninguna propuesta de esta sección. Cada cliente tiene su chat con su imagen sin despliegue ni cambiar el fragmento: sección **Diseño del chat** del panel, contraste mínimo garantizado, aviso de asistente automático y salida a una persona siempre presentes, formato 2 del fichero de configuración con el diseño y sus imágenes ([sección 2.6](#26-configuración-del-negocio-en-el-panel-de-producción)) |
+| 012 | Protección frente a abuso y saturación | Completada (2026-10-06) | **Era la propuesta P8**: tope de gasto obligatorio en producción que falla cerrado, transcripción dentro del tope y tope diario de WhatsApp ([sección 4.1](#41-consumo-precios-y-tope-en-el-panel-010)); límites de derivación con reenvíos agrupados ([sección 4.2](#42-límites-de-derivación-012)); límites por dirección (/64) en las rutas públicas y pool de BD acotado; login con retardo en lugar de bloqueo; plazos en las llamadas salientes y reintentos de lotes; importación acotada; una sola regla de enlaces; registros sin datos y arranque que rechaza secretos débiles ([sección 5.0](#50-antes-de-la-primera-vez-una-vez-por-instancia)) |
 
 Todas están completadas. Quedan aplazadas la evaluación de audios de la 002 (T083), que se hace
 antes de activar los audios en una instancia, y el ensayo de la guía de publicación de la 009 con
@@ -654,10 +694,10 @@ orden de las pendientes).
 
 | Orden | Id | Propuesta | Prioridad | Depende de | Cuándo |
 |---|---|---|---|---|---|
-| 1 | P8 | Protección frente a abuso y saturación | **Bloqueante** | P4 (010), 005 | Antes de la primera publicación en producción |
-| 2 | P9 | Requisitos de despliegue seguro | **Bloqueante** | P1 (007) | Antes de la primera publicación en producción |
-| 3 | P7 | Estado de las copias de seguridad, visible | Media | P3 (006), P6 (009) | Antes de tener varias instancias en producción sin revisar sus registros a diario |
-| 4 | P5 | Puntos de extensión del núcleo | Baja | — | Solo cuando llegue la primera petición que no quepa en la configuración |
+| 1 | P9 | Requisitos de despliegue seguro | **Bloqueante** | P1 (007) | Antes de la primera publicación en producción |
+| 2 | P7 | Estado de las copias de seguridad, visible | Media | P3 (006), P6 (009) | Antes de tener varias instancias en producción sin revisar sus registros a diario |
+| 3 | P5 | Puntos de extensión del núcleo | Baja | — | Solo cuando llegue la primera petición que no quepa en la configuración |
+| — | P8 | Protección frente a abuso y saturación | — | — | **Hecha** (feature 012) |
 | — | P4 | Consumo y coste por instancia | — | — | **Hecha** (feature 010) |
 | — | P6 | Versión visible y actualización escalonada | — | — | **Hecha** (feature 009) |
 | — | P1 | Aprovisionamiento de instancias | — | — | **Hecha** (feature 007) |
@@ -679,14 +719,17 @@ Por qué este orden:
    última red de seguridad, por encima del tope de la instancia.
 5. **P8 y P9** antes que todo lo pendiente: salen de la auditoría completa del 2026-10-05
    ([sección 11.6](#116-registro-de-auditorías)) y sin ellas la instancia no es apta para
-   producción. P8 primero porque sus fallos se explotan desde Internet sin credenciales; P9 es
-   sobre todo comprobación y documentación.
+   producción. P8 (hecha, feature 012) primero porque sus fallos se explotan desde Internet sin
+   credenciales; P9, la siguiente, es sobre todo comprobación y documentación.
 6. **P7** antes que P5 porque es pequeña y cierra un hueco real: hoy una copia que falla solo
    deja rastro en los registros, y nadie lo ve hasta que hace falta restaurar.
 7. **P5** no se adelanta: se diseña a partir de un caso real.
 
 ### P8. Protección frente a abuso y saturación
 
+- **Estado**: **hecha** (feature 012, 2026-10-06). Las comprobaciones de operación están en las
+  secciones [4.1](#41-consumo-precios-y-tope-en-el-panel-010), [4.2](#42-límites-de-derivación-012) y
+  [5.0](#50-antes-de-la-primera-vez-una-vez-por-instancia).
 - **Ámbito**: núcleo.
 - **Origen**: auditoría completa del 2026-10-05 ([sección 11.6](#116-registro-de-auditorías)).
   Todos los puntos están comprobados en el código.

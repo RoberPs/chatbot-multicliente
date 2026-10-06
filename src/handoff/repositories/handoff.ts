@@ -1,9 +1,11 @@
 /**
  * Derivaciones (005, data-model.md § handoff). Las transiciones son `UPDATE … WHERE status =
- * 'active'`: si dos acciones llegan a la vez, solo cuenta la primera (FR-016).
+ * 'active'`: si dos acciones llegan a la vez, solo cuenta la primera (FR-016). Desde la 012
+ * guardan también cuándo salieron los avisos de inicio, cuándo se confirmó al cliente y el último
+ * aviso al negocio (para agrupar los reenvíos).
  */
-import { and, asc, eq, isNull, lte, ne, sql } from 'drizzle-orm';
-import { conversation, customer, handoff } from '../../db/schema.js';
+import { and, asc, count, desc, eq, isNull, lte, max, ne, sql } from 'drizzle-orm';
+import { conversation, customer, handoff, message } from '../../db/schema.js';
 import type { Channel } from '../../conversation/channels.js';
 import type { DbOrTx } from '../../conversation/repositories/customer.js';
 import type { HandoffActionVia, HandoffEndCause, HandoffKind } from '../types.js';
@@ -23,6 +25,12 @@ export interface HandoffRow {
   reminderSentAt: Date | null;
   endedAt: Date | null;
   endCause: HandoffEndCause | null;
+  /** Alguna vía entregó los avisos de inicio (012, R10.4). */
+  alertsSentAt: Date | null;
+  /** La confirmación al cliente quedó guardada (012, R10.4). */
+  customerNotifiedAt: Date | null;
+  /** Último aviso al negocio: alerta, reenvío o recordatorio (012, R7.2). */
+  lastNoticeAt: Date | null;
 }
 
 /** Derivación con los datos del cliente de su conversación. */
@@ -48,6 +56,9 @@ const handoffColumns = {
   reminderSentAt: handoff.reminderSentAt,
   endedAt: handoff.endedAt,
   endCause: handoff.endCause,
+  alertsSentAt: handoff.alertsSentAt,
+  customerNotifiedAt: handoff.customerNotifiedAt,
+  lastNoticeAt: handoff.lastNoticeAt,
 };
 
 const withCustomerColumns = {
@@ -68,6 +79,10 @@ export interface NewHandoff {
   tokenEnc: Buffer;
   startedAt: Date;
   reminderDueAt: Date | null;
+  /** 012 (R10.4): nulos mientras no consta el aviso o la confirmación. */
+  alertsSentAt?: Date | null;
+  customerNotifiedAt?: Date | null;
+  lastNoticeAt?: Date | null;
 }
 
 /** Inserta la derivación activa; falla si la conversación ya tiene una (índice único). */
@@ -109,6 +124,26 @@ export async function findByTokenHash(
     .innerJoin(customer, eq(customer.id, conversation.customerId))
     .where(eq(handoff.tokenHash, tokenHash));
   return row ?? null;
+}
+
+/** Alguna vía entregó la alerta de inicio (012, R10.4). */
+export async function markAlertsSent(tx: DbOrTx, id: string, at: Date): Promise<void> {
+  await tx.update(handoff).set({ alertsSentAt: at }).where(eq(handoff.id, id));
+}
+
+/** La confirmación al cliente quedó guardada (012, R10.4); va en la transacción del saliente. */
+export async function markCustomerNotified(tx: DbOrTx, id: string, at: Date): Promise<void> {
+  await tx.update(handoff).set({ customerNotifiedAt: at }).where(eq(handoff.id, id));
+}
+
+/** Ninguna vía entregó la alerta: la derivación guardada antes de avisar no llegó a existir. */
+export async function deleteHandoff(tx: DbOrTx, id: string): Promise<void> {
+  await tx.delete(handoff).where(eq(handoff.id, id));
+}
+
+/** Último aviso al negocio de la derivación (012): reinicia el intervalo del agrupado. */
+export async function setLastNoticeAt(tx: DbOrTx, id: string, at: Date): Promise<void> {
+  await tx.update(handoff).set({ lastNoticeAt: at }).where(eq(handoff.id, id));
 }
 
 /** Hubo alguna derivación terminada en la conversación (005, FR-018). */
@@ -174,6 +209,9 @@ export interface ActiveHandoffListItem {
   startedAt: Date;
   confirmedAt: Date | null;
   reminderSentAt: Date | null;
+  /** Entrantes esperando el reenvío agrupado (012) y cuándo se reclamarán. */
+  pending: number;
+  processAfter: Date | null;
 }
 
 /** Derivaciones activas para el panel (FR-016a): sin el motivo y sin las del playground. */
@@ -188,12 +226,59 @@ export async function listActive(tx: DbOrTx): Promise<ActiveHandoffListItem[]> {
       startedAt: handoff.startedAt,
       confirmedAt: handoff.confirmedAt,
       reminderSentAt: handoff.reminderSentAt,
+      pending: sql<number>`(
+        select count(*)::int from message m
+        where m.conversation_id = ${handoff.conversationId}
+          and m.direction = 'inbound' and m.status = 'pending'
+      )`,
+      processAfter: conversation.processAfter,
     })
     .from(handoff)
     .innerJoin(conversation, eq(conversation.id, handoff.conversationId))
     .innerJoin(customer, eq(customer.id, conversation.customerId))
     .where(and(eq(handoff.status, 'active'), ne(customer.channel, 'playground')))
     .orderBy(asc(handoff.startedAt));
+}
+
+export interface HeldListItem {
+  conversationId: string;
+  customerName: string | null;
+  customerPhone: string | null;
+  channel: Channel;
+  held: number;
+  /** Llegada del último retenido. */
+  lastAt: Date;
+}
+
+/**
+ * Conversaciones con mensajes retenidos al terminar su derivación (012, R7.4), las más recientes
+ * primero y sin las del playground: el número, nunca los textos (FR-016a).
+ */
+export async function listHeld(tx: DbOrTx, limit = 50): Promise<HeldListItem[]> {
+  const lastAt = max(message.receivedAt);
+  const rows = await tx
+    .select({
+      conversationId: conversation.id,
+      customerName: conversation.contactName,
+      customerPhone: conversation.contactPhone,
+      channel: customer.channel,
+      held: count(),
+      lastAt,
+    })
+    .from(message)
+    .innerJoin(conversation, eq(conversation.id, message.conversationId))
+    .innerJoin(customer, eq(customer.id, conversation.customerId))
+    .where(
+      and(
+        eq(message.direction, 'inbound'),
+        eq(message.status, 'held'),
+        ne(customer.channel, 'playground'),
+      ),
+    )
+    .groupBy(conversation.id, customer.channel)
+    .orderBy(desc(lastAt))
+    .limit(limit);
+  return rows.map((r) => ({ ...r, lastAt: r.lastAt ?? new Date(0) }));
 }
 
 /** Número de derivaciones activas fuera del playground (portada del panel). */

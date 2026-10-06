@@ -5,7 +5,7 @@
  */
 import type { BotHttp } from './app.js';
 import { createGraphClient } from './channels/whatsapp/graph-client.js';
-import type { Env } from './config/env.js';
+import { protectionConfigFromEnv, type Env } from './config/env.js';
 import { createActivityLog, type LoggerLike } from './conversation/activity-log.js';
 import { buildChannelPolicies } from './conversation/channels.js';
 import { createIntake } from './conversation/intake.js';
@@ -59,6 +59,8 @@ export function createBot({ env, db, logger, clock = systemClock }: CreateBotOpt
   const quotaWatch = createQuotaWatch(activityLog);
   // Consumo del modelo (010): respuestas y resúmenes, con el modelo configurado.
   const usage = { meter: createUsageMeter({ db, activityLog }), model: env.LLM_MODEL };
+  // Protección frente a abuso (012): producción y modelos, calculados una vez del entorno.
+  const protection = protectionConfigFromEnv(env);
   const chatModel = createAnthropicChatModel({
     apiKey: env.ANTHROPIC_API_KEY,
     model: env.LLM_MODEL,
@@ -102,6 +104,7 @@ export function createBot({ env, db, logger, clock = systemClock }: CreateBotOpt
     quotaWatch,
     handoff,
     usage,
+    protection,
   });
   const wake = (id: string) => {
     processor.wake(id);
@@ -115,6 +118,7 @@ export function createBot({ env, db, logger, clock = systemClock }: CreateBotOpt
           stt: createWhisperSpeechToText({ apiKey: env.STT_API_KEY, model: env.STT_MODEL }),
           activityLog,
           wake,
+          protection: { config: protection, reader, clock, meter: usage.meter },
         })
       : null;
   const intake = createIntake({
@@ -128,6 +132,7 @@ export function createBot({ env, db, logger, clock = systemClock }: CreateBotOpt
       void processor.sendRateLimitNotice(id);
     },
     quotaWatch,
+    protection,
     ...(transcriber ? { transcriber } : {}),
   });
   // Lo que escribe el negocio (botones y su número de avisos) no entra como cliente (005, R10).

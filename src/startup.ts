@@ -11,11 +11,12 @@ import { INSTANCE_RUNNING, tryAdvisoryLock, type AdvisoryLock } from './backup/l
 import { createBackupLog } from './backup/log.js';
 import { createBackupScheduler } from './backup/scheduler.js';
 import { createBot, type Bot } from './bot.js';
-import { BACKUP_VARS, type Env } from './config/env.js';
+import { BACKUP_VARS, protectionConfigFromEnv, type Env } from './config/env.js';
+import { checkSecrets, SECRET_VARIABLES } from './config/secret-rules.js';
 import { createActivityLog, type LoggerLike } from './conversation/activity-log.js';
 import { systemClock, type Clock } from './conversation/ports.js';
 import { createRetention } from './conversation/retention.js';
-import { closeDb, createDb } from './db/client.js';
+import { closeDb, createDb, createPublicDb } from './db/client.js';
 import { runMigrations } from './db/migrate.js';
 import { createInstanceHealth } from './health/report.js';
 import { readCoreVersion } from './health/version.js';
@@ -30,6 +31,26 @@ export interface StartInstanceOptions {
   listen?: (app: FastifyInstance) => Promise<unknown>;
   /** Carpeta de migraciones (pruebas). */
   migrationsFolder?: string;
+}
+
+/**
+ * Fuera de producción los secretos débiles no impiden arrancar (en producción ya los rechazó
+ * `loadEnv`, 012 R14), pero quedan en el registro de arranque: variable y regla, sin valores.
+ */
+function logWeakSecrets(env: Env, logger: LoggerLike): void {
+  if (env.NODE_ENV === 'production') return;
+  const source = Object.fromEntries(
+    SECRET_VARIABLES.map((variable) => {
+      const value: unknown = env[variable];
+      return [variable, Array.isArray(value) ? value.join(',') : (value as string | undefined)];
+    }),
+  );
+  const findings = checkSecrets(source)
+    // HEALTH_SECRET solo es obligatoria en producción.
+    .filter((f) => f.rule !== 'health_secret_required')
+    .map(({ variable, rule }) => ({ variable, rule }));
+  if (findings.length === 0) return;
+  createActivityLog(logger, env.SESSION_SECRET).log({ event: 'weak_secrets', findings });
 }
 
 export interface RunningInstance {
@@ -53,16 +74,24 @@ export async function startInstance(options: StartInstanceOptions): Promise<Runn
   if (!lock) throw new InstanceBusyError();
 
   const db = createDb(env.DATABASE_URL);
+  // Lecturas del chat web en su propio pool pequeño (012, FR-022).
+  const publicDb = createPublicDb(env.DATABASE_URL);
   const started: { bot: Bot | null } = { bot: null };
   let app: FastifyInstance | null = null;
   try {
     app = await build({
       env,
       db,
+      publicDb,
       bot: (log) => (started.bot = createBot({ env, db, logger: log, clock })),
-      health: createInstanceHealth({ databaseUrl: env.DATABASE_URL, coreVersion }),
+      health: createInstanceHealth({
+        databaseUrl: env.DATABASE_URL,
+        coreVersion,
+        protection: protectionConfigFromEnv(env),
+      }),
     });
     const logger = options.logger ?? app.log;
+    logWeakSecrets(env, logger);
 
     const backup = backupConfigFromEnv(env);
     if (!backup && env.NODE_ENV !== 'production') {
@@ -93,6 +122,7 @@ export async function startInstance(options: StartInstanceOptions): Promise<Runn
   } catch (error) {
     await app?.close().catch(() => undefined);
     await closeDb(db).catch(() => undefined);
+    await closeDb(publicDb).catch(() => undefined);
     await lock.release();
     throw error;
   }
@@ -129,6 +159,7 @@ export async function startInstance(options: StartInstanceOptions): Promise<Runn
       await bot?.retention.stop();
       await scheduler?.stop();
       await closeDb(db);
+      await closeDb(publicDb);
       await lock.release();
     },
   };

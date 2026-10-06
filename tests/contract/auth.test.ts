@@ -6,8 +6,10 @@ import {
   csrfFrom,
   encodeForm,
   login,
+  OPERATOR_PASSWORD,
   OPERATOR_USER,
 } from '../helpers/app.js';
+import { createLoginThrottle, type LoginThrottle } from '../../src/admin/auth/login-throttle.js';
 import { createTestDatabase, type TestDatabase } from '../helpers/db.js';
 
 describe('sesión del operador (FR-023)', () => {
@@ -214,26 +216,105 @@ describe('límite de intentos de login', () => {
     expect(codes.slice(0, 5)).toEqual([401, 401, 401, 401, 401]);
     expect(codes[5]).toBe(429);
   });
+});
 
-  it('cambiar de IP no evita el límite global de fallos', async () => {
+describe('freno del login durante un ataque (012, US4)', () => {
+  let t: TestDatabase;
+  let app: FastifyInstance;
+  let sleeps: number[];
+  let lines: string[];
+  let n = 0;
+
+  beforeAll(async () => {
+    t = await createTestDatabase();
+  });
+  afterAll(async () => {
+    await t.close();
+  });
+
+  /** App nueva con el freno real y las esperas anotadas en lugar de dormidas. */
+  async function start(throttle?: LoginThrottle): Promise<void> {
+    sleeps = [];
+    lines = [];
+    app = await buildTestApp(t.db, undefined, null, {}, lines, {
+      loginThrottle:
+        throttle ??
+        createLoginThrottle({
+          sleep: async (ms) => {
+            sleeps.push(ms);
+          },
+        }),
+    });
+  }
+
+  /** Un intento desde una dirección nueva (sin el límite de 5 por minuto). */
+  async function attempt(password: string, extraCookie = '') {
+    n += 1;
     const page = await app.inject({ method: 'GET', url: '/admin/login' });
-    const cookie = cookieHeader(page) ?? '';
-    const codes: number[] = [];
-    for (let i = 0; i < 22; i++) {
-      const res = await app.inject({
-        method: 'POST',
-        url: '/admin/login',
-        remoteAddress: `10.0.0.${i + 10}`,
-        headers: {
-          cookie,
-          'content-type': 'application/x-www-form-urlencoded',
-          'x-forwarded-for': `1.2.3.${i}`,
-        },
-        payload: encodeForm({ _csrf: csrfFrom(page.body), user: 'x', password: 'y' }),
-      });
-      codes.push(res.statusCode);
-    }
-    expect(codes.filter((c) => c === 401).length).toBeLessThanOrEqual(20);
-    expect(codes.at(-1)).toBe(429);
+    const cookie = [cookieHeader(page) ?? '', extraCookie].filter(Boolean).join('; ');
+    return app.inject({
+      method: 'POST',
+      url: '/admin/login',
+      remoteAddress: `10.1.${String(Math.floor(n / 250))}.${String((n % 250) + 1)}`,
+      headers: { cookie, 'content-type': 'application/x-www-form-urlencoded' },
+      payload: encodeForm({ _csrf: csrfFrom(page.body), user: OPERATOR_USER, password }),
+    });
+  }
+
+  const deviceCookie = (res: { headers: Record<string, unknown> }) => {
+    const raw = res.headers['set-cookie'];
+    const list = (Array.isArray(raw) ? raw : [raw]) as string[];
+    return list.find((c) => c.startsWith('__Host-chatbot-device='));
+  };
+
+  it('más fallos que el antiguo límite global: ningún 429 y la credencial correcta entra tras el retardo', async () => {
+    await start();
+    for (let i = 0; i < 30; i++) expect((await attempt('mala')).statusCode).toBe(401);
+    const ok = await attempt(OPERATOR_PASSWORD);
+    expect(ok.statusCode).toBe(303);
+    expect(sleeps.at(-1)).toBe(5000);
+    // login_throttled, sin dirección ni usuario, como mucho uno por minuto.
+    const throttled = lines.filter((l) => l.includes('"login_throttled"'));
+    expect(throttled).toHaveLength(1);
+    expect(throttled[0]).not.toContain('10.1.');
+    expect(throttled[0]).not.toContain(OPERATOR_USER);
+    await app.close();
+  });
+
+  it('al entrar pone la cookie de navegador conocido, que evita el retardo', async () => {
+    await start();
+    const first = await attempt(OPERATOR_PASSWORD);
+    const cookie = deviceCookie(first);
+    expect(cookie).toMatch(
+      /^__Host-chatbot-device=v1\.\d+\.[\w-]+; Max-Age=7776000; Path=\/; HttpOnly; SameSite=Strict$/,
+    );
+    for (let i = 0; i < 20; i++) await attempt('mala');
+    sleeps = [];
+    const known = await attempt(OPERATOR_PASSWORD, String(cookie).split(';')[0]);
+    expect(known.statusCode).toBe(303);
+    expect(sleeps).toEqual([]);
+    // Una cookie manipulada no sirve.
+    const forged = await attempt(OPERATOR_PASSWORD, '__Host-chatbot-device=v1.99999999999999.AAAA');
+    expect(forged.statusCode).toBe(303);
+    expect(sleeps).toEqual([3750]); // 20 fallos: 250 × 15 ms
+    await app.close();
+  });
+
+  it('cola llena → 429 «Demasiados intentos…» sin verificar ni contar como fallo', async () => {
+    const real = createLoginThrottle({ sleep: async () => undefined });
+    let failures = 0;
+    const full: LoginThrottle = {
+      ...real,
+      run: async () => 'full',
+      failure: () => {
+        failures += 1;
+      },
+    };
+    await start(full);
+    const res = await attempt(OPERATOR_PASSWORD);
+    expect(res.statusCode).toBe(429);
+    expect(res.body).toContain('Demasiados intentos. Inténtalo en unos segundos.');
+    expect(failures).toBe(0);
+    await app.close();
   });
 });

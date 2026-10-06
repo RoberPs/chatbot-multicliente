@@ -5,6 +5,10 @@
  * enlaces, R9), el fin desde el panel y el barrido de inactividad y recordatorios (R14). Sin
  * HTTP: habla con WhatsApp, el email y el modelo solo por sus puertos, y con el cliente por la
  * entrega de su canal (`ChannelPolicy`).
+ *
+ * 012 (US2, contracts/handoff-limits.md): cada derivación nueva y cada aviso al negocio reservan
+ * plaza del día antes de enviarse; los reenvíos se agrupan por intervalo desde el último aviso, y
+ * lo que queda pendiente al terminar pasa a `held`. La vía simulada ni cuenta ni se limita.
  */
 import { randomUUID } from 'node:crypto';
 import type { CountryCode } from 'libphonenumber-js';
@@ -16,11 +20,13 @@ import type { DbOrTx } from '../conversation/repositories/customer.js';
 import * as messages from '../conversation/repositories/message.js';
 import type { InboundRow } from '../conversation/repositories/message.js';
 import type { Db } from '../db/client.js';
+import { localDay } from '../knowledge/time/local-date.js';
 import type { KnowledgeReader, KnowledgeSnapshot } from '../knowledge/types.js';
 import type { UsageRecording } from '../usage/meter.js';
 import { addTokenUsage, type ResponseUsage } from '../usage/types.js';
 import type { ActCustomer, ActResult } from './business-replies.js';
 import { decide, type TurnDecision, type TurnInput } from './decision.js';
+import { readHandoffLimits, recordNoticeHeld, reserveNotice, reserveStart } from './limits.js';
 import { alertNotice, forwardNotice, reminderNotice } from './notices.js';
 import type {
   AlertRoute,
@@ -31,7 +37,7 @@ import type {
 import * as handoffs from './repositories/handoff.js';
 import type { HandoffWithCustomer } from './repositories/handoff.js';
 import * as notices from './repositories/handoff-notice.js';
-import { addOpenMinutes, attentionAt, type Attention } from './schedule.js';
+import { addOpenMinutes, attentionAt, nextLocalMidnight, type Attention } from './schedule.js';
 import { fallbackSummary, summarizeHandoff } from './summary.js';
 import { lateReplyWithContact } from './templates.js';
 import {
@@ -44,6 +50,7 @@ import {
 import type {
   BusinessNotice,
   HandoffActionVia,
+  HandoffEndCause,
   HandoffKind,
   NoticeHandoff,
   RouteName,
@@ -154,6 +161,11 @@ export interface HandoffService {
   hasRoutes(simulate: boolean): Promise<boolean>;
   decide(input: Omit<TurnInput, 'region' | 'now'>): TurnDecision;
   start(input: StartInput): Promise<StartResult>;
+  /**
+   * Un reintento encuentra la derivación sin constancia de la alerta (012, R10.4): termina con
+   * causa `interrupted`; el procesador responde R-HANDOFF-FAIL con el contacto.
+   */
+  interrupt(row: HandoffWithCustomer, logContext: EventContext): Promise<void>;
   forward(input: ForwardInput): Promise<void>;
 }
 
@@ -304,6 +316,50 @@ export function createHandoffService(deps: HandoffServiceDeps): HandoffService {
   }
 
   /**
+   * Termina la derivación y, en la misma transacción, retiene lo que esperaba su reenvío (012,
+   * R7.4): los entrantes pendientes anteriores al fin pasan a `held` y la conversación deja de
+   * esperar al intervalo. `null` si ya no estaba activa.
+   */
+  async function endAndHold(
+    row: HandoffWithCustomer,
+    cause: HandoffEndCause,
+    at: Date,
+    confirmVia?: HandoffActionVia,
+  ): Promise<{ heldMessages: number } | null> {
+    return db.transaction(async (tx) => {
+      if (!(await handoffs.end(tx, row.id, cause, at, confirmVia))) return null;
+      return { heldMessages: await holdPending(tx, row.conversationId, at) };
+    });
+  }
+
+  async function holdPending(tx: DbOrTx, conversationId: string, at: Date): Promise<number> {
+    const held = await messages.markHeld(tx, conversationId, at);
+    await conversations.setProcessAfter(tx, conversationId, null);
+    return held;
+  }
+
+  /** Día local de los límites y hora a la que vuelven las plazas. */
+  async function today(now: Date, snapshot?: KnowledgeSnapshot | null) {
+    const tz = snapshot?.business.timezone ?? (await timezone());
+    return { day: localDay(now, tz), tomorrow: nextLocalMidnight(now, tz) };
+  }
+
+  /** Plaza del día para un recordatorio real; con ella, reinicia el intervalo del agrupado. */
+  async function reserveReminder(row: HandoffWithCustomer): Promise<boolean> {
+    const now = clock.now();
+    const { day } = await today(now);
+    const limits = await readHandoffLimits(db);
+    return db.transaction(async (tx) => {
+      if (!(await reserveNotice(tx, day, limits.noticesDailyMax))) {
+        await recordNoticeHeld(tx, day, limits.noticesDailyMax, activityLog);
+        return false;
+      }
+      await handoffs.setLastNoticeAt(tx, row.id, now);
+      return true;
+    });
+  }
+
+  /**
    * R-HANDOFF-LATE al cliente por la entrega de su canal (FR-019), una sola vez y sin
    * reintentos: en WhatsApp solo dentro de la ventana de 24 h. Devuelve si se entregó.
    */
@@ -388,10 +444,15 @@ export function createHandoffService(deps: HandoffServiceDeps): HandoffService {
     const row = await handoffs.findById(db, handoffId);
     if (!row) return;
     const handoff = await noticeHandoff(row);
-    const routes = await deps.routes.available(db, { simulate: row.channel === 'playground' });
+    const simulate = row.channel === 'playground';
+    const routes = await deps.routes.available(db, { simulate });
     const logContext = contextOf(row);
+    // 012 (R7.3): un recordatorio real reserva plaza del día; sin ella se da por enviado (no se
+    // acumula), pero el cliente recibe igualmente R-HANDOFF-LATE (no es un aviso al negocio).
+    const allowed =
+      handoff !== null && routes.length > 0 && (simulate || (await reserveReminder(row)));
     const sent =
-      handoff && routes.length > 0
+      handoff && allowed
         ? await sendAll(routes, reminderNotice(handoff, trigger), 'reminder', logContext, row.id)
         : [];
     await notices.insertMany(db, noticeRows(row.id, 'reminder', sent, clock.now()));
@@ -461,7 +522,8 @@ export function createHandoffService(deps: HandoffServiceDeps): HandoffService {
         ignored(result);
         return { result, customer };
       }
-      if (await handoffs.end(db, row.id, 'business', now, via)) {
+      const ended = await endAndHold(row, 'business', now, via);
+      if (ended) {
         // Solo si la confirmó este «Terminado» (otra vía pudo confirmarla a la vez).
         const after = await handoffs.findById(db, row.id);
         if (after?.confirmedVia === via && after.confirmedAt?.getTime() === now.getTime()) {
@@ -473,6 +535,7 @@ export function createHandoffService(deps: HandoffServiceDeps): HandoffService {
           cause: 'business',
           durationMinutes: minutesBetween(row.startedAt, now),
           confirmed: true,
+          heldMessages: ended.heldMessages,
         });
         return { result: 'done', customer };
       }
@@ -485,9 +548,8 @@ export function createHandoffService(deps: HandoffServiceDeps): HandoffService {
       if (!row) return { result: 'not_found', customer: null };
       const customer = customerOf(row);
       const now = clock.now();
-      if (!(await handoffs.end(db, row.id, cause, now))) {
-        return { result: 'already_ended', customer };
-      }
+      const ended = await endAndHold(row, cause, now);
+      if (!ended) return { result: 'already_ended', customer };
       activityLog.log(
         {
           event: 'handoff_ended',
@@ -495,6 +557,7 @@ export function createHandoffService(deps: HandoffServiceDeps): HandoffService {
           cause,
           durationMinutes: minutesBetween(row.startedAt, now),
           confirmed: row.confirmedAt !== null,
+          heldMessages: ended.heldMessages,
         },
         contextOf(row),
       );
@@ -503,9 +566,14 @@ export function createHandoffService(deps: HandoffServiceDeps): HandoffService {
 
     async sweep() {
       const now = clock.now();
-      const ended = await db.transaction((tx) =>
-        handoffs.endInactive(tx, new Date(now.getTime() - INACTIVITY_MS), now),
-      );
+      const ended = await db.transaction(async (tx) => {
+        const rows = await handoffs.endInactive(tx, new Date(now.getTime() - INACTIVITY_MS), now);
+        const out = [];
+        for (const h of rows) {
+          out.push({ ...h, heldMessages: await holdPending(tx, h.conversationId, now) });
+        }
+        return out;
+      });
       for (const h of ended) {
         activityLog.log(
           {
@@ -514,6 +582,7 @@ export function createHandoffService(deps: HandoffServiceDeps): HandoffService {
             cause: 'inactivity',
             durationMinutes: minutesBetween(h.startedAt, now),
             confirmed: h.confirmed,
+            heldMessages: h.heldMessages,
           },
           { conversationId: h.conversationId },
         );
@@ -543,6 +612,22 @@ export function createHandoffService(deps: HandoffServiceDeps): HandoffService {
       if (routes.length === 0) {
         activityLog.log({ event: 'handoff_not_started', kind, reason: 'no_routes' }, logContext);
         return { started: false, routes: {} };
+      }
+      // 012 (FR-013): plaza de derivación y de aviso antes de resumir ni avisar. Sin plaza, el
+      // procesador responde R-HANDOFF-FAIL con el contacto. La vía simulada no reserva.
+      if (!input.simulate) {
+        const limits = await readHandoffLimits(db);
+        const { day } = await today(clock.now(), snapshot);
+        const reservation = await db.transaction((tx) =>
+          reserveStart(tx, day, limits, activityLog),
+        );
+        if (reservation !== 'reserved') {
+          activityLog.log(
+            { event: 'handoff_not_started', kind, reason: 'daily_limit' },
+            logContext,
+          );
+          return { started: false, routes: {} };
+        }
       }
 
       const customerTexts = await messages.customerTexts(db, input.conversationId, SUMMARY_TEXTS);
@@ -574,6 +659,24 @@ export function createHandoffService(deps: HandoffServiceDeps): HandoffService {
       const handoffId = randomUUID();
       const token = issueToken();
       const startedAt = clock.now();
+      // «Como mucho una vez» (012, R10.4): la derivación se guarda antes de avisar, con
+      // `alertsSentAt` y `customerNotifiedAt` nulos hasta que conste cada cosa. Un reintento
+      // que la encuentre así sabe qué pasó (lo decide el procesador).
+      const row: handoffs.NewHandoff = {
+        id: handoffId,
+        conversationId: input.conversationId,
+        kind,
+        summary: summary.summary,
+        summarySource: summary.source,
+        tokenHash: hashToken(token),
+        tokenEnc: deps.cipher.encrypt(token),
+        startedAt,
+        reminderDueAt: addOpenMinutes(snapshot, startedAt, REMINDER_OPEN_MINUTES),
+        alertsSentAt: null,
+        customerNotifiedAt: null,
+        // La alerta es el primer aviso: el agrupado de los reenvíos cuenta desde aquí (R7.2).
+        lastNoticeAt: startedAt,
+      };
       const notice = alertNotice({
         id: handoffId,
         kind,
@@ -585,15 +688,22 @@ export function createHandoffService(deps: HandoffServiceDeps): HandoffService {
         timezone: snapshot.business.timezone,
         token,
       });
+      await handoffs.insertActive(db, row);
       const sent = await sendAll(routes, notice, 'alert', logContext, handoffId);
       const results = resultsOf(sent);
       if (!sent.some((s) => s.result.ok)) {
+        // Ninguna vía entregó: la derivación no llega a existir.
+        await handoffs.deleteHandoff(db, handoffId);
         activityLog.log(
           { event: 'handoff_not_started', kind, reason: 'delivery_failed' },
           logContext,
         );
         return { started: false, routes: results };
       }
+      await db.transaction(async (tx) => {
+        await handoffs.markAlertsSent(tx, handoffId, clock.now());
+        await notices.insertMany(tx, noticeRows(handoffId, 'alert', sent, startedAt));
+      });
 
       const attention = attentionAt(snapshot, startedAt);
       const afterHours = !attention.open;
@@ -603,18 +713,8 @@ export function createHandoffService(deps: HandoffServiceDeps): HandoffService {
         routes: results,
         attention,
         async persist(tx) {
-          await handoffs.insertActive(tx, {
-            id: handoffId,
-            conversationId: input.conversationId,
-            kind,
-            summary: summary.summary,
-            summarySource: summary.source,
-            tokenHash: hashToken(token),
-            tokenEnc: deps.cipher.encrypt(token),
-            startedAt,
-            reminderDueAt: addOpenMinutes(snapshot, startedAt, REMINDER_OPEN_MINUTES),
-          });
-          await notices.insertMany(tx, noticeRows(handoffId, 'alert', sent, startedAt));
+          // La confirmación al cliente se guarda en la transacción del saliente.
+          await handoffs.markCustomerNotified(tx, handoffId, clock.now());
           await conversations.setHandoffStep(tx, input.conversationId, null);
           activityLog.log(
             {
@@ -631,14 +731,78 @@ export function createHandoffService(deps: HandoffServiceDeps): HandoffService {
       };
     },
 
+    async interrupt(row, logContext) {
+      const now = clock.now();
+      if (!(await handoffs.end(db, row.id, 'interrupted', now))) return;
+      activityLog.log(
+        {
+          event: 'handoff_ended',
+          handoffId: row.id,
+          cause: 'interrupted',
+          durationMinutes: minutesBetween(row.startedAt, now),
+          confirmed: row.confirmedAt !== null,
+          heldMessages: 0,
+        },
+        logContext,
+      );
+    },
+
     async forward(input) {
       const { handoff, pending, logContext } = input;
       if (pending.length === 0) return;
       const routes = await deps.routes.available(db, { simulate: input.simulate });
       const token = deps.cipher.decrypt(handoff.tokenEnc);
       const now = clock.now();
+      const ids = pending.map((m) => m.id);
+      const canSend = token !== null && routes.length > 0;
+      const deferred = (reason: 'interval' | 'daily_limit') => {
+        activityLog.log(
+          {
+            event: 'handoff_forward_deferred',
+            handoffId: handoff.id,
+            messages: pending.length,
+            reason,
+          },
+          logContext,
+        );
+      };
+
+      if (canSend && !input.simulate) {
+        // 012 (R7.2): como mucho un aviso por intervalo desde el último (alerta, reenvío o
+        // recordatorio); mientras tanto los entrantes esperan pendientes y se juntan.
+        const limits = await readHandoffLimits(db);
+        const last = handoff.lastNoticeAt ?? handoff.startedAt;
+        const due = new Date(last.getTime() + limits.forwardIntervalMinutes * MINUTE);
+        if (now.getTime() < due.getTime()) {
+          await conversations.setProcessAfter(db, handoff.conversationId, due);
+          deferred('interval');
+          return;
+        }
+        // Plaza del día, entrantes reenviados y último aviso en una transacción, antes de
+        // enviar: un reintento no repite el reenvío (R10). Sin plaza, hasta mañana.
+        const { day, tomorrow } = await today(now, input.snapshot);
+        const reserved = await db.transaction(async (tx) => {
+          if (!(await reserveNotice(tx, day, limits.noticesDailyMax))) {
+            await recordNoticeHeld(tx, day, limits.noticesDailyMax, activityLog);
+            await conversations.setProcessAfter(tx, handoff.conversationId, tomorrow);
+            return false;
+          }
+          await messages.markForwarded(tx, ids);
+          await handoffs.setLastNoticeAt(tx, handoff.id, now);
+          await conversations.setProcessAfter(tx, handoff.conversationId, null);
+          return true;
+        });
+        if (!reserved) {
+          deferred('daily_limit');
+          return;
+        }
+      } else {
+        // Simulada, o sin vía ni token: quedan reenviados aunque no salgan (005, R11).
+        await messages.markForwarded(db, ids);
+      }
+
       let sent: Sent[] = [];
-      if (token !== null && routes.length > 0) {
+      if (canSend) {
         const threadRef = await notices.emailThreadRef(db, handoff.id);
         const notice = forwardNotice(
           {
@@ -663,14 +827,8 @@ export function createHandoffService(deps: HandoffServiceDeps): HandoffService {
         );
         sent = await sendAll(routes, notice, 'forward', logContext, handoff.id);
       }
-      // Los entrantes quedan reenviados aunque fallen todas las vías: no se reintenta (R11).
-      await db.transaction(async (tx) => {
-        await messages.markForwarded(
-          tx,
-          pending.map((m) => m.id),
-        );
-        await notices.insertMany(tx, noticeRows(handoff.id, 'forward', sent, now, pending.length));
-      });
+      // Ya estaban reenviados: aunque fallen todas las vías no se reintenta (R11).
+      await notices.insertMany(db, noticeRows(handoff.id, 'forward', sent, now, pending.length));
       if (sent.some((s) => s.result.ok)) {
         activityLog.log(
           {

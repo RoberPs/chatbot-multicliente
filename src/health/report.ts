@@ -18,8 +18,12 @@ import {
 } from '../backup/schema-version.js';
 import type { Db } from '../db/client.js';
 import * as dbSchema from '../db/schema.js';
-import { spendCapState } from '../usage/spend-cap.js';
-import type { SpendCapLevel } from '../usage/types.js';
+import {
+  defaultProtectionConfig,
+  protectionState,
+  type ProtectionConfig,
+} from '../usage/protection.js';
+import type { ContactOnlyReason, SpendCapLevel } from '../usage/types.js';
 import { createLifecycle, type Lifecycle } from './lifecycle.js';
 
 export type HealthStatus = 'ok' | 'degraded' | 'not_ready';
@@ -38,15 +42,18 @@ export interface HealthReport {
     applied: SchemaRef | null;
     expected: { index: number; tag: string };
   };
-  /** Nivel del tope de gasto (010); `null` si no se pudo leer o el esquema no es el esperado. */
-  spendCap: SpendCapLevel | null;
+  /**
+   * Nivel del tope de gasto (010) o `blocked` si la instancia responde solo con el contacto (012);
+   * `null` si no se pudo leer o el esquema no es el esperado.
+   */
+  spendCap: SpendCapReport | null;
 }
 
 /** Lo que el sondeo lee de la BD. */
 export type ProbeResult =
   | { kind: 'empty' }
   /** `spendCap`: solo con el esquema esperado; `null` si no se pudo leer (010). */
-  | { kind: 'known'; schema: SchemaVersion; spendCap?: SpendCapLevel | null }
+  | { kind: 'known'; schema: SchemaVersion; spendCap?: SpendCapReport | null }
   /** La última migración aplicada no está en el journal de este núcleo. */
   | { kind: 'unknown'; index: number };
 
@@ -59,20 +66,44 @@ export interface SchemaProbe {
 const sameSchema = (a: SchemaVersion, b: SchemaVersion): boolean =>
   a.index === b.index && a.tag === b.tag && a.hash === b.hash;
 
+/** Valor de `spendCap` en el informe: el nivel de la 010 o `blocked` (012, R17). */
+export type SpendCapReport = SpendCapLevel | 'blocked';
+
+/** Motivos por los que la instancia responde solo con el contacto (012, R17). */
+const BLOCKING: ReadonlySet<ContactOnlyReason> = new Set([
+  'cap_disabled',
+  'model_unpriced',
+  'stt_unpriced',
+  'spend_unreadable',
+]);
+
 /**
- * Nivel del tope de gasto dentro de la transacción del sondeo, en un punto de guardado: si falla,
- * `null` y el informe sigue (010). La zona es la del negocio; sin negocio, UTC.
+ * Tope de gasto dentro de la transacción del sondeo, en un punto de guardado (010): el nivel, o
+ * `blocked` si la instancia responde solo con el contacto (012) o no puede leer el gasto. Si falla
+ * algo más, `null` y el informe sigue. La zona es la del negocio; sin negocio, UTC.
  */
-async function readSpendCap(client: pg.PoolClient): Promise<SpendCapLevel | null> {
+async function readSpendCap(
+  client: pg.PoolClient,
+  protection: ProtectionConfig,
+): Promise<SpendCapReport | null> {
   await client.query('SAVEPOINT spend_cap');
   try {
     const zone = await client.query<{ timezone: string }>(
       'select timezone from business where id = 1',
     );
     const db = drizzle(client, { schema: dbSchema }) as unknown as Db;
-    const state = await spendCapState(db, new Date(), zone.rows[0]?.timezone ?? 'UTC');
+    const state = await protectionState(db, {
+      ...protection,
+      now: new Date(),
+      timezone: zone.rows[0]?.timezone ?? 'UTC',
+    });
+    if (state.readFailure !== null) {
+      await client.query('ROLLBACK TO SAVEPOINT spend_cap');
+      return 'blocked';
+    }
     await client.query('RELEASE SAVEPOINT spend_cap');
-    return state.level;
+    if (state.contactOnly.some((r) => BLOCKING.has(r))) return 'blocked';
+    return state.spendCap?.level ?? null;
   } catch {
     await client.query('ROLLBACK TO SAVEPOINT spend_cap');
     return null;
@@ -90,6 +121,8 @@ export const PROBE_TIMEOUT_MS = 2000;
 export function createSchemaProbe(
   databaseUrl: string,
   folder = defaultMigrationsFolder,
+  /** Producción y modelos (012): deciden si el tope sale como `blocked`. */
+  protection: ProtectionConfig = defaultProtectionConfig(''),
 ): SchemaProbe {
   const pool = new pg.Pool({
     connectionString: databaseUrl,
@@ -121,7 +154,9 @@ export function createSchemaProbe(
             result = {
               kind: 'known',
               schema,
-              spendCap: sameSchema(schema, expected) ? await readSpendCap(client) : null,
+              spendCap: sameSchema(schema, expected)
+                ? await readSpendCap(client, protection)
+                : null,
             };
           }
         } catch (error) {
@@ -180,7 +215,7 @@ export async function buildHealthReport(deps: HealthReportDeps): Promise<HealthR
   const report = (
     status: HealthStatus,
     applied: SchemaRef | null,
-    spendCap: SpendCapLevel | null = null,
+    spendCap: SpendCapReport | null = null,
   ): HealthReport => ({
     status,
     coreVersion: base.coreVersion,
@@ -230,10 +265,12 @@ export function createInstanceHealth(options: {
   coreVersion: string;
   lifecycle?: Lifecycle;
   folder?: string;
+  /** Producción y modelos de la instancia (012); sin ella, como fuera de producción. */
+  protection?: ProtectionConfig;
 }): InstanceHealth {
   const lifecycle = options.lifecycle ?? createLifecycle();
   const folder = options.folder ?? defaultMigrationsFolder;
-  const probe = createSchemaProbe(options.databaseUrl, folder);
+  const probe = createSchemaProbe(options.databaseUrl, folder, options.protection);
   const expected = installedSchema(folder);
   return {
     lifecycle,

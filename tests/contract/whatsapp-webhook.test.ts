@@ -66,6 +66,40 @@ describe('webhook de WhatsApp: firma, alta y filtrado', () => {
       expect(res.headers['content-type']).toMatch(/^text\/plain/);
     });
 
+    it('012: el registro de la petición no guarda el token ni el reto (FR-033)', async () => {
+      const lines: string[] = [];
+      const logged = await buildTestApp(
+        t.db,
+        undefined,
+        {
+          whatsapp: testWhatsApp,
+          audioTranscription: false,
+          activityLog: log,
+          intake: { handle: async () => [] },
+          reader: { getSnapshot: () => Promise.reject(new Error('no se usa')) },
+          emergencyContactPhone: null,
+          clock: systemClock,
+        },
+        {},
+        lines,
+      );
+      const challenge = 'reto-unico-98765';
+      const res = await logged.inject({
+        method: 'GET',
+        url: `/webhooks/whatsapp?hub.mode=subscribe&hub.verify_token=${TEST_VERIFY_TOKEN}&hub.challenge=${challenge}`,
+      });
+      expect(res.statusCode).toBe(200);
+      await logged.close();
+      expect(lines.length).toBeGreaterThan(0);
+      expect(lines.join('\n')).toContain(
+        '/webhooks/whatsapp?hub.mode&hub.verify_token&hub.challenge',
+      );
+      for (const line of lines) {
+        expect(line).not.toContain(TEST_VERIFY_TOKEN);
+        expect(line).not.toContain(challenge);
+      }
+    });
+
     it.each([
       ['token incorrecto', `hub.mode=subscribe&hub.verify_token=otro&hub.challenge=1`],
       [
@@ -84,7 +118,11 @@ describe('webhook de WhatsApp: firma, alta y filtrado', () => {
       const res = await postWebhook(app, webhookPayload({ messages: [textMessage('hola')] }));
       expect(res.statusCode).toBe(200);
       expect(received).toHaveLength(1);
-      expect(received[0]?.[0]).toMatchObject({ kind: 'text', text: 'hola', channelUserId: '+34600111222' });
+      expect(received[0]?.[0]).toMatchObject({
+        kind: 'text',
+        text: 'hola',
+        channelUserId: '+34600111222',
+      });
     });
 
     it('sin firma → 401 y webhook_rejected{signature}', async () => {

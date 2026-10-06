@@ -17,7 +17,11 @@ function load(name: string): ConfigDocument {
 }
 
 const base = (): ConfigDocument => structuredClone(load('valid-full-with-alerts.json'));
-const OPTS: DiffOptions = { destinationWebChatEnabled: false, sameInstance: null, fileIncludesAlerts: false };
+const OPTS: DiffOptions = {
+  destinationWebChatEnabled: false,
+  sameInstance: null,
+  fileIncludesAlerts: false,
+};
 
 function diffOf(change: (doc: ConfigDocument) => void, opts: Partial<DiffOptions> = {}) {
   const before = base();
@@ -26,7 +30,8 @@ function diffOf(change: (doc: ConfigDocument) => void, opts: Partial<DiffOptions
   return diffConfig(before, after, { ...OPTS, ...opts });
 }
 
-const section = (d: ReturnType<typeof diffOf>, key: string) => d.sections.find((s) => s.section === key);
+const section = (d: ReturnType<typeof diffOf>, key: string) =>
+  d.sections.find((s) => s.section === key);
 
 describe('diffConfig', () => {
   it('documentos iguales → sin secciones', () => {
@@ -47,7 +52,9 @@ describe('diffConfig', () => {
     expect(services?.modified).toEqual([
       {
         label: '  servicio   A ',
-        fields: [{ field: 'name', fieldLabel: 'Nombre', before: 'Servicio A', after: '  servicio   A ' }],
+        fields: [
+          { field: 'name', fieldLabel: 'Nombre', before: 'Servicio A', after: '  servicio   A ' },
+        ],
       },
     ]);
   });
@@ -81,7 +88,14 @@ describe('diffConfig', () => {
     expect(section(d, 'faqs')?.modified).toEqual([
       {
         label: '¿Dudas?',
-        fields: [{ field: 'answer', fieldLabel: 'Respuesta', before: 'Segunda', after: 'Segunda cambiada' }],
+        fields: [
+          {
+            field: 'answer',
+            fieldLabel: 'Respuesta',
+            before: 'Segunda',
+            after: 'Segunda cambiada',
+          },
+        ],
       },
     ]);
   });
@@ -123,7 +137,12 @@ describe('diffConfig', () => {
       {
         label: 'lun',
         fields: [
-          { field: 'hours', fieldLabel: 'Franjas', before: 'lun 09:00–14:00, 16:00–20:00', after: 'lun 09:00–13:30, 16:00–20:00' },
+          {
+            field: 'hours',
+            fieldLabel: 'Franjas',
+            before: 'lun 09:00–14:00, 16:00–20:00',
+            after: 'lun 09:00–13:30, 16:00–20:00',
+          },
         ],
       },
     ]);
@@ -138,7 +157,12 @@ describe('diffConfig', () => {
       doc.business.email = null;
     });
     expect(section(d, 'policies')?.modified[0]?.fields).toEqual([
-      { field: 'cancellationNoticeMinutes', fieldLabel: 'Aviso para cancelar', before: '1 día', after: '2 días' },
+      {
+        field: 'cancellationNoticeMinutes',
+        fieldLabel: 'Aviso para cancelar',
+        before: '1 día',
+        after: '2 días',
+      },
     ]);
     expect(section(d, 'tone')?.removed).toEqual([{ label: 'Tono' }]);
     expect(section(d, 'business')?.modified[0]?.fields).toEqual([
@@ -195,12 +219,14 @@ describe('diffConfig', () => {
       addedOrigins: ['https://nueva.example.com'],
       capsChanged: true,
     });
-    expect(diffOf(() => undefined, { destinationWebChatEnabled: true }).highlights.webChat).toEqual({
-      destinationEnabled: true,
-      removedOrigins: [],
-      addedOrigins: [],
-      capsChanged: false,
-    });
+    expect(diffOf(() => undefined, { destinationWebChatEnabled: true }).highlights.webChat).toEqual(
+      {
+        destinationEnabled: true,
+        removedOrigins: [],
+        addedOrigins: [],
+        capsChanged: false,
+      },
+    );
   });
 });
 
@@ -210,7 +236,9 @@ describe('diffConfig: diseño del chat (011, data-model §6)', () => {
   const diff = (before: ConfigDocument, after: ConfigDocument) =>
     section(diffConfig(before, after, OPTS), 'chatDesign');
   const fields = (d: ReturnType<typeof diff>) =>
-    Object.fromEntries((d?.modified[0]?.fields ?? []).map((f) => [f.fieldLabel, [f.before, f.after]]));
+    Object.fromEntries(
+      (d?.modified[0]?.fields ?? []).map((f) => [f.fieldLabel, [f.before, f.after]]),
+    );
 
   it('mismo diseño → sin cambios', () => {
     expect(diff(withDesign(), withDesign())).toBeUndefined();
@@ -248,7 +276,9 @@ describe('diffConfig: diseño del chat (011, data-model §6)', () => {
     // Otra imagen PNG de 64 × 64: misma descripción, distinta huella.
     design(after).images.logo = {
       type: 'image/png',
-      data: readFileSync(join(import.meta.dirname, '..', '..', 'fixtures', 'images', 'animated.png')).toString('base64'),
+      data: readFileSync(
+        join(import.meta.dirname, '..', '..', 'fixtures', 'images', 'animated.png'),
+      ).toString('base64'),
     };
     const f = fields(diff(withDesign(), after));
     expect(f.Forma).toEqual(['Suave', 'Recta']);

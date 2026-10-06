@@ -15,6 +15,7 @@ Estados: especificada → planificada → en implementación → completada (o a
 | 009 | Versión visible y actualización escalonada | Núcleo (operación) | Completada | `009-version-health-rollout` | [spec](specs/009-version-health-rollout/spec.md) · [plan](specs/009-version-health-rollout/plan.md) · [tareas](specs/009-version-health-rollout/tasks.md) | 2026-10-01  |
 | 010 | Consumo y coste por instancia | Núcleo | Completada | `010-usage-cost-cap` | [spec](specs/010-usage-cost-cap/spec.md) · [plan](specs/010-usage-cost-cap/plan.md) · [tareas](specs/010-usage-cost-cap/tasks.md) | 2026-10-01  |
 | 011 | Diseño del chat web | Núcleo | Completada | `011-chat-design` | [spec](specs/011-chat-design/spec.md) · [plan](specs/011-chat-design/plan.md) · [tareas](specs/011-chat-design/tasks.md) | 2026-10-05  |
+| 012 | Protección frente a abuso y saturación | Núcleo | Completada | `012-abuse-protection` | [spec](specs/012-abuse-protection/spec.md) · [plan](specs/012-abuse-protection/plan.md) · [tareas](specs/012-abuse-protection/tasks.md) | 2026-10-06  |
 
 ---
 
@@ -210,6 +211,36 @@ y el tope no viajan en la exportación de la configuración; el consumo sí entr
 seguridad. Guía de validación manual:
 [specs/010-usage-cost-cap/quickstart.md](specs/010-usage-cost-cap/quickstart.md).
 
+## Protección frente a abuso y saturación
+
+Desde la feature 012, una instancia aguanta el abuso desde Internet sin credenciales:
+
+- **Tope de gasto obligatorio en producción**: con `NODE_ENV=production`, sin tope activo, sin
+  precio para `LLM_MODEL` (o, con audios, para `STT_MODEL` en «Precios de transcripción»), o con el
+  gasto ilegible, los clientes reciben solo el contacto del negocio, el negocio no se puede activar
+  y todas las pantallas lo avisan. Los audios se comprueban contra el tope antes de descargarse y
+  suman al gasto. WhatsApp tiene además un **tope diario** de respuestas con modelo (200 por
+  defecto). `GET /health` da `spendCap: "blocked"` en esos casos.
+- **Derivaciones acotadas** («Consumo» → «Límites de derivación»): derivaciones nuevas al día,
+  minutos entre avisos de una derivación (los mensajes del cliente se reenvían agrupados) y avisos
+  al negocio al día. En los avisos, el texto del cliente va entre comillas y con las direcciones
+  desactivadas. Lo que se queda sin reenviar al terminar una derivación aparece como «retenido».
+- **Rutas públicas**: límites por dirección (las IPv6 por su /64) en el frame, la hoja y las
+  imágenes del diseño antes de tocar la base de datos, y las lecturas del chat web en un pool de
+  conexiones propio y pequeño: una avalancha no deja sin servicio al panel ni a WhatsApp.
+- **Login del operador**: los fallos ajenos solo añaden un retardo creciente (nunca un bloqueo
+  global); el navegador desde el que ya entró el operador lo evita.
+- **Proveedores lentos**: plazos en todas las llamadas a la Graph API y al SMTP; un lote que falla
+  se reintenta a los 5 s, 30 s, 2 min y 10 min y al quinto fallo el cliente recibe una disculpa con
+  el contacto; ningún aviso ni respuesta se envía dos veces.
+- **Importación** con máximos por lista y como mucho 50 errores en pantalla; **enlaces**: el bot solo
+  pinta como enlace lo que el verificador ha comprobado; **registros** sin datos de errores ni
+  valores de la consulta; y la instancia **no arranca en producción** con secretos cortos, de
+  ejemplo, triviales o repetidos, ni sin `HEALTH_SECRET` (las mismas reglas que
+  `pnpm instance:check`).
+
+Guía de validación: [specs/012-abuse-protection/quickstart.md](specs/012-abuse-protection/quickstart.md).
+
 ## Exportar e importar la configuración
 
 La página **Exportar e importar** del panel (`/admin/config`, feature 008) lleva la configuración del
@@ -327,7 +358,7 @@ Contrato de las órdenes: [specs/007-instance-provisioning/contracts/instance-co
 | `BACKUP_RETENTION_DAYS` | No (`7`) | Días que se conservan las copias, de 1 a 30 |
 | `BACKUP_DAILY_TIME` | No (`03:00`) | Hora local del negocio (`HH:MM`) de la copia diaria |
 | `BACKUP_VERIFY_URL` | No (`DATABASE_URL`) | Servidor PostgreSQL donde `pnpm db:verify` crea la BD temporal (usuario con `CREATEDB`) |
-| `HEALTH_SECRET` | No para arrancar; `instance:check` la exige | Secreto de salud: 32 bytes aleatorios en hex (`openssl rand -hex 32`), distinto de `SESSION_SECRET`, `BACKUP_KEY` y del de otras instancias. Enviado como `Authorization: Bearer`, `GET /health` añade la versión del núcleo y del esquema; sin él solo responde el estado |
+| `HEALTH_SECRET` | En `production` (012); `instance:check` la exige | Secreto de salud: 32 bytes aleatorios en hex (`openssl rand -hex 32`), distinto de `SESSION_SECRET`, `BACKUP_KEY` y del de otras instancias. Enviado como `Authorization: Bearer`, `GET /health` añade la versión del núcleo y del esquema; sin él solo responde el estado |
 
 ## Comandos
 

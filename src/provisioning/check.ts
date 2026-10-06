@@ -1,19 +1,15 @@
 /**
  * Validación de un entorno antes de desplegar (007, US1, research R2 y R5,
  * contracts/check-result.md). Reutiliza el esquema del arranque (`checkEnv`) y añade las reglas
- * de alta: modo producción, `https`, calidad de cada secreto, repeticiones dentro del entorno y
- * comparación por huellas con el resto de instancias del inventario. Funciones puras: reciben el
+ * de alta: modo producción, `https` y comparación por huellas con el resto de instancias del
+ * inventario. La calidad de los secretos son las reglas del arranque en producción
+ * (`secret-rules.ts`, 012): errores en el perfil `production` y avisos en `testing`. Funciones puras: reciben el
  * entorno y el inventario ya leídos y nunca escriben (FR-009) ni muestran un valor (FR-007).
  */
 import { checkEnv, INSTANCE_ID_PATTERN, type EnvIssue } from '../config/env.js';
+import { checkSecrets, type SecretRule } from '../config/secret-rules.js';
 import type { EnvMap } from './env-file.js';
-import {
-  databaseIdentity,
-  databasePassword,
-  envFingerprints,
-  envValues,
-  type Fingerprint,
-} from './fingerprint.js';
+import { databaseIdentity, envFingerprints, type Fingerprint } from './fingerprint.js';
 import type { Instance, Inventory, InventoryAccess } from './inventory.js';
 import { CHECK_CATALOG, type CheckCode, type MessageContext } from './messages.js';
 import { secretQuality } from './secrets.js';
@@ -48,7 +44,10 @@ export function finding(code: CheckCode, ctx: MessageContext = {}): Finding {
     code,
     variable: ctx.variable ?? null,
     ...(ctx.otherInstance === undefined
-      ? {}
+      ? // 012: un secreto repetido dentro del mismo entorno nombra la otra variable.
+        ctx.otherVariable === undefined
+        ? {}
+        : { otherVariable: ctx.otherVariable }
       : {
           otherInstance: ctx.otherInstance,
           otherVariable: ctx.otherVariable,
@@ -107,6 +106,8 @@ function envVariable(inventoryVariable: string): string {
 /** Traduce una incidencia del núcleo por su regla, nunca por el texto del mensaje (R2). */
 function translateCoreIssue(issue: EnvIssue, profile: Profile, out: Findings): void {
   const variable = issue.variable;
+  // Las de los secretos las añade `secrets()` en los dos perfiles.
+  if (Object.hasOwn(SECRET_CODES, issue.rule)) return;
   switch (issue.rule) {
     case 'missing':
     case 'backup_required':
@@ -117,9 +118,6 @@ function translateCoreIssue(issue: EnvIssue, profile: Profile, out: Findings): v
     case 'whatsapp_incomplete':
     case 'smtp_incomplete':
     case 'llm_key_required':
-    case 'backup_key_equals_session':
-    case 'health_secret_equals_session':
-    case 'health_secret_equals_backup_key':
     case 'trust_proxy_all':
       out.error(issue.rule, { variable });
       return;
@@ -206,61 +204,46 @@ function isPublicHttps(value: string): boolean {
   }
 }
 
-/** Secretos a revisar: (variable del entorno, valor). Para la BD, su contraseña. */
-function secretEntries(env: EnvMap): Array<[string, string]> {
-  const entries: Array<[string, string]> = [];
-  for (const variable of [
-    'SESSION_SECRET',
-    'BACKUP_KEY',
-    'HEALTH_SECRET',
-    'OPERATOR_PASSWORD_HASH',
-    'ANTHROPIC_API_KEY',
-    'WHATSAPP_ACCESS_TOKEN',
-    'WHATSAPP_APP_SECRET',
-    'WHATSAPP_VERIFY_TOKEN',
-    'STT_API_KEY',
-  ]) {
-    const value = env[variable];
-    if (present(value)) entries.push([variable, value]);
+/** Código de `instance:check` de cada regla de los secretos. */
+const SECRET_CODES: Record<SecretRule, CheckCode> = {
+  too_short: 'secret_too_short',
+  example_value: 'secret_example_value',
+  trivial: 'secret_trivial',
+  reused: 'secret_reused',
+  health_secret_required: 'health_secret_required',
+};
+
+/**
+ * Las mismas incidencias de los secretos que el arranque en producción (FR-035): errores en el
+ * perfil `production`; avisos en `testing`, que no bloquean la instancia de pruebas.
+ */
+function secrets(env: EnvMap, profile: Profile, out: Findings): void {
+  for (const f of checkSecrets(env)) {
+    // La falta de HEALTH_SECRET ya es `missing` en los dos perfiles (009).
+    if (f.rule === 'health_secret_required') continue;
+    const ctx = {
+      variable: f.variable,
+      ...(f.otherVariable ? { otherVariable: f.otherVariable } : {}),
+    };
+    if (profile === 'production') out.error(SECRET_CODES[f.rule], ctx);
+    else out.warning(SECRET_CODES[f.rule], ctx);
   }
-  for (const previous of (env.BACKUP_KEYS_PREVIOUS ?? '').split(',')) {
-    if (present(previous)) entries.push(['BACKUP_KEYS_PREVIOUS', previous]);
-  }
-  const password = databasePassword(env.DATABASE_URL);
-  if (password !== null) entries.push(['DATABASE_URL', password]);
-  return entries;
 }
 
-function quality(env: EnvMap, out: Findings): void {
+/**
+ * Lo propio de la 007 que no es calidad de un secreto: el formato del hash del operador y el
+ * prefijo de la clave del modelo.
+ */
+function operatorHashAndKeyFormat(env: EnvMap, out: Findings): void {
   const reported = new Set(out.errors.map((e) => e.variable));
-  for (const [variable, value] of secretEntries(env)) {
-    // Si el núcleo ya rechaza la variable, no se repite como secreto débil.
-    if (reported.has(variable)) continue;
+  for (const variable of ['OPERATOR_PASSWORD_HASH', 'ANTHROPIC_API_KEY']) {
+    const value = env[variable];
+    if (!present(value) || reported.has(variable)) continue;
     for (const q of secretQuality(variable, value)) {
+      if (variable === 'ANTHROPIC_API_KEY' && q.code !== 'llm_key_format') continue;
       if (q.severity === 'error') out.error(q.code, { variable });
       else out.warning(q.code, { variable });
     }
-  }
-}
-
-/** Dos variables secretas del mismo entorno con el mismo valor (`secret_reused_within`). */
-function reusedWithin(env: EnvMap, out: Findings): void {
-  const seen = new Map<string, string>();
-  for (const v of envValues(env)) {
-    if (v.class !== 'secret') continue;
-    const first = seen.get(v.normalized);
-    if (first === undefined) {
-      seen.set(v.normalized, v.variable);
-      continue;
-    }
-    const pair = new Set([first, v.variable]);
-    // BACKUP_KEY = SESSION_SECRET y HEALTH_SECRET = cualquiera de los dos ya los detecta el núcleo.
-    if (pair.has('BACKUP_KEY') && pair.has('SESSION_SECRET')) continue;
-    if (pair.has('HEALTH_SECRET') && (pair.has('SESSION_SECRET') || pair.has('BACKUP_KEY'))) {
-      continue;
-    }
-    if (first === v.variable) continue;
-    out.error('secret_reused_within', { variable: envVariable(v.variable), otherVariable: first });
   }
 }
 
@@ -360,8 +343,8 @@ export function validate(
   const profile: Profile = registered?.status === 'testing' ? 'testing' : 'production';
 
   coherence(env, profile, out);
-  quality(env, out);
-  reusedWithin(env, out);
+  secrets(env, profile, out);
+  operatorHashAndKeyFormat(env, out);
 
   let compared = false;
   let comparedWith = 0;

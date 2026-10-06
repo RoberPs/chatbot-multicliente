@@ -19,6 +19,12 @@ const FORBIDDEN = [
   /\bmec[aá]nic/i,
 ];
 
+/**
+ * Datos de registros externos copiados tal cual (012): la lista de dominios de primer nivel de
+ * IANA tiene `.clinic`, `.dental` o `.salon`, que no son nombres de un sector del núcleo.
+ */
+const EXTERNAL_DATA = new Set(['conversation/tlds.ts']);
+
 function files(dir: string): string[] {
   return readdirSync(dir).flatMap((name) => {
     const path = join(dir, name);
@@ -86,11 +92,26 @@ describe('neutralidad sectorial del código', () => {
     expect(paths).toContain('admin/views/chat-design.js');
     expect(paths).toContain('admin/views/chat-design/preview.eta');
     expect(paths).toContain('admin/views/chat-design/reset.eta');
+    // 012: protección frente a abuso (dominio, regla de enlaces y clave por dirección).
+    expect(paths).toContain('usage/protection.ts');
+    expect(paths).toContain('usage/transcription-cost.ts');
+    expect(paths).toContain('usage/whatsapp-usage.ts');
+    expect(paths).toContain('conversation/link-rule.ts');
+    expect(paths).toContain('channels/client-key.ts');
+    expect(paths).toContain('config/secret-rules.ts');
+  });
+
+  it('el fichero de datos externos solo contiene la lista de dominios de IANA', () => {
+    const code = readFileSync(join(SRC, 'conversation', 'tlds.ts'), 'utf8')
+      .split('\n')
+      .filter((line) => !/^\s*'[a-z0-9\- ]+'(?: \+|;)$/.test(line));
+    for (const line of code) expect(FORBIDDEN.some((re) => re.test(line)), line).toBe(false);
   });
 
   it('ningún fichero de src/ contiene nombres de sector o cliente', () => {
     const hits: string[] = [];
     for (const file of files(SRC)) {
+      if (EXTERNAL_DATA.has(relative(SRC, file).replaceAll('\\', '/'))) continue;
       const lines = readFileSync(file, 'utf8').split('\n');
       lines.forEach((line, i) => {
         if (FORBIDDEN.some((re) => re.test(line)))
