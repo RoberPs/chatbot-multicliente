@@ -4,9 +4,14 @@
  * creación paso a paso. Nunca se borra una base de datos: el único deshacer es retirar el usuario
  * recién creado si falla la creación de la base de datos (FR-019, FR-023). Los errores de `pg` se
  * traducen a códigos propios: su texto podría llevar la URL de administración (FR-020).
+ *
+ * 013 (research R3): la URL de administración se clasifica con la misma regla que
+ * `instance:check`; la `DATABASE_URL` generada lleva `sslmode=verify-full` por defecto con un
+ * servidor remoto y, si se pide, el `sslrootcert` del contenedor.
  */
 import { createHash, createHmac, pbkdf2Sync } from 'node:crypto';
 import pg from 'pg';
+import { classifyDatabaseUrl, isLocalHost } from '../config/database-url.js';
 import type { DatabaseIdentity } from './fingerprint.js';
 import { cryptoRandom, secretQuality, type RandomSource } from './secrets.js';
 
@@ -93,23 +98,32 @@ export interface AdminTarget {
   host: string;
   port: number;
   sslmode: string | null;
+  /** Ruta del equipo del operador: sirve para la conexión de prueba, nunca para el entorno. */
+  sslrootcert: string | null;
+  /** Clasificación común (`classifyDatabaseUrl`). */
+  local: boolean;
+  verifiedTls: boolean;
 }
 
-/** Servidor, puerto y `sslmode` de la URL de administración, o `null` si no es válida. */
+/** Servidor, puerto, TLS y clasificación de la URL de administración, o `null` si no es válida. */
 export function parseAdminUrl(adminUrl: string): AdminTarget | null {
+  const c = classifyDatabaseUrl(adminUrl);
+  if (c.kind !== 'ok') return null;
   let url: URL;
   try {
     url = new URL(adminUrl.trim());
   } catch {
     return null;
   }
-  if ((url.protocol !== 'postgres:' && url.protocol !== 'postgresql:') || url.hostname === '') {
-    return null;
-  }
+  // Un socket no sirve: la conexión de prueba y la DATABASE_URL necesitan un servidor.
+  if (url.hostname === '') return null;
   return {
     host: url.hostname.toLowerCase(),
     port: url.port === '' ? 5432 : Number(url.port),
     sslmode: url.searchParams.get('sslmode'),
+    sslrootcert: c.caFile,
+    local: c.local,
+    verifiedTls: c.verifiedTls,
   };
 }
 
@@ -126,6 +140,10 @@ export function buildDatabaseUrl(input: {
   user: string;
   password: string;
   sslmode?: string | null;
+  /** Ruta del certificado de la autoridad dentro del contenedor (`--sslrootcert`). */
+  sslrootcert?: string | null;
+  /** Sin `sslmode` y con un servidor remoto, `sslmode=verify-full` (013). */
+  defaultVerifyFull?: boolean;
 }): string {
   const url = new URL('postgres://placeholder');
   url.hostname = input.host;
@@ -133,7 +151,11 @@ export function buildDatabaseUrl(input: {
   url.username = encodeURIComponent(input.user);
   url.password = encodeURIComponent(input.password);
   url.pathname = `/${encodeURIComponent(input.database)}`;
-  if (input.sslmode) url.searchParams.set('sslmode', input.sslmode);
+  const sslmode =
+    input.sslmode ??
+    (input.defaultVerifyFull === true && !isLocalHost(input.host) ? 'verify-full' : null);
+  if (sslmode) url.searchParams.set('sslmode', sslmode);
+  if (input.sslrootcert) url.searchParams.set('sslrootcert', input.sslrootcert);
   // `new URL` omite el puerto por defecto de esquemas conocidos; postgres no lo es.
   return url.toString();
 }
@@ -195,8 +217,12 @@ export function translatePgError(error: unknown, step: DbFailure['step']): DbFai
 
 class InjectedFailure extends Error {}
 
-/** URL del usuario nuevo con el servidor de administración (para la prueba de conexión). */
-function probeUrl(adminUrl: string, names: DatabaseNames, password: string): string {
+/**
+ * URL del usuario nuevo con el servidor de administración (para la prueba de conexión). Se
+ * ejecuta en el equipo del operador: conserva `sslmode` y `sslrootcert` de la URL de
+ * administración (R3).
+ */
+export function probeUrl(adminUrl: string, names: DatabaseNames, password: string): string {
   const target = parseAdminUrl(adminUrl);
   return buildDatabaseUrl({
     host: target?.host ?? 'localhost',
@@ -205,6 +231,7 @@ function probeUrl(adminUrl: string, names: DatabaseNames, password: string): str
     user: names.user,
     password,
     sslmode: target?.sslmode ?? null,
+    sslrootcert: target?.sslrootcert ?? null,
   });
 }
 

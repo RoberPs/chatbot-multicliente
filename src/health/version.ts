@@ -24,6 +24,14 @@ export function extractSemanticVersion(text: string): string | null {
   return SEMVER_INSIDE.exec(text)?.[0] ?? null;
 }
 
+/** Error del arranque con texto propio y sin datos: se muestra tal cual (013). */
+export class CoreVersionError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'CoreVersionError';
+  }
+}
+
 function readPackage(path: string): { name?: unknown; version?: unknown } | null {
   try {
     return JSON.parse(readFileSync(path, 'utf8')) as { name?: unknown; version?: unknown };
@@ -45,7 +53,7 @@ export function readCoreVersion(
     if (pkg?.name === CORE_PACKAGE) {
       const version = typeof pkg.version === 'string' ? pkg.version : '';
       if (!isSemanticVersion(version)) {
-        throw new Error(
+        throw new CoreVersionError(
           `La versión del núcleo en package.json no es una versión semántica (X.Y.Z): «${version}»`,
         );
       }
@@ -53,7 +61,9 @@ export function readCoreVersion(
     }
     const parent = dirname(dir);
     if (parent === dir) {
-      throw new Error('No se encuentra el package.json del núcleo: no se puede saber su versión');
+      throw new CoreVersionError(
+        'No se encuentra el package.json del núcleo: no se puede saber su versión',
+      );
     }
     dir = parent;
   }

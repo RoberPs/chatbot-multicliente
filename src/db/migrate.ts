@@ -12,6 +12,11 @@ import {
   pendingMigrations,
 } from '../backup/schema-version.js';
 import { createBackup } from '../backup/service.js';
+import {
+  assertCaReadable,
+  DatabaseConfigError,
+  describeDatabaseError,
+} from '../config/database-url.js';
 import { loadDotEnvIfPresent, loadEnv } from '../config/env.js';
 import type { LoggerLike } from '../conversation/activity-log.js';
 import type { Clock } from '../conversation/ports.js';
@@ -127,6 +132,14 @@ export async function migrateMain(io: MigrateIO): Promise<number> {
     io.err((error as Error).message);
     return 2;
   }
+  // 013: antes de crear ningún cliente; el error de `pg` llevaría la ruta.
+  try {
+    assertCaReadable(env.DATABASE_URL, 'DATABASE_URL');
+  } catch (error) {
+    if (!(error instanceof DatabaseConfigError)) throw error;
+    io.err(error.describe());
+    return 2;
+  }
   const backup = backupConfigFromEnv(env);
   try {
     await runMigrations(
@@ -142,7 +155,9 @@ export async function migrateMain(io: MigrateIO): Promise<number> {
       io.err(error.message);
       return 1;
     }
-    throw error;
+    // Nunca el texto de `pg` o de Node: puede llevar el host o los nombres del certificado.
+    io.err(describeDatabaseError(error, 'DATABASE_URL').describe());
+    return 1;
   }
   io.out('Migraciones aplicadas');
   return 0;

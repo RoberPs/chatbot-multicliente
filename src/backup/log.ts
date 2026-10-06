@@ -53,6 +53,10 @@ export type BackupEvent =
       failure?: RestoreFailureCode;
       schema?: string;
       durationMs: number;
+      /** Limpieza de bases temporales huérfanas (013): recuentos, nunca nombres. */
+      orphansListed: boolean;
+      orphansRemoved: number;
+      orphansFailed: number;
     };
 
 export type BackupEventName = BackupEvent['event'];
@@ -85,7 +89,16 @@ const catalog: Record<BackupEventName, { level: Level; fields: readonly string[]
   restore_rejected: { level: 'warn', fields: ['file', 'failure'] },
   verify_completed: {
     level: 'info',
-    fields: ['file', 'restorable', 'failure', 'schema', 'durationMs'],
+    fields: [
+      'file',
+      'restorable',
+      'failure',
+      'schema',
+      'durationMs',
+      'orphansListed',
+      'orphansRemoved',
+      'orphansFailed',
+    ],
   },
 };
 

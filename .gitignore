@@ -16,3 +16,8 @@ Thumbs.db
 *.cbak
 *.cbak.partial
 backups/
+
+# Certificados y claves privadas (013): nunca en el repositorio
+*.pem
+*.key
+*.p12

@@ -144,6 +144,7 @@ const USAGE = [
   '      --currency <XXX> --emergency-phone <tel> [--whatsapp] [--backup-dir <ruta>]',
   '      [--out <ruta>] [--inventory <ruta>] [--create-inventory]',
   '  db <id> [--env <fichero>] [--host <servidor>] [--port <puerto>] [--print-sql]',
+  '     [--sslrootcert <ruta>]',
   '  list [--json]',
   '  register <entorno> --client <nombre> [--status active|testing] [--create-inventory]',
   '  sync <id> <entorno>',
@@ -398,9 +399,13 @@ async function newCommand(argv: string[], { io, deps }: Context): Promise<number
 // ---------------------------------------------------------------------------
 
 const DB_USAGE =
-  'Uso: pnpm instance:db <id> [--env <fichero>] [--host <servidor>] [--port <puerto>] [--print-sql]';
+  'Uso: pnpm instance:db <id> [--env <fichero>] [--host <servidor>] [--port <puerto>] [--print-sql] [--sslrootcert <ruta>]';
 
-/** URL de administración: de `INSTANCE_DB_ADMIN_URL` o pedida sin eco; solo en memoria (FR-020). */
+/**
+ * URL de administración: de `INSTANCE_DB_ADMIN_URL` o pedida sin eco; solo en memoria (FR-020).
+ * Con un servidor remoto exige TLS verificado antes de abrir el inventario o conectar: por esa
+ * conexión viaja la credencial de administración (013, FR-007). Igual en cualquier perfil.
+ */
 async function adminUrlFrom(io: InstanceIO): Promise<string> {
   const fromEnv = io.env.INSTANCE_DB_ADMIN_URL?.trim();
   let url = fromEnv === undefined || fromEnv === '' ? undefined : fromEnv;
@@ -412,7 +417,9 @@ async function adminUrlFrom(io: InstanceIO): Promise<string> {
       )
     ).trim();
   }
-  if (parseAdminUrl(url) === null) throw new ProvisioningError('admin_url_invalid');
+  const target = parseAdminUrl(url);
+  if (target === null) throw new ProvisioningError('admin_url_invalid');
+  if (!target.local && !target.verifiedTls) throw new ProvisioningError('admin_url_tls_required');
   return url;
 }
 
@@ -482,7 +489,7 @@ const pgIdent = (name: string) => `"${name.replaceAll('"', '""')}"`;
 async function dbCommand(argv: string[], { io, deps }: Context): Promise<number> {
   const args = parseArgs(argv, {
     flags: ['--print-sql'],
-    options: ['--env', '--host', '--port', '--inventory'],
+    options: ['--env', '--host', '--port', '--sslrootcert', '--inventory'],
     positional: 1,
   });
   if (!args) return usage(io, DB_USAGE);
@@ -546,6 +553,9 @@ async function dbCommand(argv: string[], { io, deps }: Context): Promise<number>
         user: names.user,
         password,
         sslmode: admin?.sslmode ?? null,
+        // Ruta dentro del contenedor; la de la URL de administración es del equipo del operador.
+        sslrootcert: args.options.get('--sslrootcert') ?? null,
+        defaultVerifyFull: true,
       });
       const identity = { host, port: dbPort, name: names.database, user: names.user };
 
@@ -884,9 +894,7 @@ async function versionsCommand(argv: string[], { io, deps }: Context): Promise<n
     }
   }
   const target = await openForWrite(io, path, { allowed: false, flag: false });
-  const result = await mutateInventory(target, deps, (current) =>
-    applyAnnotations(current, plan),
-  );
+  const result = await mutateInventory(target, deps, (current) => applyAnnotations(current, plan));
   if (result.applied.length > 0) say(`Anotado en el inventario: ${result.applied.join(', ')}.`);
   for (const id of result.skipped) {
     say(`  ${id}: su anotación cambió durante la consulta; no se ha anotado. Repite la orden.`);

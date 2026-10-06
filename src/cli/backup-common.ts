@@ -8,6 +8,11 @@ import { createInterface } from 'node:readline/promises';
 import { pathToFileURL } from 'node:url';
 import pg from 'pg';
 import type { BackupFailureCode, RestoreFailure, RestoreFailureCode } from '../backup/errors.js';
+import {
+  DatabaseConfigError,
+  type DatabaseConfigReason,
+  type DatabaseUrlVariable,
+} from '../config/database-url.js';
 import { loadDotEnvIfPresent, loadEnv, type Env } from '../config/env.js';
 import type { LoggerLike } from '../conversation/activity-log.js';
 
@@ -141,9 +146,11 @@ export function formatLocal(iso: string, timezone: string): string {
 
 /** Zona horaria del negocio leída de la BD; si no se puede, la de la instancia. */
 export async function businessTimezone(url: string, fallback: string): Promise<string> {
-  const client = new pg.Client({ connectionString: url });
-  client.on('error', () => undefined);
+  let client: pg.Client | null = null;
   try {
+    // Dentro del try: `pg` lee `sslrootcert` al construir el cliente y puede lanzar.
+    client = new pg.Client({ connectionString: url });
+    client.on('error', () => undefined);
     await client.connect();
     const result = await client.query<{ timezone: string }>(
       'select timezone from business where id = 1',
@@ -152,7 +159,7 @@ export async function businessTimezone(url: string, fallback: string): Promise<s
   } catch {
     return fallback;
   } finally {
-    await client.end().catch(() => undefined);
+    await client?.end().catch(() => undefined);
   }
 }
 
@@ -164,6 +171,21 @@ export function printJson(io: CliIO, value: unknown): void {
 // Mensajes
 // ---------------------------------------------------------------------------
 
+/** Motivo de `DatabaseConfigError` de cada código de TLS de las copias (013). */
+const TLS_REASONS = {
+  db_ca_unreadable: 'ca_unreadable',
+  db_tls_untrusted: 'tls_untrusted',
+  db_tls_unsupported: 'tls_unsupported',
+} as const satisfies Record<string, DatabaseConfigReason>;
+
+/** Mensaje y acción de un fallo de TLS, con la variable de la URL que usa la orden. */
+export function tlsFailureMessage(
+  code: keyof typeof TLS_REASONS,
+  variable: DatabaseUrlVariable,
+): string {
+  return new DatabaseConfigError(TLS_REASONS[code], variable).describe();
+}
+
 export const backupFailureMessages: Record<BackupFailureCode, string> = {
   key_missing:
     'Falta BACKUP_KEY. Genérala con openssl rand -hex 32 y guárdala fuera del directorio de copias.',
@@ -174,6 +196,9 @@ export const backupFailureMessages: Record<BackupFailureCode, string> = {
   busy: 'Ya hay una copia en curso en esta instancia; inténtalo cuando termine.',
   db_error: 'No se pudo leer la base de datos de la instancia.',
   io_error: 'Error al escribir la copia.',
+  db_ca_unreadable: tlsFailureMessage('db_ca_unreadable', 'DATABASE_URL'),
+  db_tls_untrusted: tlsFailureMessage('db_tls_untrusted', 'DATABASE_URL'),
+  db_tls_unsupported: tlsFailureMessage('db_tls_unsupported', 'DATABASE_URL'),
 };
 
 /** Motivo corto, en minúscula, para `NO RESTAURABLE: <motivo> (<código>)`. */
@@ -191,9 +216,16 @@ export const restoreFailureReasons: Record<RestoreFailureCode, string> = {
   count_mismatch: 'los recuentos cargados no coinciden con la copia',
   db_error: 'error de la base de datos al cargarla',
   verify_db_unavailable: 'no se pudo crear la base de datos temporal',
+  db_ca_unreadable: 'no se puede leer el certificado de la autoridad (sslrootcert)',
+  db_tls_untrusted: 'el certificado del servidor de la base de datos no es de confianza',
+  db_tls_unsupported: 'el servidor de la base de datos no acepta TLS',
 };
 
-export function restoreFailureMessage(failure: RestoreFailure): string {
+/** `variable`: la URL que usa la orden (`BACKUP_VERIFY_URL` en `db:verify`). */
+export function restoreFailureMessage(
+  failure: RestoreFailure,
+  variable: DatabaseUrlVariable = 'DATABASE_URL',
+): string {
   const d = failure.details;
   switch (failure.code) {
     case 'schema_newer':
@@ -222,6 +254,10 @@ export function restoreFailureMessage(failure: RestoreFailure): string {
       return 'Error de la base de datos al restaurar. No se ha modificado nada.';
     case 'verify_db_unavailable':
       return 'No se pudo crear la base de datos temporal: BACKUP_VERIFY_URL necesita un servidor accesible y un usuario con CREATEDB.';
+    case 'db_ca_unreadable':
+    case 'db_tls_untrusted':
+    case 'db_tls_unsupported':
+      return tlsFailureMessage(failure.code, variable);
   }
 }
 

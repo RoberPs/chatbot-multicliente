@@ -5,7 +5,15 @@
  * inventario. La calidad de los secretos son las reglas del arranque en producción
  * (`secret-rules.ts`, 012): errores en el perfil `production` y avisos en `testing`. Funciones puras: reciben el
  * entorno y el inventario ya leídos y nunca escriben (FR-009) ni muestran un valor (FR-007).
+ *
+ * Despliegue seguro (013, contracts/check-rules.md): `TRUST_PROXY` con `https` y TLS verificado
+ * en las URL de base de datos remotas, con la misma clasificación que `instance:db` y el arranque.
  */
+import {
+  classifyDatabaseUrl,
+  requiresVerifiedTls,
+  type DatabaseUrlClassification,
+} from '../config/database-url.js';
 import { checkEnv, INSTANCE_ID_PATTERN, type EnvIssue } from '../config/env.js';
 import { checkSecrets, type SecretRule } from '../config/secret-rules.js';
 import type { EnvMap } from './env-file.js';
@@ -88,7 +96,8 @@ class Findings {
 const present = (value: string | undefined): value is string =>
   value !== undefined && value.trim() !== '';
 
-const LOCAL_HOSTS = new Set(['localhost', '127.0.0.1', '::1', '[::1]']);
+/** Hosts que no pueden ser la URL pública de una instancia. */
+const LOCAL_PUBLIC_HOSTS = new Set(['localhost', '127.0.0.1', '::1', '[::1]']);
 
 /** Variable del entorno de la que sale un valor del inventario. */
 function envVariable(inventoryVariable: string): string {
@@ -164,17 +173,16 @@ function coherence(env: EnvMap, profile: Profile, out: Findings): void {
     if (present(env.PUBLIC_BASE_URL) && !isPublicHttps(env.PUBLIC_BASE_URL)) {
       out.error('public_url_not_https', { variable: 'PUBLIC_BASE_URL' });
     }
-    const proxy = env.TRUST_PROXY?.trim() ?? '';
-    if (proxy === '' || proxy === 'false')
-      out.warning('trust_proxy_empty', { variable: 'TRUST_PROXY' });
   }
 
-  const db = databaseIdentity(env.DATABASE_URL);
-  if (db) {
-    if (db.user === 'postgres') out.warning('database_superuser', { variable: 'DATABASE_URL' });
-    if (profile === 'production' && LOCAL_HOSTS.has(db.host)) {
-      out.warning('database_localhost', { variable: 'DATABASE_URL' });
-    }
+  deployment(env, profile, out);
+
+  if (databaseIdentity(env.DATABASE_URL)?.user === 'postgres') {
+    out.warning('database_superuser', { variable: 'DATABASE_URL' });
+  }
+  const main = present(env.DATABASE_URL) ? classifyDatabaseUrl(env.DATABASE_URL) : null;
+  if (profile === 'production' && main?.kind === 'ok' && main.local) {
+    out.warning('database_localhost', { variable: 'DATABASE_URL' });
   }
 
   if (!present(env.ANTHROPIC_API_KEY) && !out.hasError('ANTHROPIC_API_KEY')) {
@@ -195,10 +203,53 @@ function coherence(env: EnvMap, profile: Profile, out: Findings): void {
   }
 }
 
+/** URL de base de datos que revisa la regla de TLS, además de `DATABASE_URL`. */
+const OPTIONAL_DATABASE_URLS = ['BACKUP_VERIFY_URL', 'INSTANCE_DB_ADMIN_URL'] as const;
+
+/**
+ * Reglas de despliegue (013): error en `production` y advertencia en `testing`, salvo una URL
+ * opcional mal formada, que es error en los dos. No lee el fichero de `sslrootcert`: su ruta es la
+ * del contenedor.
+ */
+function deployment(env: EnvMap, profile: Profile, out: Findings): void {
+  const flag = (code: 'trust_proxy_empty' | 'database_tls_required', variable: string) => {
+    if (profile === 'production') out.error(code, { variable });
+    else out.warning(code, { variable });
+  };
+
+  const proxy = env.TRUST_PROXY?.trim() ?? '';
+  if (isHttps(env.PUBLIC_BASE_URL) && (proxy === '' || proxy === 'false')) {
+    flag('trust_proxy_empty', 'TRUST_PROXY');
+  }
+
+  // Una DATABASE_URL no interpretable ya la señala el esquema del arranque: no se duplica.
+  const urls: Array<[string, DatabaseUrlClassification]> = [];
+  if (present(env.DATABASE_URL)) urls.push(['DATABASE_URL', classifyDatabaseUrl(env.DATABASE_URL)]);
+  for (const variable of OPTIONAL_DATABASE_URLS) {
+    const value = env[variable];
+    if (!present(value)) continue;
+    const c = classifyDatabaseUrl(value);
+    if (c.kind === 'invalid') out.error('database_url_invalid', { variable });
+    else urls.push([variable, c]);
+  }
+  for (const [variable, c] of urls) {
+    if (requiresVerifiedTls(c)) flag('database_tls_required', variable);
+  }
+}
+
+function isHttps(value: string | undefined): boolean {
+  if (!present(value)) return false;
+  try {
+    return new URL(value.trim()).protocol === 'https:';
+  } catch {
+    return false;
+  }
+}
+
 function isPublicHttps(value: string): boolean {
   try {
     const url = new URL(value.trim());
-    return url.protocol === 'https:' && !LOCAL_HOSTS.has(url.hostname);
+    return url.protocol === 'https:' && !LOCAL_PUBLIC_HOSTS.has(url.hostname);
   } catch {
     return false;
   }

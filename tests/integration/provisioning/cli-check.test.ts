@@ -1,3 +1,4 @@
+import { randomBytes } from 'node:crypto';
 import { readdir, readFile, stat, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
@@ -6,6 +7,7 @@ import type { CheckResult } from '../../../src/provisioning/check.js';
 import {
   collectSecrets,
   containsAny,
+  instanceFromEnv,
   instanceIO,
   OTHER_INVENTORY_KEY_HEX,
   sampleInventory,
@@ -166,4 +168,98 @@ describe('pnpm instance:check (US1)', () => {
     expect(await snapshot(ws.inventoryPath)).toEqual(invBefore);
     expect((await readdir(ws.dir)).some((n) => n.endsWith('.lock'))).toBe(false);
   });
+});
+
+describe('pnpm instance:check: despliegue seguro (013, quickstart §2)', () => {
+  const user = 'usuario_secreto_bd';
+  // Aleatoria: una contraseña fija de ejemplo daría un error de calidad del secreto.
+  const password = randomBytes(24).toString('base64url');
+  const remote = (host: string, query = '') =>
+    `postgres://${user}:${password}@${host}:5432/base_secreta${query}`;
+
+  /** Cada cambio sobre un `prod.env` APTO y el hallazgo que debe dar (o `null`). */
+  const cases: Array<[string, Record<string, string | undefined>, string | null]> = [
+    ['TRUST_PROXY vacío', { TRUST_PROXY: '' }, 'trust_proxy_empty:TRUST_PROXY'],
+    ['sin PUBLIC_BASE_URL', { PUBLIC_BASE_URL: undefined }, 'missing:PUBLIC_BASE_URL'],
+    [
+      'DATABASE_URL remota sin TLS',
+      { DATABASE_URL: remote('db.interna') },
+      'database_tls_required:DATABASE_URL',
+    ],
+    [
+      'DATABASE_URL con sslmode=require',
+      { DATABASE_URL: remote('db.interna', '?sslmode=require') },
+      'database_tls_required:DATABASE_URL',
+    ],
+    [
+      'DATABASE_URL con verify-full',
+      { DATABASE_URL: remote('db.interna', '?sslmode=verify-full') },
+      null,
+    ],
+    ['DATABASE_URL en 127.0.0.1', { DATABASE_URL: remote('127.0.0.1') }, null],
+    [
+      'BACKUP_VERIFY_URL remota sin TLS',
+      { BACKUP_VERIFY_URL: remote('10.0.0.5') },
+      'database_tls_required:BACKUP_VERIFY_URL',
+    ],
+    [
+      'INSTANCE_DB_ADMIN_URL remota sin TLS',
+      { INSTANCE_DB_ADMIN_URL: remote('10.0.0.5') },
+      'database_tls_required:INSTANCE_DB_ADMIN_URL',
+    ],
+  ];
+
+  const withChange = (change: Record<string, string | undefined>) => {
+    const merged = { ...productionEnv('demo-09'), ...change };
+    return Object.fromEntries(
+      Object.entries(merged).filter((e): e is [string, string] => e[1] !== undefined),
+    );
+  };
+  const keys = (findings: CheckResult['errors']) =>
+    findings.map((f) => `${f.code}:${f.variable ?? '-'}`);
+  const expectClean = (output: string) => {
+    for (const forbidden of ['db.interna', '10.0.0.5', user, password, 'base_secreta']) {
+      expect(output).not.toContain(forbidden);
+    }
+  };
+
+  it.each(cases)('%s (producción)', async (_name, change, expected) => {
+    const path = await ws.writeEnv('prod.env', withChange(change));
+    const text = instanceIO(env());
+    const code = await main(['check', path], text, testDeps());
+    const json = instanceIO(env());
+    expect(await main(['check', path, '--json'], json, testDeps())).toBe(code);
+    const result = JSON.parse(json.stdout.join('\n')) as CheckResult;
+    if (expected === null) {
+      expect(code).toBe(0);
+      expect(keys(result.errors).some((k) => k.startsWith('database_tls_required'))).toBe(false);
+    } else {
+      expect(code).toBe(1);
+      expect(keys(result.errors)).toContain(expected);
+      expect(text.stdout.join('\n')).toContain(`✗ ${expected.split(':')[1] ?? ''}:`);
+    }
+    if (change.DATABASE_URL?.includes('127.0.0.1')) {
+      expect(keys(result.warnings)).toContain('database_localhost:DATABASE_URL');
+    }
+    expectClean(text.all());
+    expectClean(json.all());
+  });
+
+  it.each(cases.filter(([, , e]) => e !== null && !e.startsWith('missing')))(
+    '%s con una instancia de pruebas → advertencia y salida 0',
+    async (_name, change, expected) => {
+      const changed = withChange(change);
+      const inv = structuredClone(sample.inventory);
+      inv.instances.push(instanceFromEnv(changed, { status: 'testing' }));
+      await ws.writeInventory(inv);
+      const path = await ws.writeEnv('pruebas.env', changed);
+      const io = instanceIO(env());
+      expect(await main(['check', path, '--json'], io, testDeps())).toBe(0);
+      const result = JSON.parse(io.stdout.join('\n')) as CheckResult;
+      expect(result.profile).toBe('testing');
+      expect(keys(result.warnings)).toContain(expected);
+      expect(keys(result.errors)).not.toContain(expected);
+      expectClean(io.all());
+    },
+  );
 });

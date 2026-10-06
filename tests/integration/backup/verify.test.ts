@@ -74,6 +74,9 @@ describe('comprobación de una copia', () => {
         restorable: true,
         schema: CURRENT_SCHEMA,
         durationMs: report.durationMs,
+        orphansListed: true,
+        orphansRemoved: report.orphans.removed,
+        orphansFailed: report.orphans.failed,
       },
     ]);
   });

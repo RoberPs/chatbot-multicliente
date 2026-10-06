@@ -51,7 +51,7 @@ export function validProductionEnv(seed = 12): Record<string, string> {
     INSTANCE_ID: 'demo-012',
     PUBLIC_BASE_URL: 'https://chat.demo-012.test',
     TRUST_PROXY: '1',
-    DATABASE_URL: `postgres://demo_012:${dbPassword}@db.demo-012.test:5432/demo_012`,
+    DATABASE_URL: `postgres://demo_012:${dbPassword}@db.demo-012.test:5432/demo_012?sslmode=verify-full`,
     OPERATOR_USER: 'operador',
     OPERATOR_PASSWORD_HASH: FIXTURE_OPERATOR_HASH,
     SESSION_SECRET: generateHexSecret('SESSION_SECRET', random),

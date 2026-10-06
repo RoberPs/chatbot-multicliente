@@ -28,7 +28,7 @@ pnpm db:verify <fichero>           # restaurar en una BD temporal y comprobar
 pnpm db:backups [--prune]          # listar copias y aplicar la retención
 # Alta de instancias (fuera del repo; INSTANCE_INVENTORY = ruta del inventario, INSTANCE_INVENTORY_KEY = su clave)
 pnpm instance:new --id <id> …      # entorno con secretos nuevos + alta en el inventario (terminal)
-pnpm instance:db <id>              # BD y usuario propios (INSTANCE_DB_ADMIN_URL o --print-sql)
+pnpm instance:db <id>              # BD y usuario propios (INSTANCE_DB_ADMIN_URL o --print-sql) [--sslrootcert <ruta>]
 pnpm instance:check <entorno>      # apto/no apto antes de desplegar [--json]
 pnpm instance:list                 # inventario; también register, sync, update, verified, retire
 pnpm instance:versions             # versión real de cada instancia vía /health [--only, --json, --annotate]

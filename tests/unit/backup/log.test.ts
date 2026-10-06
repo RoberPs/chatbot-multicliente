@@ -53,6 +53,9 @@ const events: BackupEvent[] = [
     restorable: true,
     schema: '0004_handoff',
     durationMs: 9,
+    orphansListed: true,
+    orphansRemoved: 2,
+    orphansFailed: 1,
   },
 ];
 
@@ -94,6 +97,34 @@ describe('registros de las copias', () => {
       tables: [{ name: 'business', rows: 1, extra: 'x' } as never],
     });
     expect(lines[0]?.obj.tables).toEqual([{ name: 'business', rows: 1 }]);
+  });
+
+  it('verify_completed lleva los recuentos de huérfanas y ningún nombre de base (013)', () => {
+    const { logger, lines } = capture();
+    createBackupLog(logger).log({
+      event: 'verify_completed',
+      file: 'f.cbak',
+      restorable: false,
+      failure: 'verify_db_unavailable',
+      durationMs: 3,
+      orphansListed: false,
+      orphansRemoved: 0,
+      orphansFailed: 0,
+      database: 'verify_20261006093000_0123456789abcdef',
+      orphanNames: ['verify_0123456789abcdef'],
+    } as BackupEvent);
+    expect(lines[0]?.obj).toEqual({
+      channel: 'backup',
+      event: 'verify_completed',
+      file: 'f.cbak',
+      restorable: false,
+      failure: 'verify_db_unavailable',
+      durationMs: 3,
+      orphansListed: false,
+      orphansRemoved: 0,
+      orphansFailed: 0,
+    });
+    expect(JSON.stringify(lines[0]?.obj)).not.toContain('verify_2026');
   });
 
   it('restore_completed es warn y los fallos son error', () => {

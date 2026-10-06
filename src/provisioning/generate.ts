@@ -181,6 +181,9 @@ export async function buildInstanceEnv(
       NODE_ENV: 'production',
       INSTANCE_ID: data.id,
       PUBLIC_BASE_URL: data.url,
+      // 013: con `https` hay un proxy delante; la receta de despliegue (§2.5) pone uno solo y
+      // comprueba la dirección que ve la instancia. Sin él, `instance:check` no da APTO.
+      TRUST_PROXY: '1',
       DEFAULT_TIMEZONE: data.timezone,
       DEFAULT_PHONE_REGION: data.region,
       DEFAULT_CURRENCY: data.currency,

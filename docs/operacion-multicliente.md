@@ -119,8 +119,8 @@ fuera de `BACKUP_DIR`) y anota dónde con `pnpm instance:update <id> --backup-ke
 ### 2.3 Crear la base de datos: `pnpm instance:db`
 
 ```bash
-export INSTANCE_DB_ADMIN_URL=postgres://admin:…@servidor:5432/postgres   # o se pide sin eco
-pnpm instance:db cliente-x [--env <fichero>] [--host <servidor> --port <puerto>]
+export INSTANCE_DB_ADMIN_URL='postgres://admin:…@servidor:5432/postgres?sslmode=verify-full'   # o se pide sin eco
+pnpm instance:db cliente-x [--env <fichero>] [--host <servidor> --port <puerto>] [--sslrootcert <ruta>]
 ```
 
 Crea una **BD nueva y vacía** `chatbot_<id>` y un **usuario propio** sin privilegios de
@@ -135,6 +135,26 @@ falla a mitad, retira solo el usuario recién creado o informa de lo que quedó 
 ej. una red Docker). En un servidor gestionado sin permiso para crear bases de datos, usa
 `--print-sql --host <servidor> --port <puerto>`: imprime el SQL exacto (sin la contraseña) para
 ejecutarlo en la consola del proveedor, sin conectarse a nada.
+
+**TLS verificado (013).** Por la URL de administración viaja la credencial de administración del
+servidor, así que, si el servidor es **remoto** (cualquiera que no sea `localhost`, `127.0.0.0/8`,
+`::1` o un socket local; también una IP privada), `instance:db` **se niega a conectar** sin
+`sslmode=verify-full` en la propia URL, en cualquier perfil y sin opción para saltárselo:
+
+```text
+INSTANCE_DB_ADMIN_URL apunta a un servidor remoto sin TLS verificado: por esa conexión viaja la credencial de administración.
+→ Añade sslmode=verify-full (y sslrootcert=<ruta> si la autoridad no es pública), o usa --print-sql --host <servidor> --port <puerto> y aplica el SQL tú mismo.
+```
+
+Sale con 1 al instante, sin abrir el inventario ni tocar el entorno. Si la autoridad del
+certificado no es pública, añade a la URL de administración `sslrootcert=<ruta en tu equipo>`: la
+conexión de prueba con el usuario nuevo usa el mismo `sslmode` y `sslrootcert`.
+
+La `DATABASE_URL` que escribe lleva el `sslmode` de la URL de administración; con `--print-sql` y
+un `--host` remoto, `sslmode=verify-full` por defecto, para que el entorno pase `instance:check`
+sin editarlo. `--sslrootcert <ruta>` añade `sslrootcert=<ruta>` a esa `DATABASE_URL`: es la ruta
+del certificado **dentro del contenedor** (p. ej. `/etc/chatbot/db-ca.crt`, montado en solo
+lectura; [2.5](#25-despliegue), paso 4), no la de tu equipo, y no se muestra en la salida.
 
 **Limitación**: la comparación de bases de datos es por servidor, puerto y nombre tal como están
 escritos; el mismo servidor con dos nombres (alias) no se detecta. Lo cubre el usuario propio de
@@ -159,8 +179,11 @@ cada base de datos.
    WhatsApp y cualquier secreto (vigente o anterior, `HEALTH_SECRET` incluido) repetidos son error;
    desde la 009 también es error que falte `HEALTH_SECRET`, que sea débil o que sea igual a
    `SESSION_SECRET` o a `BACKUP_KEY`; `SMTP_URL` o
-   `BACKUP_DIR` compartidos, advertencia. No escribe nada. Código de salida 0 apto, 1 no apto: se
-   puede usar como paso de despliegue.
+   `BACKUP_DIR` compartidos, advertencia. Desde la 013 también son error en producción
+   `TRUST_PROXY` vacío con `PUBLIC_BASE_URL` en `https` (`trust_proxy_empty`) y una URL de base de
+   datos remota sin `sslmode=verify-full` (`database_tls_required`); en una instancia de pruebas
+   (`testing`) son advertencias. No escribe nada. Código de salida 0 apto, 1 no apto: se puede usar
+   como paso de despliegue.
 
 Pasa también por `instance:check` cualquier cambio posterior del entorno.
 
@@ -168,11 +191,13 @@ Referencia de variables del entorno:
 
 | Variable | Valor para el cliente |
 |---|---|
-| `DATABASE_URL` | La escribe `instance:db` (2.3) |
+| `DATABASE_URL` | La escribe `instance:db` (2.3). Con un servidor **remoto** (todo lo que no sea `localhost`, `127.0.0.0/8`, `::1` o un socket local), `sslmode=verify-full` en la propia URL y, si la autoridad del certificado no es pública, `sslrootcert=<ruta en el contenedor>`; si no, error `database_tls_required` en producción. Las variables `PG*` del entorno no cuentan |
+| `BACKUP_VERIFY_URL` | Servidor donde `db:verify` crea sus bases temporales (por defecto, el de `DATABASE_URL`); usuario con `CREATEDB`, uno solo por servidor ([2.5](#25-despliegue), paso 8). Misma regla de TLS (`database_tls_required`); mal formada, `database_url_invalid` en los dos perfiles |
+| `INSTANCE_DB_ADMIN_URL` | Solo en tu equipo, para `instance:db`; si aparece en un entorno, `instance:check` le aplica la misma regla de TLS y de formato que a `BACKUP_VERIFY_URL` |
 | `OPERATOR_USER` · `OPERATOR_PASSWORD_HASH` | Credencial propia de esta instancia |
 | `SESSION_SECRET` | Recién generado |
 | `NODE_ENV` | `production` |
-| `TRUST_PROXY` | Número de saltos del proxy (`1` si hay uno); nunca `true` |
+| `TRUST_PROXY` | Número de saltos del proxy (`1` si hay uno) o sus IP/CIDR; nunca `true`. **Obligatorio** con `PUBLIC_BASE_URL` en `https`: la instancia no termina TLS, así que hay un proxy delante y sin él todos los clientes parecen venir de la misma dirección (error `trust_proxy_empty` en producción, advertencia en pruebas). Comprueba la dirección que ve la instancia ([2.5](#25-despliegue), paso 7) |
 | `PUBLIC_BASE_URL` | `https://nombrecliente.tudominio.com` |
 | `DEFAULT_TIMEZONE` · `DEFAULT_PHONE_REGION` · `DEFAULT_CURRENCY` | Los del negocio |
 | `EMERGENCY_CONTACT_PHONE` | Teléfono E.164 del negocio |
@@ -217,12 +242,204 @@ cumple las reglas de calidad o coincide con otra instancia, `instance:check` lo 
 
 ### 2.5 Despliegue
 
-1. Arranca un contenedor con la **misma imagen etiquetada** que el resto (`chatbot:X.Y.Z`) y el
-   entorno del cliente. Al arrancar aplica las migraciones y crea el negocio vacío en
-   "En preparación".
-2. Comprueba que `https://nombrecliente.tudominio.com/admin` pide login y que la cookie es `Secure`.
-3. Comprueba la versión: `pnpm instance:versions --only <id>` da `Correcto` con la versión
-   desplegada, y anótala con `--annotate` ([sección 5](#5-actualizar-el-núcleo)).
+Receta de producción (013). Cada paso trae un ejemplo y una **comprobación**: si una comprobación
+no da lo esperado, **no sigas**. Los ejemplos usan nginx, `docker run` y Trivy; son sustituibles
+por herramientas equivalentes, siempre que se cumpla la comprobación. En los ejemplos, `operador`
+es el usuario de la máquina que despliega y `cliente-x` el `id` de la instancia.
+
+1. **`instance:check` APTO con el entorno definitivo.**
+
+   ```bash
+   pnpm instance:check cliente-x.env; echo "salida $?"
+   ```
+
+   Comprobación: `APTO para desplegar.` y `salida 0`. En producción son error, entre otros,
+   `TRUST_PROXY` vacío con `PUBLIC_BASE_URL` en `https` (`trust_proxy_empty`) y cualquier URL de
+   base de datos remota sin `sslmode=verify-full` (`database_tls_required`; [2.4](#24-completar-y-validar-pnpm-instancecheck)).
+
+2. **Fichero de entorno con dueño el operador y modo `0600`**, pasado al contenedor con
+   `--env-file` (nunca con `-e VARIABLE=valor`, que queda en el historial de la shell).
+
+   ```bash
+   chown operador: cliente-x.env && chmod 600 cliente-x.env
+   ```
+
+   Comprobación: `stat -c '%U %a' cliente-x.env` da `operador 600`.
+
+3. **Volumen de copias con dueño UID 1000 (el usuario `node` de la imagen) y modo `0700`.**
+
+   ```bash
+   install -d -o 1000 -g 1000 -m 700 /srv/chatbot/cliente-x/backups
+   ```
+
+   Comprobación: `stat -c '%u %a' /srv/chatbot/cliente-x/backups` da `1000 700`.
+
+4. **TLS verificado hacia PostgreSQL.** Si el servidor de base de datos no está en la misma
+   máquina, `DATABASE_URL` y `BACKUP_VERIFY_URL` llevan `sslmode=verify-full`. Si el certificado
+   del servidor lo firma una autoridad propia (no pública), monta su certificado en **solo
+   lectura** y añade `sslrootcert` con la ruta **dentro del contenedor**:
+
+   ```bash
+   # en el entorno
+   DATABASE_URL=postgres://chatbot_cliente_x:…@db.interna:5432/chatbot_cliente_x?sslmode=verify-full&sslrootcert=/etc/chatbot/db-ca.crt
+   BACKUP_VERIFY_URL=postgres://verificador:…@verificacion.interna:5432/postgres?sslmode=verify-full&sslrootcert=/etc/chatbot/db-ca.crt
+   # en docker run (paso 5)
+   -v /srv/chatbot/db-ca.crt:/etc/chatbot/db-ca.crt:ro
+   ```
+
+   Pon en la URL el **nombre** del servidor tal como figura en su certificado, **nunca una IP**:
+   con una IP, la librería de PostgreSQL no le pasa la dirección a TLS y el certificado se compara
+   con `localhost`, así que la comprobación del nombre deja de proteger. Las variables `PG*` del
+   entorno no cuentan: la regla mira solo la URL.
+
+   Comprobación: `instance:check` sin `database_tls_required` y la instancia arranca. Si el
+   certificado no vale, no arranca y muestra
+   `DATABASE_URL: el certificado del servidor no es válido para ese nombre o no lo firma una autoridad de confianza.`;
+   si el fichero no se puede leer,
+   `DATABASE_URL: no se puede leer el certificado de la autoridad indicado en sslrootcert.`
+   Ninguno de los dos muestra la URL ni la ruta.
+
+5. **Contenedor endurecido**: raíz de solo lectura, `/tmp` en memoria, sin capacidades, sin
+   escalada de privilegios y el puerto solo en local (paso 6).
+
+   ```bash
+   docker run -d --name cliente-x \
+     --read-only --tmpfs /tmp \
+     --cap-drop=ALL --security-opt no-new-privileges \
+     -p 127.0.0.1:3000:3000 \
+     --env-file cliente-x.env \
+     -v /srv/chatbot/cliente-x/backups:/var/lib/chatbot/backups \
+     -v /srv/chatbot/db-ca.crt:/etc/chatbot/db-ca.crt:ro \
+     chatbot:X.Y.Z
+   ```
+
+   Usa la **misma imagen etiquetada** que el resto (`chatbot:X.Y.Z`, nunca `latest`). Al arrancar
+   aplica las migraciones y crea el negocio vacío en "En preparación".
+
+   Comprobación:
+
+   ```bash
+   docker inspect -f '{{.HostConfig.ReadonlyRootfs}} {{.HostConfig.CapDrop}} {{.HostConfig.SecurityOpt}}' cliente-x
+   # true [ALL] [no-new-privileges]
+   docker exec cliente-x node dist/src/cli/backup.js   # copia manual: «Copia creada: …»
+   ```
+
+   y el panel (`https://…/admin`) pide login con la cookie `Secure`.
+
+6. **Puerto 3000 solo en `127.0.0.1`** (o en una red interna de Docker sin `-p`): solo el proxy
+   inverso habla con la instancia.
+
+   Comprobación: `ss -ltn | grep 3000` muestra `127.0.0.1:3000`, nunca `0.0.0.0:3000` ni `*:3000`;
+   desde otra máquina, `curl -m 5 http://<ip-del-servidor>:3000/health` no conecta.
+
+7. **Proxy inverso con TLS que sustituye la dirección de origen.** El proxy debe **reemplazar**
+   `X-Forwarded-For` con la dirección real del cliente, no añadirla a la que mande el cliente; y
+   `TRUST_PROXY` es el número real de saltos de proxy (`1` si solo está este). Ejemplo con nginx:
+
+   ```nginx
+   server {
+     listen 443 ssl;
+     server_name cliente-x.tudominio.com;
+     # ssl_certificate y ssl_certificate_key del dominio
+     location / {
+       proxy_pass http://127.0.0.1:3000;
+       proxy_set_header Host $host;
+       proxy_set_header X-Forwarded-Proto https;
+       proxy_set_header X-Forwarded-For $remote_addr;   # sustituye, no añade
+     }
+   }
+   ```
+
+   Comprobación, desde una máquina **externa**, 31 peticiones en menos de un minuto, cada una con un
+   `X-Forwarded-For` falso distinto:
+
+   ```bash
+   for i in $(seq 31); do
+     curl -s -o /dev/null -w '%{http_code}\n' -H "X-Forwarded-For: 10.9.8.$i" https://cliente-x.tudominio.com/health
+   done
+   ```
+
+   La última da `429`: la instancia cuenta la dirección real y no la falsa (límite de `/health`: 30
+   por minuto y dirección). Desde **otra** máquina, en ese mismo minuto, `/health` sigue dando `200`.
+   Si las 31 dan `200`, el proxy añade en lugar de sustituir o `TRUST_PROXY` cuenta saltos de más:
+   cualquiera podría saltarse los límites de abuso cambiando la cabecera.
+
+8. **Servidor de verificación de copias separado del de producción**, con **un único** usuario de
+   verificación por servidor, con `CREATEDB` y **sin** acceso a las bases de las instancias.
+
+   ```sql
+   -- en el servidor de verificación
+   CREATE ROLE verificador LOGIN CREATEDB PASSWORD '…';
+   ```
+
+   Comprobación: `docker exec cliente-x node dist/src/cli/verify.js <copia>` da `RESTAURABLE`, y
+   `psql "postgres://verificador:…@db.interna:5432/chatbot_cliente_x?sslmode=verify-full"`
+   (servidor de producción) es rechazado. Las bases temporales de `db:verify` no admiten
+   conexiones de otros usuarios y las huérfanas se limpian solas ([sección 8](#8-copias-de-seguridad-guía-de-validación)).
+
+9. **Estado de salud del contenedor.** La imagen trae un `HEALTHCHECK` sobre la vista pública de
+   `/health` (sin `HEALTH_SECRET`, que así no aparece en `docker inspect`): 120 s de gracia para
+   las migraciones, y después sana solo con `{"status":"ok"}`.
+
+   Comprobación: `docker inspect -f '{{.State.Health.Status}}' cliente-x` pasa de `starting` a
+   `healthy` en menos de 2 minutos. Con Docker Engine anterior al 25 se ignora `--start-interval` y
+   el primer sondeo llega a los 30 s: sigue entrando en los 2 minutos.
+
+10. **Si el contenedor está `unhealthy`.** Docker **no** reinicia por sí solo un contenedor
+    `unhealthy` (ni con `--restart`, que solo actúa si el proceso termina): reinícialo tú o tu
+    orquestador, pero **antes** mira por qué:
+
+    ```bash
+    docker inspect --format '{{json .State.Health}}' cliente-x   # últimos sondeos y su código
+    pnpm instance:versions --only cliente-x                       # estado y esquema (sección 5)
+    ```
+
+    | `instance:versions` | Causa probable | Qué hacer |
+    |---|---|---|
+    | `Degradado` | La BD no responde o el esquema no es el esperado | Revisa antes la BD (servidor, red, certificado); reiniciar no lo arregla |
+    | `No lista` | Arrancando o parándose | Espera un minuto y repite |
+    | `No responde` | Proceso caído, migrando o red | Mira los registros del contenedor (`docker logs cliente-x`): `migration_blocked` / `migration_failed` ([5.4](#54-vuelta-atrás)) |
+
+    Reinicia (`docker restart cliente-x`) solo cuando la causa esté resuelta.
+
+11. **Integración continua** (antes de publicar una imagen). Pasos, en este orden:
+
+    ```bash
+    pnpm install --frozen-lockfile
+    pnpm lint && pnpm typecheck && pnpm test
+    pnpm audit --prod
+    osv-scanner scan --lockfile pnpm-lock.yaml
+    gitleaks detect --source . -v
+    semgrep scan --config auto src/
+    docker build --build-arg CORE_VERSION=X.Y.Z -t chatbot:X.Y.Z .
+    trivy image --severity HIGH,CRITICAL --ignore-unfixed chatbot:X.Y.Z
+    ```
+
+    | Paso | Bloquea la publicación si encuentra |
+    |---|---|
+    | `lint`, `typecheck`, `test` | Cualquier fallo |
+    | `pnpm audit --prod` | Vulnerabilidad alta o crítica en una dependencia de producción |
+    | `osv-scanner` | Lo mismo, en dependencias de producción |
+    | `gitleaks` | Cualquier hallazgo sin revisar |
+    | `semgrep` | Hallazgos de severidad `ERROR` |
+    | Trivy | Vulnerabilidad alta o crítica con corrección disponible |
+
+    El criterio es el de la [sección 11.4](#114-criterio-de-severidad-y-de-salida-a-producción). El
+    lockfile congelado, el hash de pnpm en `packageManager` (lo comprueba Corepack) y los scripts de
+    instalación limitados a `argon2` y `esbuild` (`pnpm.onlyBuiltDependencies`) hacen que la
+    instalación sea la misma en cada construcción. Para mantener al día el digest de la base y las
+    dependencias puede añadirse un bot de actualizaciones cuando haya repositorio remoto.
+
+12. **Imagen base fijada.** El `Dockerfile` fija `node:22-slim` por digest en `ARG NODE_IMAGE`,
+    común a sus dos etapas. Para actualizarla, sigue la [sección 5](#5-actualizar-el-núcleo)
+    («Actualizar la imagen base»).
+
+    Comprobación: la prueba de fijado (`pnpm test:unit image-pinning`) pasa, y dos construcciones
+    con el mismo `NODE_IMAGE` parten de la misma base: las primeras capas de
+    `docker image inspect -f '{{json .RootFS.Layers}}' chatbot:X.Y.Z` coinciden.
+
+Después del despliegue, comprueba la versión: `pnpm instance:versions --only <id>` da `Correcto`
+con la versión desplegada, y anótala con `--annotate` ([sección 5](#5-actualizar-el-núcleo)).
 
 ### 2.6 Configuración del negocio (en el panel de producción)
 
@@ -450,6 +667,14 @@ Herramientas que usa:
 | `Identidad distinta` | La URL del inventario lleva a **otra** instancia: no se le atribuye versión |
 | `No consultada` | Sin URL o URL no `https` |
 
+**Desde la versión que incluye la 013**, entornos que antes daban `APTO` con advertencias pueden
+dar `NO APTO`: `TRUST_PROXY` vacío con `https` (`trust_proxy_empty`) y URL de base de datos
+remotas sin `sslmode=verify-full` (`database_tls_required`, también en `BACKUP_VERIFY_URL`) pasan
+a ser error en producción. Antes de la tanda de cada instancia, pasa su entorno por
+`instance:check` con el núcleo nuevo y corrígelo ([5.1](#51-comprobaciones-previas-en-tu-equipo)).
+La instancia sigue arrancando con una URL sin `verify-full` (la regla vive en `instance:check`), pero
+no se despliega una instancia `NO APTO`.
+
 ### 5.0 Antes de la primera vez (una vez por instancia)
 
 | Comprobación | Esperado | Si no |
@@ -475,6 +700,18 @@ fichero y **no lo muestra**; con `--rotate` lo cambia. Las instancias nuevas ya 
 | Revisar las migraciones nuevas | Solo añadir; ficheros ya publicados intactos (reglas al final de esta sección) | **Parar** si se editó una migración publicada |
 | Etiqueta Git `vX.Y.Z` y `docker build --build-arg CORE_VERSION=X.Y.Z -t chatbot:X.Y.Z .` | La construcción termina; si `CORE_VERSION` falta o ≠ `package.json`, falla | **Parar** si falla. **Nunca `latest`** |
 | `docker inspect -f '{{ index .Config.Labels "org.opencontainers.image.version" }}' chatbot:X.Y.Z` | Imprime `X.Y.Z`, igual que la etiqueta `-t` | **Parar** si difiere: la etiqueta `-t` la eliges tú, el `Dockerfile` no la controla |
+| Desde la 013: `pnpm instance:check <entorno>` de **cada** instancia de la tanda, con el núcleo nuevo | `APTO` | **Parar** esa instancia hasta corregir su entorno (`trust_proxy_empty`, `database_tls_required`) |
+| Pasos de integración continua de la [2.5](#25-despliegue) (paso 11) | Ninguno bloquea | **Parar** si alguno bloquea ([11.4](#114-criterio-de-severidad-y-de-salida-a-producción)) |
+
+**Actualizar la imagen base.** El `Dockerfile` fija `node:22-slim` por el digest de su índice
+multiplataforma en `ARG NODE_IMAGE` (013). Para pasar a una base nueva (parche de seguridad de
+Node o de Debian):
+
+1. `docker buildx imagetools inspect node:22-slim` y copia el campo `Digest` (`sha256:…`, el del
+   índice, no el de una plataforma).
+2. Cámbialo en `ARG NODE_IMAGE=node:22-slim@sha256:<digest>`.
+3. Construye y pasa las pruebas (`pnpm test` incluye la de fijado; Trivy, paso 11 de la 2.5).
+4. Publícala como **versión nueva** del núcleo, con este mismo procedimiento.
 
 ### 5.2 Instancia de pruebas
 
@@ -587,7 +824,7 @@ Cada instancia copia su BD en `BACKUP_DIR` con los mismos comandos (feature 006)
 |---|---|
 | `pnpm db:backup` / `node dist/src/cli/backup.js` | Copia bajo demanda, cifrada, sin pausar al bot |
 | `pnpm db:restore <fichero>` / `node dist/src/cli/restore.js` | Restaura con la instancia **parada**; pide escribir el `INSTANCE_ID` para confirmar |
-| `pnpm db:verify <fichero>` / `node dist/src/cli/verify.js` | Restaura en una BD temporal, compara y la borra |
+| `pnpm db:verify <fichero>` / `node dist/src/cli/verify.js` | Restaura en una BD temporal, compara y la borra; antes limpia las temporales huérfanas |
 | `pnpm db:backups [--prune]` / `node dist/src/cli/backups.js` | Lista las copias de la instancia y aplica la retención |
 
 Además, la instancia hace una copia diaria (`BACKUP_DAILY_TIME`, hora local del negocio) y una
@@ -596,6 +833,34 @@ previa a cada migración, y borra las de más de `BACKUP_RETENTION_DAYS` días c
 
 Una copia que no se ha restaurado nunca no está comprobada. Esta guía se hace en menos de 15
 minutos.
+
+### Bases temporales de `db:verify` (013)
+
+`db:verify` crea en el servidor de `BACKUP_VERIFY_URL` una base temporal
+`verify_<aaaammddhhmmss UTC>_<16 hex>` y, **antes de cargar ningún dato**, retira a `PUBLIC` los
+permisos `CONNECT` y `TEMPORARY`: durante la verificación solo puede entrar su dueño (el usuario
+de `BACKUP_VERIFY_URL`) y un superusuario. Al terminar la borra siempre.
+
+Si una verificación se interrumpe (el proceso muere), la base queda **huérfana**, con datos reales
+de clientes. Cada `db:verify` limpia antes las huérfanas: borra las bases que cumplen **exactamente**
+el patrón `verify_<aaaammddhhmmss>_<16 hex>` con una marca de hace más de **6 horas**, o el formato
+anterior a la 013 (`verify_<16 hex>`), y que **no tienen ninguna conexión**. Las borra con `DROP`
+sin `FORCE`: si alguien se conecta entre la comprobación y el borrado, PostgreSQL lo rechaza y la
+base se respeta. Nunca toca una base con otro nombre (las de las instancias se llaman
+`chatbot_<id>`) ni una reciente o en uso. Un fallo de la limpieza no detiene la verificación.
+
+La salida dice qué ha pasado, sin nombres de base, antes de la línea de la base temporal (también
+si la copia no es restaurable) y solo si hay algo que contar:
+
+| Línea | Significado | Qué hacer |
+|---|---|---|
+| `Bases temporales huérfanas: 2 borradas.` | Había verificaciones interrumpidas y se han limpiado | Nada |
+| `Bases temporales huérfanas: 1 borrada, 1 sin poder borrar (permisos del usuario de BACKUP_VERIFY_URL).` | Hay una huérfana de otro dueño: otra instancia usa otro usuario de verificación en el mismo servidor | Bórrala con un superusuario y usa **un único usuario de verificación por servidor** |
+| `Bases temporales huérfanas: no se ha podido comprobar el servidor; puede quedar alguna.` | No se pudo listar el servidor (o la orden terminó antes de conectar, p. ej. con la copia dañada o `db_ca_unreadable`) | Revisa a mano `\l verify_*` con un superusuario |
+
+Con `--json`, el informe lleva `"orphans": { "listed": true, "removed": 1, "failed": 1 }` y el
+registro `verify_completed`, `orphansListed`, `orphansRemoved` y `orphansFailed`. El código de
+salida sigue dependiendo solo de si la copia es restaurable.
 
 ### Cuándo repetirla
 
@@ -652,6 +917,9 @@ Anota en el inventario la fecha, el fichero y el resultado de `db:verify --json`
 | `corrupted` | El fichero está dañado o incompleto: usa otra copia y revisa cómo se transfirió |
 | `instance_running` | Para la instancia antes de restaurar |
 | `verify_db_unavailable` | `BACKUP_VERIFY_URL` necesita un servidor accesible y un usuario con `CREATEDB` |
+| `db_ca_unreadable` | No se puede leer el fichero de `sslrootcert` de la URL: móntalo (solo lectura) y revisa la ruta y sus permisos (salida 2 en `db:restore` y `db:verify`) |
+| `db_tls_untrusted` | El certificado del servidor no vale para el nombre de la URL o no lo firma una autoridad de confianza: revisa el nombre y `sslrootcert` |
+| `db_tls_unsupported` | La URL pide TLS y el servidor no lo acepta: activa TLS en PostgreSQL |
 
 ---
 
@@ -679,10 +947,12 @@ Estado tomado del [README](../README.md) a 2026-10-06.
 | 010 | Consumo y coste por instancia | Completada (2026-10-01) | **Era la propuesta P4**: consumo del modelo por canal sin textos, pantalla **Consumo** con precios por modelo y moneda de coste, tope mensual de gasto con salida a una persona, y su estado en `/health` y en `instance:versions` ([sección 4.1](#41-consumo-precios-y-tope-en-el-panel-010)) |
 | 011 | Diseño del chat web | Completada (2026-10-05) | No venía de ninguna propuesta de esta sección. Cada cliente tiene su chat con su imagen sin despliegue ni cambiar el fragmento: sección **Diseño del chat** del panel, contraste mínimo garantizado, aviso de asistente automático y salida a una persona siempre presentes, formato 2 del fichero de configuración con el diseño y sus imágenes ([sección 2.6](#26-configuración-del-negocio-en-el-panel-de-producción)) |
 | 012 | Protección frente a abuso y saturación | Completada (2026-10-06) | **Era la propuesta P8**: tope de gasto obligatorio en producción que falla cerrado, transcripción dentro del tope y tope diario de WhatsApp ([sección 4.1](#41-consumo-precios-y-tope-en-el-panel-010)); límites de derivación con reenvíos agrupados ([sección 4.2](#42-límites-de-derivación-012)); límites por dirección (/64) en las rutas públicas y pool de BD acotado; login con retardo en lugar de bloqueo; plazos en las llamadas salientes y reintentos de lotes; importación acotada; una sola regla de enlaces; registros sin datos y arranque que rechaza secretos débiles ([sección 5.0](#50-antes-de-la-primera-vez-una-vez-por-instancia)) |
+| 013 | Requisitos de despliegue seguro | Completada (2026-10-06; validación de la receta por una persona ajena pendiente, T044b) | **Era la propuesta P9**: `instance:check` da NO APTO en producción con `TRUST_PROXY` vacío y `https` y con URL de base de datos remotas sin `sslmode=verify-full`; `instance:db` se niega a conectar sin TLS verificado (`--sslrootcert`); TLS verificado en todas las conexiones con mensajes sin datos; `db:verify` con bases temporales cerradas a otros usuarios y limpieza de huérfanas; imagen con `HEALTHCHECK`, base fijada por digest y pnpm con hash; receta de producción con comprobaciones ([sección 2.5](#25-despliegue), [2.3](#23-crear-la-base-de-datos-pnpm-instancedb), [2.4](#24-completar-y-validar-pnpm-instancecheck), [5](#5-actualizar-el-núcleo) y [8](#8-copias-de-seguridad-guía-de-validación)) |
 
 Todas están completadas. Quedan aplazadas la evaluación de audios de la 002 (T083), que se hace
-antes de activar los audios en una instancia, y el ensayo de la guía de publicación de la 009 con
-una persona que no haya participado (SC-006). Además, el canal WhatsApp no está activo en ningún
+antes de activar los audios en una instancia, el ensayo de la guía de publicación de la 009 con
+una persona que no haya participado (SC-006) y el de la receta de producción de la 013 (§2.5,
+T044b, SC-006), que se hace antes de la primera publicación en producción. Además, el canal WhatsApp no está activo en ningún
 cliente y ha cambiado con la 012: antes de activarlo en el primer cliente se revisa entero en desarrollo
 con una app de pruebas (ver `WHATSAPP_*` en la [sección 2.4](#24-completar-y-validar-pnpm-instancecheck)),
 incluido el 404 que registra la URL completa cuando WhatsApp no está configurado (desviación del
@@ -698,9 +968,9 @@ orden de las pendientes).
 
 | Orden | Id | Propuesta | Prioridad | Depende de | Cuándo |
 |---|---|---|---|---|---|
-| 1 | P9 | Requisitos de despliegue seguro | **Bloqueante** | P1 (007) | Antes de la primera publicación en producción |
-| 2 | P7 | Estado de las copias de seguridad, visible | Media | P3 (006), P6 (009) | Antes de tener varias instancias en producción sin revisar sus registros a diario |
-| 3 | P5 | Puntos de extensión del núcleo | Baja | — | Solo cuando llegue la primera petición que no quepa en la configuración |
+| 1 | P7 | Estado de las copias de seguridad, visible | Media | P3 (006), P6 (009) | Antes de tener varias instancias en producción sin revisar sus registros a diario |
+| 2 | P5 | Puntos de extensión del núcleo | Baja | — | Solo cuando llegue la primera petición que no quepa en la configuración |
+| — | P9 | Requisitos de despliegue seguro | — | — | **Hecha** (feature 013) |
 | — | P8 | Protección frente a abuso y saturación | — | — | **Hecha** (feature 012) |
 | — | P4 | Consumo y coste por instancia | — | — | **Hecha** (feature 010) |
 | — | P6 | Versión visible y actualización escalonada | — | — | **Hecha** (feature 009) |
@@ -724,7 +994,8 @@ Por qué este orden:
 5. **P8 y P9** antes que todo lo pendiente: salen de la auditoría completa del 2026-10-05
    ([sección 11.6](#116-registro-de-auditorías)) y sin ellas la instancia no es apta para
    producción. P8 (hecha, feature 012) primero porque sus fallos se explotan desde Internet sin
-   credenciales; P9, la siguiente, es sobre todo comprobación y documentación.
+   credenciales; P9 (hecha, feature 013) después, porque es sobre todo comprobación y
+   documentación.
 6. **P7** antes que P5 porque es pequeña y cierra un hueco real: hoy una copia que falla solo
    deja rastro en los registros, y nadie lo ve hasta que hace falta restaurar.
 7. **P5** no se adelanta: se diseña a partir de un caso real.
@@ -777,6 +1048,8 @@ Por qué este orden:
 
 ### P9. Requisitos de despliegue seguro
 
+- **Estado**: **hecha** (feature 013, 2026-10-06). La receta de producción está en la
+  [sección 2.5](#25-despliegue); queda que una persona ajena la siga en una máquina limpia (T044b).
 - **Ámbito**: núcleo (operación y documentación).
 - **Origen**: auditoría completa del 2026-10-05 (agente de infraestructura).
 - **Problema**: la aplicación ya hace bien lo que le toca, pero su seguridad en producción depende
@@ -1106,7 +1379,7 @@ Referencias reales:
 | Fecha | Tipo | Alcance | Resultado |
 |---|---|---|---|
 | 2026-10-05 | De feature | 011, `59d8c30..HEAD` | Sin hallazgos críticos ni altos. 1 media: la ruta pública de imágenes del diseño lee y revalida la imagen antes de comprobar el hash, sin límite de peticiones. 4 bajas: límite de 8 MB en el guardado del diseño, caracteres Unicode de dirección en los textos, bloques PNG desconocidos y SOF duplicados en JPEG, error completo en el log. Fuera de alcance: AES-GCM sin longitud de etiqueta fijada (`src/handoff/tokens.ts`, copias), clave fija de test detectada por gitleaks, `.gitignore` sin `*.pem` ni `*.key` |
-| 2026-10-05 | Completa | Todo el repositorio, infraestructura, dependencias e historial de git (8 agentes, sección 11.5) | **No apta todavía para producción.** Sin vulnerabilidades críticas ni de toma de control o fuga de datos: XSS, SQL, comandos, CSRF, sesiones, firma del webhook, cifrado y secretos, correctos. Bloqueantes de abuso y disponibilidad (comprobados en el código): tope de gasto desactivado por defecto y sin exigir; los reenvíos de una derivación no cuentan para ningún tope (avisos y plantillas de pago sin límite, con texto del atacante); rutas públicas del chat sin límite de peticiones; el límite global del login deja fuera al operador; llamadas a Meta sin plazo; Whisper fuera del tope de gasto. Además: importación con coste cuadrático, enlaces que el verificador no ve, errores completos y `hub.verify_token` en los logs, y requisitos de despliegue sin documentar (TLS hacia PostgreSQL, puerto 3000, `TRUST_PROXY`, healthcheck, BD de verificación). El aviso de semgrep sobre AES-GCM resultó no explotable. Dependencias de producción sin CVE conocidas |
+| 2026-10-05 | Completa | Todo el repositorio, infraestructura, dependencias e historial de git (8 agentes, sección 11.5) | **No apta todavía para producción.** Sin vulnerabilidades críticas ni de toma de control o fuga de datos: XSS, SQL, comandos, CSRF, sesiones, firma del webhook, cifrado y secretos, correctos. Bloqueantes de abuso y disponibilidad (comprobados en el código): tope de gasto desactivado por defecto y sin exigir; los reenvíos de una derivación no cuentan para ningún tope (avisos y plantillas de pago sin límite, con texto del atacante); rutas públicas del chat sin límite de peticiones; el límite global del login deja fuera al operador; llamadas a Meta sin plazo; Whisper fuera del tope de gasto. Además: importación con coste cuadrático, enlaces que el verificador no ve, errores completos y `hub.verify_token` en los logs, y requisitos de despliegue sin documentar (TLS hacia PostgreSQL, puerto 3000, `TRUST_PROXY`, healthcheck, BD de verificación). El aviso de semgrep sobre AES-GCM resultó no explotable. Dependencias de producción sin CVE conocidas. **Cerrados**: los bloqueantes de abuso y disponibilidad, con la 012; los requisitos de despliegue (TLS hacia PostgreSQL, puerto 3000, `TRUST_PROXY`, healthcheck, BD de verificación) y `.gitignore` sin `*.pem`/`*.key` (de la auditoría de la 011), con la 013 |
 
 ---
 

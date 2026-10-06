@@ -10,6 +10,7 @@ import { backupConfigFromEnv } from '../backup/config.js';
 import { RestoreFailure } from '../backup/errors.js';
 import { readHeader } from '../backup/format.js';
 import { restoreBackup, type RestoreReport } from '../backup/service.js';
+import { assertCaReadable, DatabaseConfigError } from '../config/database-url.js';
 import {
   backupFailureMessages,
   businessTimezone,
@@ -72,6 +73,15 @@ export async function main(argv: string[], io: CliIO = processIO()): Promise<num
   const path = resolveBackupPath(args.positional[0] ?? '', config.dir);
   if (!existsSync(path)) {
     io.err(`No se encuentra el fichero ${basename(path)}.`);
+    return 2;
+  }
+  // 013: antes de crear ningún cliente; es un problema de configuración (salida 2).
+  try {
+    assertCaReadable(env.DATABASE_URL, 'DATABASE_URL');
+  } catch (error) {
+    if (!(error instanceof DatabaseConfigError)) throw error;
+    if (json) printJson(io, { ok: false, failure: 'db_ca_unreadable' });
+    io.err(restoreFailureMessage(new RestoreFailure('db_ca_unreadable')));
     return 2;
   }
   const fromInstance = args.options.get('--from-instance');

@@ -6,11 +6,16 @@
 import type { FastifyInstance } from 'fastify';
 import { buildApp as defaultBuildApp, type BuildAppOptions } from './app.js';
 import { backupConfigFromEnv } from './backup/config.js';
-import { InstanceBusyError } from './backup/errors.js';
+import { InstanceBusyError, MigrationBlockedError, MigrationFailedError } from './backup/errors.js';
 import { INSTANCE_RUNNING, tryAdvisoryLock, type AdvisoryLock } from './backup/locks.js';
 import { createBackupLog } from './backup/log.js';
 import { createBackupScheduler } from './backup/scheduler.js';
 import { createBot, type Bot } from './bot.js';
+import {
+  assertCaReadable,
+  DatabaseConfigError,
+  describeDatabaseError,
+} from './config/database-url.js';
 import { BACKUP_VARS, protectionConfigFromEnv, type Env } from './config/env.js';
 import { checkSecrets, SECRET_VARIABLES } from './config/secret-rules.js';
 import { createActivityLog, type LoggerLike } from './conversation/activity-log.js';
@@ -19,7 +24,7 @@ import { createRetention } from './conversation/retention.js';
 import { closeDb, createDb, createPublicDb } from './db/client.js';
 import { runMigrations } from './db/migrate.js';
 import { createInstanceHealth } from './health/report.js';
-import { readCoreVersion } from './health/version.js';
+import { CoreVersionError, readCoreVersion } from './health/version.js';
 
 export interface StartInstanceOptions {
   env: Env;
@@ -68,6 +73,9 @@ export async function startInstance(options: StartInstanceOptions): Promise<Runn
 
   // Sin versión del núcleo no se arranca: nunca se declara una versión desconocida (009, R4).
   const coreVersion = readCoreVersion();
+
+  // 013: el certificado de la autoridad se comprueba antes de crear ningún cliente.
+  assertCaReadable(env.DATABASE_URL, 'DATABASE_URL');
 
   // Antes que nada: una restauración en curso o una segunda copia del servidor no arrancan (R7).
   const lock: AdvisoryLock | null = await tryAdvisoryLock(env.DATABASE_URL, INSTANCE_RUNNING);
@@ -163,4 +171,22 @@ export async function startInstance(options: StartInstanceOptions): Promise<Runn
       await lock.release();
     },
   };
+}
+
+/**
+ * Texto que muestra el proceso si el arranque falla (013, contracts/database-tls.md): el de los
+ * errores propios, que no llevan datos; para cualquier otro, el texto fijo del fallo de conexión,
+ * nunca `error.message` (el de un error TLS lleva el host y los nombres del certificado).
+ */
+export function startupErrorMessage(error: unknown): string {
+  if (error instanceof DatabaseConfigError) return error.describe();
+  if (
+    error instanceof InstanceBusyError ||
+    error instanceof MigrationBlockedError ||
+    error instanceof MigrationFailedError ||
+    error instanceof CoreVersionError
+  ) {
+    return error.message;
+  }
+  return describeDatabaseError(error, 'DATABASE_URL').describe();
 }

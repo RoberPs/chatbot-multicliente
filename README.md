@@ -16,6 +16,7 @@ Estados: especificada → planificada → en implementación → completada (o a
 | 010 | Consumo y coste por instancia | Núcleo | Completada | `010-usage-cost-cap` | [spec](specs/010-usage-cost-cap/spec.md) · [plan](specs/010-usage-cost-cap/plan.md) · [tareas](specs/010-usage-cost-cap/tasks.md) | 2026-10-01  |
 | 011 | Diseño del chat web | Núcleo | Completada | `011-chat-design` | [spec](specs/011-chat-design/spec.md) · [plan](specs/011-chat-design/plan.md) · [tareas](specs/011-chat-design/tasks.md) | 2026-10-05  |
 | 012 | Protección frente a abuso y saturación | Núcleo | Completada | `012-abuse-protection` | [spec](specs/012-abuse-protection/spec.md) · [plan](specs/012-abuse-protection/plan.md) · [tareas](specs/012-abuse-protection/tasks.md) | 2026-10-06  |
+| 013 | Requisitos de despliegue seguro | Núcleo (operación) | Completada (validación de la receta por una persona ajena pendiente, T044b) | `013-secure-deployment` | [spec](specs/013-secure-deployment/spec.md) · [plan](specs/013-secure-deployment/plan.md) · [tareas](specs/013-secure-deployment/tasks.md) | 2026-10-06  |
 
 ---
 
@@ -241,6 +242,31 @@ Desde la feature 012, una instancia aguanta el abuso desde Internet sin credenci
 
 Guía de validación: [specs/012-abuse-protection/quickstart.md](specs/012-abuse-protection/quickstart.md).
 
+## Despliegue seguro
+
+Desde la feature 013, el despliegue seguro se comprueba en lugar de depender de la memoria del
+operador:
+
+- **`pnpm instance:check`** da NO APTO en producción con `TRUST_PROXY` vacío y `PUBLIC_BASE_URL` en
+  `https` (`trust_proxy_empty`) y con cualquier URL de base de datos remota (`DATABASE_URL`,
+  `BACKUP_VERIFY_URL`, `INSTANCE_DB_ADMIN_URL`) sin `sslmode=verify-full` en la propia URL
+  (`database_tls_required`). En una instancia de pruebas son advertencias.
+- **`pnpm instance:db`** se niega a conectar con un servidor remoto sin TLS verificado; acepta
+  `--sslrootcert <ruta del contenedor>` y pone `verify-full` por defecto con `--print-sql --host`
+  remoto. `instance:new` escribe `TRUST_PROXY=1`.
+- **TLS hacia PostgreSQL** con `sslmode=verify-full` (y `sslrootcert` si la autoridad no es
+  pública) en todas las conexiones; un certificado ilegible o que no vale se explica sin mostrar la
+  URL, el host ni la ruta. Usa en la URL el nombre del certificado, nunca una IP.
+- **`pnpm db:verify`**: las bases temporales no admiten conexiones de otros usuarios y cada
+  verificación limpia antes las huérfanas de más de 6 h (informa cuántas, sin nombres).
+- **Imagen**: `HEALTHCHECK` sobre la vista pública de `/health`, base `node:22-slim` fijada por
+  digest, pnpm con hash, `save-exact` y scripts de instalación solo para `argon2` y `esbuild`;
+  `.gitignore` excluye `*.pem`, `*.key` y `*.p12`.
+- **Receta de producción** paso a paso, cada uno con su comprobación: §2.5 de
+  [docs/operacion-multicliente.md](docs/operacion-multicliente.md#25-despliegue).
+
+Guía de validación: [specs/013-secure-deployment/quickstart.md](specs/013-secure-deployment/quickstart.md).
+
 ## Exportar e importar la configuración
 
 La página **Exportar e importar** del panel (`/admin/config`, feature 008) lleva la configuración del
@@ -329,7 +355,7 @@ Contrato de las órdenes: [specs/007-instance-provisioning/contracts/instance-co
 
 | Variable | Obligatoria | Descripción |
 |----------|-------------|-------------|
-| `DATABASE_URL` | Sí | Base de datos propia de la instancia (una por cliente) |
+| `DATABASE_URL` | Sí | Base de datos propia de la instancia (una por cliente). Con un servidor remoto, `sslmode=verify-full` (y `sslrootcert` si la autoridad no es pública) |
 | `OPERATOR_USER` | Sí | Usuario del operador |
 | `OPERATOR_PASSWORD_HASH` | Sí | Hash Argon2id de la contraseña (`pnpm operator:hash-password`, mínimo 12 caracteres) |
 | `SESSION_SECRET` | Sí | Clave de la cookie de sesión: 32 bytes aleatorios en hex (`openssl rand -hex 32`). Cambiarla cierra todas las sesiones |
@@ -338,7 +364,7 @@ Contrato de las órdenes: [specs/007-instance-provisioning/contracts/instance-co
 | `DEFAULT_CURRENCY` | No (`EUR`) | Moneda ISO 4217 inicial del negocio |
 | `PORT` | No (`3000`) | Puerto HTTP |
 | `NODE_ENV` | Sí | `development`, `test` o `production`. En `production` la cookie es `Secure`, se envía HSTS y las plantillas se cachean |
-| `TRUST_PROXY` | No (ninguno) | Proxies delante del servicio: número de saltos (`1`) o IP/CIDR separadas por comas. Nunca `true` |
+| `TRUST_PROXY` | Con `PUBLIC_BASE_URL` https (013) | Proxies delante del servicio: número de saltos (`1`) o IP/CIDR separadas por comas. Nunca `true` |
 | `WHATSAPP_PHONE_NUMBER_ID` · `WHATSAPP_ACCESS_TOKEN` · `WHATSAPP_APP_SECRET` · `WHATSAPP_VERIFY_TOKEN` · `WHATSAPP_GRAPH_VERSION` | Las cinco o ninguna | Canal de WhatsApp Cloud API. Sin ellas la instancia arranca solo con el panel |
 | `EMERGENCY_CONTACT_PHONE` | Con `ANTHROPIC_API_KEY` | Teléfono E.164 que se da si no se puede leer la información del negocio (disculpa del bot y chat web "no disponible") |
 | `ANTHROPIC_API_KEY` | Para tener bot | Clave de la API de Anthropic. Con ella ya hay bot: "Probar el bot" y chat web, aunque no haya WhatsApp. También la usan `pnpm bot:chat` y `pnpm test:eval` |
@@ -402,6 +428,8 @@ balanceador, y la versión solo con `HEALTH_SECRET`. Cada
 instancia es un contenedor con sus variables de entorno, su base de datos y un **volumen
 persistente para las copias** (la imagen declara `/var/lib/chatbot/backups`, escribible por el
 usuario `node`); al arrancar aplica las migraciones pendientes, con copia previa si hay datos.
+Desde la 013 la imagen trae un `HEALTHCHECK` (sana solo con `{"status":"ok"}`, 120 s de gracia) y
+la receta de producción está en la §2.5 de la guía de operación.
 
 > **Instancias existentes (desde la 006)**: en `production` una instancia **no arranca** sin
 > `INSTANCE_ID`, `BACKUP_DIR` y `BACKUP_KEY` y un volumen montado en `BACKUP_DIR`. Añádelos antes

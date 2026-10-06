@@ -94,6 +94,10 @@ export const CHECK_ERROR_CODES = [
   'inventory_key_missing',
   'inventory_key_wrong',
   'inventory_unreadable',
+  // 013: en producción; en pruebas, el mismo código sale como advertencia.
+  'trust_proxy_empty',
+  'database_tls_required',
+  'database_url_invalid',
 ] as const;
 
 export const CHECK_WARNING_CODES = [
@@ -102,7 +106,6 @@ export const CHECK_WARNING_CODES = [
   'pending_optional',
   'shared_smtp',
   'shared_backup_dir',
-  'trust_proxy_empty',
   'database_superuser',
   'database_localhost',
   'llm_key_format',
@@ -323,9 +326,24 @@ export const CHECK_CATALOG: Record<CheckCode, CatalogEntry> = {
       'Las copias no se mezclan, pero borrar ese volumen afectaría a las dos instancias; usa uno propio si puedes.',
   },
   trust_proxy_empty: {
-    message: () => 'TRUST_PROXY está vacío: con https suele haber un proxy delante.',
-    detail: () => 'está vacío: con https suele haber un proxy delante.',
-    action: () => 'Indica el número de saltos (p. ej. 1) si hay un proxy inverso.',
+    message: () =>
+      'TRUST_PROXY está vacío y PUBLIC_BASE_URL es https: la instancia no termina TLS, así que hay un proxy delante y sin TRUST_PROXY todos los clientes parecen venir de la misma dirección.',
+    detail: () =>
+      'está vacío con PUBLIC_BASE_URL en https: hay un proxy delante y la instancia no lo sabe.',
+    action: () =>
+      'Indica el número de saltos del proxy (1 si hay uno) o sus IP/CIDR, y comprueba la dirección que ve la instancia (sección 2.5 de la guía).',
+  },
+  database_tls_required: {
+    message: (c) =>
+      `${v(c)} apunta a un servidor remoto sin TLS verificado: hace falta sslmode=verify-full en la propia URL (las variables PG* del entorno no cuentan).`,
+    detail: () => 'apunta a un servidor remoto sin sslmode=verify-full en la URL.',
+    action: () =>
+      'Añade sslmode=verify-full a la URL y, si la autoridad del certificado no es pública, sslrootcert=<ruta del certificado en el contenedor> (sección 2.5).',
+  },
+  database_url_invalid: {
+    message: (c) => `${v(c)} no es una URL de PostgreSQL válida.`,
+    detail: () => 'no es una URL de PostgreSQL válida.',
+    action: () => 'Usa el formato postgres://usuario@servidor:puerto/base?sslmode=verify-full.',
   },
   database_superuser: {
     message: () => 'El usuario de DATABASE_URL es postgres (superusuario).',
@@ -515,6 +533,12 @@ const COMMAND_CATALOG = {
     exit: 2,
     message: () =>
       'Falta INSTANCE_DB_ADMIN_URL y no hay terminal para pedirla. Defínela o usa --print-sql --host <servidor> --port <puerto>.',
+  },
+  // 013 (FR-007): por esa conexión viaja la credencial de administración; sin opción de escape.
+  admin_url_tls_required: {
+    exit: 1,
+    message: () =>
+      'INSTANCE_DB_ADMIN_URL apunta a un servidor remoto sin TLS verificado: por esa conexión viaja la credencial de administración.\n→ Añade sslmode=verify-full (y sslrootcert=<ruta> si la autoridad no es pública), o usa --print-sql --host <servidor> --port <puerto> y aplica el SQL tú mismo.',
   },
   admin_url_invalid: {
     exit: 2,

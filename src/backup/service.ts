@@ -10,6 +10,7 @@ import { Readable, type Transform } from 'node:stream';
 import { pipeline } from 'node:stream/promises';
 import pg from 'pg';
 import { from as copyFrom } from 'pg-copy-streams';
+import { describeDatabaseError } from '../config/database-url.js';
 import type { LoggerLike } from '../conversation/activity-log.js';
 import { systemClock, type Clock } from '../conversation/ports.js';
 import { conversationSettings } from '../conversation/settings.js';
@@ -32,6 +33,7 @@ import {
   BackupError,
   backupFailureCode,
   RestoreFailure,
+  type DbTlsFailureCode,
   type RestoreFailureCode,
 } from './errors.js';
 import { createBackupWriter, openBackup, readHeader, type BackupHeader } from './format.js';
@@ -45,6 +47,7 @@ import {
   journal,
   pendingMigrations,
 } from './schema-version.js';
+import { selectOrphans, verifyDatabaseName } from './verify-names.js';
 
 const HOUR = 60 * 60 * 1000;
 
@@ -94,6 +97,24 @@ export async function connect(url: string): Promise<pg.Client> {
   client.on('error', () => undefined);
   await client.connect();
   return client;
+}
+
+/**
+ * Fallo al conectar, clasificado por su código y nunca por su texto (013,
+ * contracts/database-tls.md): los de TLS tienen código propio; el resto es `fallback`.
+ */
+function connectFailure<T extends string>(error: unknown, fallback: T): T | DbTlsFailureCode {
+  // La variable no importa aquí: solo se usa el motivo.
+  switch (describeDatabaseError(error, 'DATABASE_URL').reason) {
+    case 'ca_unreadable':
+      return 'db_ca_unreadable';
+    case 'tls_untrusted':
+      return 'db_tls_untrusted';
+    case 'tls_unsupported':
+      return 'db_tls_unsupported';
+    default:
+      return fallback;
+  }
 }
 
 async function checkDirectory(dir: string): Promise<void> {
@@ -167,8 +188,8 @@ export async function createBackup(options: CreateBackupOptions): Promise<Backup
     const key = parseKey(config.key);
     try {
       lock = await tryAdvisoryLock(databaseUrl, BACKUP_IN_PROGRESS);
-    } catch {
-      throw new BackupError('db_error');
+    } catch (error) {
+      throw new BackupError(connectFailure(error, 'db_error'));
     }
     if (!lock) throw new BackupError('busy');
     await checkDirectory(config.dir);
@@ -176,8 +197,8 @@ export async function createBackup(options: CreateBackupOptions): Promise<Backup
 
     try {
       client = await connect(databaseUrl);
-    } catch {
-      throw new BackupError('db_error');
+    } catch (error) {
+      throw new BackupError(connectFailure(error, 'db_error'));
     }
     let dump;
     try {
@@ -621,15 +642,15 @@ export async function restoreBackup(options: RestoreBackupOptions): Promise<Rest
   try {
     try {
       lock = await tryAdvisoryLock(options.databaseUrl, INSTANCE_RUNNING);
-    } catch {
-      throw new RestoreFailure('db_error');
+    } catch (error) {
+      throw new RestoreFailure(connectFailure(error, 'db_error'));
     }
     if (!lock) throw new RestoreFailure('instance_running');
     const pre = await precheckBackup(options.file, options);
     try {
       client = await connect(options.databaseUrl);
-    } catch {
-      throw new RestoreFailure('db_error');
+    } catch (error) {
+      throw new RestoreFailure(connectFailure(error, 'db_error'));
     }
     const loaded = await loadBackup(client, pre, options);
     const report: RestoreReport = {
@@ -662,6 +683,15 @@ export async function restoreBackup(options: RestoreBackupOptions): Promise<Rest
 // Comprobación en una BD temporal (US5, research R12)
 // ---------------------------------------------------------------------------
 
+/** Limpieza de bases temporales huérfanas antes de verificar (013, contracts/verify-cleanup.md). */
+export interface OrphanCleanup {
+  /** `false` si no se pudo listar el servidor (la verificación sigue). */
+  listed: boolean;
+  removed: number;
+  /** Huérfanas que no se pudieron borrar (permisos u otro error). */
+  failed: number;
+}
+
 export interface VerifyReport {
   file: string;
   restorable: boolean;
@@ -673,7 +703,17 @@ export interface VerifyReport {
   createdAt?: string;
   tables?: TableCount[];
   expiredConversations?: number;
+  /** Sin nombres de base: solo recuentos. */
+  orphans: OrphanCleanup;
   durationMs: number;
+}
+
+/** Ganchos de prueba de `verifyBackup`. */
+export interface VerifyInternals {
+  /** Sustituye el listado de bases `verify_%` (p. ej. para simular que falla). */
+  listOrphans?: (admin: pg.ClientBase) => Promise<Array<{ name: string; connections: number }>>;
+  /** Tras conectar a la temporal y antes de cargar la copia. */
+  beforeLoad?: (database: string) => Promise<void>;
 }
 
 /** La misma URL apuntando a otra base de datos del servidor. */
@@ -683,28 +723,78 @@ function withDatabase(url: string, database: string): string {
   return u.toString();
 }
 
+/** Bases `verify_%` del servidor con sus conexiones; legible para cualquier usuario (R5). */
+async function listVerifyDatabases(
+  admin: pg.ClientBase,
+): Promise<Array<{ name: string; connections: number }>> {
+  const result = await admin.query<{ name: string; connections: number }>(
+    `select d.datname as name, count(a.pid)::int as connections
+       from pg_database d left join pg_stat_activity a on a.datname = d.datname
+      where d.datname like 'verify\\_%'
+      group by d.datname`,
+  );
+  return result.rows;
+}
+
 /**
- * Restaura la copia en una BD temporal `verify_<16 hex>` del servidor de `BACKUP_VERIFY_URL`,
- * recuenta contra la cabecera y la borra siempre. Nunca lee ni escribe las tablas de la
- * instancia: de ese servidor solo usa la BD de mantenimiento de la URL para crear y borrar la
- * temporal. Acepta copias de cualquier instancia (el informe dice de cuál es).
+ * Borra las huérfanas (patrón exacto, sin conexiones y más de 6 h o formato anterior) con `DROP`
+ * **sin** `FORCE`: si alguien se conecta entre el listado y el borrado, PostgreSQL lo rechaza
+ * (`55006`) y la base se respeta sin contarla. Ningún fallo detiene la verificación (FR-012).
+ */
+async function cleanupOrphans(
+  admin: pg.ClientBase,
+  now: Date,
+  internal: VerifyInternals | undefined,
+): Promise<OrphanCleanup> {
+  let rows;
+  try {
+    rows = await (internal?.listOrphans ?? listVerifyDatabases)(admin);
+  } catch {
+    return { listed: false, removed: 0, failed: 0 };
+  }
+  const result: OrphanCleanup = { listed: true, removed: 0, failed: 0 };
+  for (const name of selectOrphans(rows, now)) {
+    try {
+      // `selectOrphans` solo devuelve nombres del patrón exacto: no se puede inyectar nada.
+      await admin.query(`drop database ${quoteIdent(name)}`);
+      result.removed += 1;
+    } catch (error) {
+      if ((error as { code?: unknown } | null)?.code !== '55006') result.failed += 1;
+    }
+  }
+  return result;
+}
+
+/**
+ * Restaura la copia en una BD temporal `verify_<yyyymmddhhmmss UTC>_<16 hex>` del servidor de
+ * `BACKUP_VERIFY_URL`, recuenta contra la cabecera y la borra siempre. Nunca lee ni escribe las
+ * tablas de la instancia: de ese servidor solo usa la BD de mantenimiento de la URL para limpiar
+ * las huérfanas y crear y borrar la temporal, que no admite conexiones de otros usuarios
+ * (`REVOKE … FROM PUBLIC`, 013 FR-009). Acepta copias de cualquier instancia (el informe dice de
+ * cuál es).
  */
 export async function verifyBackup(options: {
   file: string;
   config: BackupConfig;
   clock?: Clock;
   logger?: LoggerLike;
+  internal?: VerifyInternals;
 }): Promise<VerifyReport> {
   const log = createBackupLog(options.logger ?? silentLogger);
   const file = basename(options.file);
   const started = Date.now();
   const installed = installedSchema().tag;
+  const clock = options.clock ?? systemClock;
   let header: BackupHeader | null = null;
+  let orphans: OrphanCleanup = { listed: false, removed: 0, failed: 0 };
 
-  const finish = (report: Omit<VerifyReport, 'durationMs' | 'installedSchema'>): VerifyReport => {
+  const finish = (
+    report: Omit<VerifyReport, 'durationMs' | 'installedSchema' | 'orphans'>,
+  ): VerifyReport => {
     const full: VerifyReport = {
       ...report,
       installedSchema: installed,
+      orphans,
       durationMs: Date.now() - started,
     };
     log.log({
@@ -714,6 +804,9 @@ export async function verifyBackup(options: {
       ...(full.failure ? { failure: full.failure } : {}),
       ...(full.schema ? { schema: full.schema } : {}),
       durationMs: full.durationMs,
+      orphansListed: orphans.listed,
+      orphansRemoved: orphans.removed,
+      orphansFailed: orphans.failed,
     });
     return full;
   };
@@ -727,7 +820,8 @@ export async function verifyBackup(options: {
         }
       : {};
 
-  const database = `verify_${randomBytes(8).toString('hex')}`;
+  const now = clock.now();
+  const database = verifyDatabaseName(now, randomBytes(8));
   let admin: pg.Client | null = null;
   let created = false;
   try {
@@ -740,19 +834,30 @@ export async function verifyBackup(options: {
       admin = new pg.Client({ connectionString: options.config.verifyUrl });
       admin.on('error', () => undefined);
       await admin.connect();
-      // El nombre es aleatorio y solo lleva [0-9a-f]: no se puede inyectar nada.
+    } catch (error) {
+      throw new RestoreFailure(connectFailure(error, 'verify_db_unavailable'));
+    }
+    orphans = await cleanupOrphans(admin, now, options.internal);
+    try {
+      // El nombre solo lleva cifras, `_` y [0-9a-f]: no se puede inyectar nada.
       await admin.query(`create database ${quoteIdent(database)}`);
       created = true;
+      // Antes de cargar ningún dato: solo su dueño (y un superusuario) puede entrar.
+      await admin.query(
+        `revoke connect, temporary on database ${quoteIdent(database)} from public`,
+      );
     } catch {
+      // Si la base llegó a crearse, el `finally` la borra.
       throw new RestoreFailure('verify_db_unavailable');
     }
     let client: pg.Client | null = null;
     try {
       try {
         client = await connect(withDatabase(options.config.verifyUrl, database));
-      } catch {
-        throw new RestoreFailure('verify_db_unavailable');
+      } catch (error) {
+        throw new RestoreFailure(connectFailure(error, 'verify_db_unavailable'));
       }
+      await options.internal?.beforeLoad?.(database);
       const loaded = await loadBackup(client, pre, options.clock ? { clock: options.clock } : {});
       return finish({
         file,

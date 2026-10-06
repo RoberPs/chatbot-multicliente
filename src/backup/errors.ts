@@ -12,7 +12,12 @@ export type BackupFailureCode =
   | 'no_space'
   | 'busy'
   | 'db_error'
-  | 'io_error';
+  | 'io_error'
+  // 013 (contracts/database-tls.md): TLS hacia PostgreSQL.
+  | DbTlsFailureCode;
+
+/** Fallos de TLS o del certificado de la autoridad, comunes a copias, restauración y verificación. */
+export type DbTlsFailureCode = 'db_ca_unreadable' | 'db_tls_untrusted' | 'db_tls_unsupported';
 
 export type RestoreFailureCode =
   | 'not_a_backup'
@@ -27,7 +32,8 @@ export type RestoreFailureCode =
   | 'instance_running'
   | 'count_mismatch'
   | 'db_error'
-  | 'verify_db_unavailable';
+  | 'verify_db_unavailable'
+  | DbTlsFailureCode;
 
 export type MigrationBlockCode = BackupFailureCode | 'backup_not_configured';
 

@@ -1,11 +1,14 @@
 import { createHash, createHmac } from 'node:crypto';
 import { describe, expect, it } from 'vitest';
+import { classifyDatabaseUrl } from '../../../src/config/database-url.js';
 import {
   buildDatabaseUrl,
   databaseNames,
   describeAdminUrl,
   generateDbPassword,
+  parseAdminUrl,
   planSql,
+  probeUrl,
   scramVerifier,
   translatePgError,
 } from '../../../src/provisioning/database.js';
@@ -96,6 +99,70 @@ describe('URL', () => {
         sslmode: 'require',
       }),
     ).toBe('postgres://u:p@h:6543/d?sslmode=require');
+  });
+
+  it('parseAdminUrl: local y verifiedTls coherentes con classifyDatabaseUrl (013)', () => {
+    const urls = [
+      'postgres://admin:x@10.0.0.5:5432/postgres',
+      'postgres://admin:x@10.0.0.5:5432/postgres?sslmode=require',
+      'postgres://admin:x@db.interna/postgres?sslmode=verify-full&sslrootcert=/home/op/ca.crt',
+      'postgres://admin:x@localhost/postgres',
+      'postgres://admin:x@127.0.0.9/postgres?sslmode=disable',
+      'postgres://admin:x@[::1]/postgres',
+    ];
+    for (const url of urls) {
+      const c = classifyDatabaseUrl(url);
+      if (c.kind !== 'ok') throw new Error('URL de prueba no válida');
+      expect(parseAdminUrl(url)).toMatchObject({ local: c.local, verifiedTls: c.verifiedTls });
+    }
+    expect(
+      parseAdminUrl(
+        'postgres://admin:x@db.interna/postgres?sslmode=verify-full&sslrootcert=/home/op/ca.crt',
+      ),
+    ).toMatchObject({ sslmode: 'verify-full', sslrootcert: '/home/op/ca.crt' });
+    expect(parseAdminUrl('mysql://admin:x@db.interna/postgres')).toBeNull();
+  });
+
+  it('buildDatabaseUrl añade sslrootcert solo si se pasa', () => {
+    const base = { host: 'db.interna', port: 5432, database: 'd', user: 'u', password: 'p' };
+    expect(
+      buildDatabaseUrl({ ...base, sslmode: 'verify-full', sslrootcert: '/etc/chatbot/db-ca.crt' }),
+    ).toBe(
+      'postgres://u:p@db.interna:5432/d?sslmode=verify-full&sslrootcert=%2Fetc%2Fchatbot%2Fdb-ca.crt',
+    );
+    expect(buildDatabaseUrl({ ...base, sslmode: 'verify-full', sslrootcert: null })).toBe(
+      'postgres://u:p@db.interna:5432/d?sslmode=verify-full',
+    );
+  });
+
+  it('buildDatabaseUrl con defaultVerifyFull: verify-full solo con host remoto y sin sslmode', () => {
+    const base = { database: 'd', user: 'u', password: 'p', port: 5432, defaultVerifyFull: true };
+    expect(buildDatabaseUrl({ ...base, host: 'db.interna' })).toBe(
+      'postgres://u:p@db.interna:5432/d?sslmode=verify-full',
+    );
+    expect(buildDatabaseUrl({ ...base, host: 'localhost' })).toBe(
+      'postgres://u:p@localhost:5432/d',
+    );
+    expect(buildDatabaseUrl({ ...base, host: 'db.interna', sslmode: 'require' })).toBe(
+      'postgres://u:p@db.interna:5432/d?sslmode=require',
+    );
+    expect(classifyDatabaseUrl(buildDatabaseUrl({ ...base, host: 'db.interna' }))).toMatchObject({
+      verifiedTls: true,
+    });
+  });
+
+  it('probeUrl conserva sslmode y sslrootcert de la URL de administración (R3)', () => {
+    const probe = probeUrl(
+      'postgres://admin:x@db.interna:6000/postgres?sslmode=verify-full&sslrootcert=/home/op/ca.crt',
+      databaseNames('demo-02'),
+      'clave',
+    );
+    const u = new URL(probe);
+    expect(u.hostname).toBe('db.interna');
+    expect(u.port).toBe('6000');
+    expect(u.pathname).toBe('/chatbot_demo_02');
+    expect(u.searchParams.get('sslmode')).toBe('verify-full');
+    expect(u.searchParams.get('sslrootcert')).toBe('/home/op/ca.crt');
   });
 
   it('describeAdminUrl solo muestra servidor y puerto', () => {

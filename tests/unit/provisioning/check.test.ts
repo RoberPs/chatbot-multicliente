@@ -12,6 +12,7 @@ import {
   argonHash,
   collectSecrets,
   containsAny,
+  expectNoUrlParts,
   instanceFromEnv,
   productionEnv,
   TEST_INVENTORY_KEY,
@@ -421,7 +422,6 @@ describe('validate: advertencias, perfiles e inventario', () => {
   it('advertencias de producción', () => {
     const result = run(
       fresh({
-        TRUST_PROXY: '',
         DATABASE_URL: `postgres://postgres:${token(24)}@localhost:5432/chatbot_demo_09`,
         ANTHROPIC_API_KEY: token(48),
         OPERATOR_PASSWORD_HASH: argonHash(4096, 1),
@@ -430,7 +430,6 @@ describe('validate: advertencias, perfiles e inventario', () => {
     expect(result.ok).toBe(true);
     expect(warningKeys(result)).toEqual(
       expect.arrayContaining([
-        'trust_proxy_empty:TRUST_PROXY',
         'database_superuser:DATABASE_URL',
         'database_localhost:DATABASE_URL',
         'llm_key_format:ANTHROPIC_API_KEY',
@@ -496,6 +495,186 @@ describe('validate: advertencias, perfiles e inventario', () => {
       reason: 'no es un JSON válido',
     });
     expect(errorKeys(result)).toContain('inventory_unreadable:-');
+  });
+});
+
+describe('reglas de despliegue seguro (013, contracts/check-rules.md)', () => {
+  /** Acceso con el entorno registrado como instancia de pruebas (perfil `testing`). */
+  const asTesting = (env: EnvMap): InventoryAccess => {
+    const inv = structuredClone(inventory);
+    inv.instances.push(instanceFromEnv(env, { status: 'testing' }));
+    return { ...access, inventory: inv };
+  };
+  const remote = (query = '') =>
+    `postgres://usuario_remoto:${token(24)}@servidor-remoto.interna:5432/base_remota${query}`;
+
+  const TRUST_PROXY_TEXT = {
+    message:
+      'TRUST_PROXY está vacío y PUBLIC_BASE_URL es https: la instancia no termina TLS, así que hay un proxy delante y sin TRUST_PROXY todos los clientes parecen venir de la misma dirección.',
+    action:
+      'Indica el número de saltos del proxy (1 si hay uno) o sus IP/CIDR, y comprueba la dirección que ve la instancia (sección 2.5 de la guía).',
+  };
+
+  it('un entorno de producción correcto es APTO (SC-001)', () => {
+    const result = run(fresh());
+    expect(result.ok).toBe(true);
+    const codes = [...result.errors, ...result.warnings].map((f) => f.code);
+    expect(codes).not.toContain('trust_proxy_empty');
+    expect(codes).not.toContain('database_tls_required');
+  });
+
+  it.each([
+    ['ausente', undefined],
+    ['vacío', ''],
+    ['false', 'false'],
+  ])('TRUST_PROXY %s con https → error en producción', (_name, value) => {
+    const env = fresh();
+    if (value === undefined) delete env.TRUST_PROXY;
+    else env.TRUST_PROXY = value;
+    const result = run(env);
+    expect(result.ok).toBe(false);
+    expect(result.errors).toContainEqual(
+      expect.objectContaining({
+        code: 'trust_proxy_empty',
+        variable: 'TRUST_PROXY',
+        ...TRUST_PROXY_TEXT,
+      }),
+    );
+    expect(formatCheckResult(result)).toContain(
+      '  ✗ TRUST_PROXY: está vacío con PUBLIC_BASE_URL en https: hay un proxy delante y la instancia no lo sabe.',
+    );
+  });
+
+  it('TRUST_PROXY vacío con https → advertencia en pruebas', () => {
+    const env = fresh({ TRUST_PROXY: '' });
+    const result = run(env, asTesting(env));
+    expect(result.profile).toBe('testing');
+    expect(result.ok).toBe(true);
+    expect(warningKeys(result)).toContain('trust_proxy_empty:TRUST_PROXY');
+  });
+
+  it('con TRUST_PROXY=1 no hay hallazgo', () => {
+    expect([...warningKeys(run(fresh())), ...errorKeys(run(fresh()))]).not.toContain(
+      'trust_proxy_empty:TRUST_PROXY',
+    );
+  });
+
+  it('sin PUBLIC_BASE_URL sigue siendo error en producción (FR-002)', () => {
+    const env = fresh();
+    delete env.PUBLIC_BASE_URL;
+    expect(errorKeys(run(env))).toContain('missing:PUBLIC_BASE_URL');
+  });
+
+  const variables = ['DATABASE_URL', 'BACKUP_VERIFY_URL', 'INSTANCE_DB_ADMIN_URL'] as const;
+  const insecure = [
+    ['sin sslmode', ''],
+    ['sslmode=require', '?sslmode=require'],
+    ['sslmode=verify-ca', '?sslmode=verify-ca'],
+  ] as const;
+
+  for (const variable of variables) {
+    it.each(insecure)(`${variable} remota %s → database_tls_required`, (_name, query) => {
+      const url = remote(query);
+      const env = fresh({ [variable]: url });
+      const prod = run(env);
+      expect(prod.ok).toBe(false);
+      expect(errorKeys(prod)).toContain(`database_tls_required:${variable}`);
+      const finding = prod.errors.find((e) => e.code === 'database_tls_required');
+      expect(finding).toMatchObject({
+        message: `${variable} apunta a un servidor remoto sin TLS verificado: hace falta sslmode=verify-full en la propia URL (las variables PG* del entorno no cuentan).`,
+        detail: 'apunta a un servidor remoto sin sslmode=verify-full en la URL.',
+        action:
+          'Añade sslmode=verify-full a la URL y, si la autoridad del certificado no es pública, sslrootcert=<ruta del certificado en el contenedor> (sección 2.5).',
+      });
+      expectNoUrlParts(formatCheckResult(prod), url);
+      expectNoUrlParts(checkResultJson(prod), url);
+
+      const testing = run(env, asTesting(env));
+      expect(errorKeys(testing)).not.toContain(`database_tls_required:${variable}`);
+      expect(warningKeys(testing)).toContain(`database_tls_required:${variable}`);
+    });
+
+    it(`${variable} remota con verify-full → sin hallazgo de TLS`, () => {
+      const result = run(
+        fresh({ [variable]: remote('?sslmode=verify-full&sslrootcert=/etc/ca.crt') }),
+      );
+      const codes = [...result.errors, ...result.warnings].map((f) => f.code);
+      expect(codes).not.toContain('database_tls_required');
+    });
+  }
+
+  it('host local: sin error de TLS y database_localhost sigue siendo advertencia (FR-004)', () => {
+    const result = run(
+      fresh({
+        DATABASE_URL: `postgres://chatbot_demo_09:${token(24)}@127.0.0.1:5432/chatbot_demo_09`,
+      }),
+    );
+    expect(result.ok).toBe(true);
+    expect(warningKeys(result)).toContain('database_localhost:DATABASE_URL');
+    expect(errorKeys(result)).not.toContain('database_tls_required:DATABASE_URL');
+  });
+
+  it('sin BACKUP_VERIFY_URL no se repite el hallazgo de DATABASE_URL', () => {
+    const result = run(fresh({ DATABASE_URL: remote() }));
+    expect(result.errors.filter((e) => e.code === 'database_tls_required')).toHaveLength(1);
+  });
+
+  it.each(['BACKUP_VERIFY_URL', 'INSTANCE_DB_ADMIN_URL'])(
+    '%s mal formada → database_url_invalid en los dos perfiles',
+    (variable) => {
+      const env = fresh({ [variable]: 'mysql://raro:clave-mala@servidor-raro/basex' });
+      for (const result of [run(env), run(env, asTesting(env))]) {
+        expect(errorKeys(result)).toContain(`database_url_invalid:${variable}`);
+        expect(result.errors.find((e) => e.code === 'database_url_invalid')).toMatchObject({
+          message: `${variable} no es una URL de PostgreSQL válida.`,
+          detail: 'no es una URL de PostgreSQL válida.',
+          action: 'Usa el formato postgres://usuario@servidor:puerto/base?sslmode=verify-full.',
+        });
+        expectNoUrlParts(formatCheckResult(result), 'mysql://raro:clave-mala@servidor-raro/basex');
+      }
+    },
+  );
+
+  it('DATABASE_URL mal formada no da database_tls_required', () => {
+    const result = run(fresh({ DATABASE_URL: 'mysql://raro:clave@servidor-raro/basex' }));
+    const codes = [...result.errors, ...result.warnings].map((f) => f.code);
+    expect(codes).not.toContain('database_tls_required');
+    expect(codes).not.toContain('database_url_invalid');
+  });
+
+  it('en pruebas ninguna regla nueva cambia el resultado (SC-007)', () => {
+    const env = fresh({
+      TRUST_PROXY: '',
+      DATABASE_URL: remote(),
+      BACKUP_VERIFY_URL: remote('?sslmode=require'),
+      INSTANCE_DB_ADMIN_URL: remote('?sslmode=verify-ca'),
+    });
+    const result = run(env, asTesting(env));
+    expect(result.ok).toBe(true);
+    expect(warningKeys(result)).toEqual(
+      expect.arrayContaining([
+        'trust_proxy_empty:TRUST_PROXY',
+        'database_tls_required:DATABASE_URL',
+        'database_tls_required:BACKUP_VERIFY_URL',
+        'database_tls_required:INSTANCE_DB_ADMIN_URL',
+      ]),
+    );
+  });
+
+  it('paridad texto/JSON en code y variable', () => {
+    const env = fresh({ TRUST_PROXY: '', DATABASE_URL: remote(), BACKUP_VERIFY_URL: remote() });
+    const result = run(env);
+    const json = JSON.parse(checkResultJson(result)) as CheckResult;
+    expect(json.errors.map((e) => `${e.code}:${e.variable ?? '-'}`)).toEqual(errorKeys(result));
+    const text = formatCheckResult(result);
+    for (const e of json.errors) expect(text).toContain(`✗ ${e.variable ?? ''}:`);
+    expect(errorKeys(result)).toEqual(
+      expect.arrayContaining([
+        'trust_proxy_empty:TRUST_PROXY',
+        'database_tls_required:DATABASE_URL',
+        'database_tls_required:BACKUP_VERIFY_URL',
+      ]),
+    );
   });
 });
 

@@ -11,6 +11,7 @@ import { ProvisioningError } from '../../../src/provisioning/messages.js';
 import {
   containsAny,
   envText,
+  expectNoUrlParts,
   instanceFromEnv,
   instanceIO,
   productionEnv,
@@ -284,6 +285,104 @@ describe('pnpm instance:db (US3)', () => {
     const server = new URL(adminUrl());
     direct.hostname = server.hostname;
     direct.port = server.port;
+    // 013: con --host remoto lleva verify-full; el servidor de pruebas no tiene TLS.
+    expect(direct.searchParams.get('sslmode')).toBe('verify-full');
+    direct.searchParams.delete('sslmode');
     expect(await canConnect(direct.toString())).toBe(true);
+  });
+});
+
+describe('pnpm instance:db con TLS verificado (013, FR-007)', () => {
+  const remoteAdmin = 'postgres://admin:clave-admin-remota@10.0.0.5:5432/postgres';
+  const ADMIN_TLS_TEXT = [
+    'INSTANCE_DB_ADMIN_URL apunta a un servidor remoto sin TLS verificado: por esa conexión viaja la credencial de administración.',
+    '→ Añade sslmode=verify-full (y sslrootcert=<ruta> si la autoridad no es pública), o usa --print-sql --host <servidor> --port <puerto> y aplica el SQL tú mismo.',
+  ].join('\n');
+
+  async function expectRefused(io: ReturnType<typeof instanceIO>, url: string): Promise<void> {
+    const envBefore = await readFile(envPath);
+    const invBefore = await ws.inventoryText();
+    let connected = false;
+    let inventoryOpened = false;
+    const deps = testDeps({
+      connectPg: () => {
+        connected = true;
+        return Promise.reject(new Error('no debe conectarse'));
+      },
+      writeInventory: () => {
+        inventoryOpened = true;
+        return Promise.resolve();
+      },
+    });
+    const started = Date.now();
+    expect(await main(['db', id], io, deps)).toBe(1);
+    // Vuelve al instante: no intenta conectar con 10.0.0.5.
+    expect(Date.now() - started).toBeLessThan(2000);
+    expect(connected).toBe(false);
+    expect(inventoryOpened).toBe(false);
+    expect(io.stderr.join('\n')).toBe(ADMIN_TLS_TEXT);
+    expect((await readFile(envPath)).equals(envBefore)).toBe(true);
+    expect(await ws.inventoryText()).toBe(invBefore);
+    // Ni siquiera el bloqueo del inventario.
+    expect(await ws.otherFilesText()).toBe(invBefore);
+    expectNoUrlParts(io.all(), url);
+  }
+
+  it.each([
+    ['sin sslmode', remoteAdmin],
+    ['con sslmode=require', `${remoteAdmin}?sslmode=require`],
+  ])('URL de administración remota %s → admin_url_tls_required sin conectar', async (_n, url) => {
+    await expectRefused(instanceIO(env({ INSTANCE_DB_ADMIN_URL: url })), url);
+  });
+
+  it('igual con una instancia de pruebas', async () => {
+    const inv = await ws.readInventory();
+    const inst = inv.instances.find((i) => i.id === id);
+    if (inst) inst.status = 'testing';
+    await ws.writeInventory(inv);
+    await expectRefused(instanceIO(env({ INSTANCE_DB_ADMIN_URL: remoteAdmin })), remoteAdmin);
+  });
+
+  it('igual con la URL pedida sin eco en la terminal', async () => {
+    const io = instanceIO(env({ INSTANCE_DB_ADMIN_URL: undefined }), {
+      tty: true,
+      hidden: [remoteAdmin],
+    });
+    await expectRefused(io, remoteAdmin);
+  });
+
+  it('--print-sql --host remoto --sslrootcert: DATABASE_URL con verify-full y sslrootcert, sin mostrar la ruta', async () => {
+    const io = instanceIO(env({ INSTANCE_DB_ADMIN_URL: undefined }));
+    const failing = () => Promise.reject(new Error('no debe conectarse'));
+    expect(
+      await main(
+        [
+          'db',
+          id,
+          '--print-sql',
+          '--host',
+          'db.interna',
+          '--port',
+          '5432',
+          '--sslrootcert',
+          '/etc/chatbot/db-ca.crt',
+        ],
+        io,
+        testDeps({ connectPg: failing }),
+      ),
+    ).toBe(0);
+    expect(io.stdout.join('\n')).toContain('CREATE ROLE "chatbot_');
+    const written = new URL((await readEnv()).DATABASE_URL ?? '');
+    expect(written.searchParams.get('sslmode')).toBe('verify-full');
+    expect(written.searchParams.get('sslrootcert')).toBe('/etc/chatbot/db-ca.crt');
+    expect(io.all()).not.toContain('/etc/chatbot/db-ca.crt');
+    expect(io.all()).not.toContain('db-ca.crt');
+  });
+
+  it('una URL de administración local sin TLS sigue funcionando como hoy', async () => {
+    const io = instanceIO(env());
+    expect(new URL(adminUrl()).searchParams.get('sslmode')).toBeNull();
+    expect(await main(['db', id], io, testDeps())).toBe(0);
+    expect(await canConnect((await readEnv()).DATABASE_URL ?? '')).toBe(true);
   });
 });

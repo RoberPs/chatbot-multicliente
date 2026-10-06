@@ -1,5 +1,5 @@
 import { loadDotEnvIfPresent, loadEnv } from './config/env.js';
-import { startInstance, type RunningInstance } from './startup.js';
+import { startInstance, startupErrorMessage, type RunningInstance } from './startup.js';
 
 loadDotEnvIfPresent();
 const env = loadEnv();
@@ -9,7 +9,8 @@ let instance: RunningInstance;
 try {
   instance = await startInstance({ env });
 } catch (error) {
-  console.error((error as Error).message);
+  // 013: nunca el texto original (podría llevar el host o los nombres del certificado).
+  console.error(startupErrorMessage(error));
   process.exit(1);
 }
 

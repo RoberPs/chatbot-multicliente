@@ -69,8 +69,11 @@ Lo cubre la integración. A mano, con un PostgreSQL con TLS y certificado propio
 
 1. `DATABASE_URL=…?sslmode=verify-full&sslrootcert=<ca>` y `pnpm dev`. **Esperado**: arranca;
    `/health` responde `ok`.
-2. Pon en la URL una IP en lugar del nombre del certificado. **Esperado**: no arranca y muestra
-   `DATABASE_URL: el certificado del servidor no es válido para ese nombre…`, sin la IP.
+2. Pon en la URL un nombre que no esté en el certificado (o `sslrootcert` con otra autoridad).
+   **Esperado**: no arranca y muestra
+   `DATABASE_URL: el certificado del servidor no es válido para ese nombre…`, sin el nombre.
+   Con una IP no sirve: `pg` no pasa la IP a TLS y compara el certificado con `localhost`
+   (encontrado al implementar; la guía pide usar siempre el nombre).
 3. Pon `sslrootcert=/no/existe.crt`. **Esperado**: `DATABASE_URL: no se puede leer el
    certificado de la autoridad…`, sin la ruta.
 4. Con la URL buena, ejecuta `pnpm db:backup` y `pnpm db:verify <copia>`. **Esperado**: las dos

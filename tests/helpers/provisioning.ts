@@ -184,7 +184,8 @@ export function argonHash(m = 65536, t = 3): string {
 export function productionEnv(id: string, overrides: Record<string, string> = {}): EnvMap {
   const dbName = `chatbot_${id.replaceAll('-', '_')}`;
   return {
-    DATABASE_URL: `postgres://${dbName}:${token(24)}@db.interna:5432/${dbName}`,
+    // 013: servidor remoto con TLS verificado (si no, `database_tls_required`).
+    DATABASE_URL: `postgres://${dbName}:${token(24)}@db.interna:5432/${dbName}?sslmode=verify-full`,
     OPERATOR_USER: 'operador',
     OPERATOR_PASSWORD_HASH: argonHash(),
     SESSION_SECRET: hex(),
@@ -290,4 +291,41 @@ export function collectSecrets(env: EnvMap): string[] {
 /** `true` si algún secreto aparece en el texto (sin imprimir cuál, para no filtrarlo). */
 export function containsAny(text: string, secrets: string[]): boolean {
   return secrets.some((s) => s.length >= 8 && text.includes(s));
+}
+
+const escapeRegExp = (text: string) => text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+
+/**
+ * Falla si `output` contiene una URL de base de datos o alguna de sus partes (013, SC-002): la
+ * URL completa, la contraseña, el host, el valor de `sslrootcert` o cualquiera de `extra` como
+ * texto; el usuario y el nombre de la base, como palabra completa (`admin` no debe confundirse con
+ * «administración»). Las partes de menos de 3 caracteres no se buscan: las pruebas usan valores
+ * reconocibles.
+ */
+export function expectNoUrlParts(output: string, url: string, extra: string[] = []): void {
+  const substrings = [url, ...extra];
+  const words: string[] = [];
+  try {
+    const u = new URL(url);
+    const decode = (s: string) => {
+      try {
+        return decodeURIComponent(s);
+      } catch {
+        return s;
+      }
+    };
+    substrings.push(decode(u.password), u.hostname.replace(/^\[|\]$/g, ''));
+    const ca = u.searchParams.get('sslrootcert');
+    if (ca !== null) substrings.push(ca);
+    words.push(decode(u.username), decode(u.pathname.replace(/^\//, '')));
+  } catch {
+    // Una URL no interpretable solo se busca entera.
+  }
+  // Sin imprimir el valor: el mensaje de fallo no debe filtrar lo que comprueba.
+  const leaked =
+    substrings.filter((s) => s.length >= 3 && output.includes(s)).length +
+    words.filter(
+      (w) => w.length >= 3 && new RegExp(`(^|[^\\w])${escapeRegExp(w)}($|[^\\w])`).test(output),
+    ).length;
+  if (leaked > 0) throw new Error(`La salida contiene ${String(leaked)} parte(s) de la URL`);
 }

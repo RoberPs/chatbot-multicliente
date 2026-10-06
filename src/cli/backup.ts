@@ -5,6 +5,7 @@
 import { backupConfigFromEnv } from '../backup/config.js';
 import { BackupError } from '../backup/errors.js';
 import { createBackup } from '../backup/service.js';
+import { assertCaReadable, DatabaseConfigError } from '../config/database-url.js';
 import {
   backupFailureMessages,
   businessTimezone,
@@ -33,6 +34,15 @@ export async function main(argv: string[], io: CliIO = processIO()): Promise<num
     if (json) printJson(io, { ok: false, failure: 'key_missing' });
     io.err(backupFailureMessages.key_missing);
     io.err('Configura también INSTANCE_ID y BACKUP_DIR (ver .env.example).');
+    return 1;
+  }
+  // 013: antes de crear ningún cliente; un fallo es de la copia, como los demás (salida 1).
+  try {
+    assertCaReadable(env.DATABASE_URL, 'DATABASE_URL');
+  } catch (error) {
+    if (!(error instanceof DatabaseConfigError)) throw error;
+    if (json) printJson(io, { ok: false, failure: 'db_ca_unreadable' });
+    io.err(backupFailureMessages.db_ca_unreadable);
     return 1;
   }
   try {
