@@ -1,0 +1,299 @@
+---
+
+description: "Task list template for feature implementation"
+---
+
+# Tasks: Modo oscuro del panel del operador
+
+**Input**: Documentos de diseño en `/specs/014-dark-mode-panel/`
+
+**Prerequisites**: [plan.md](plan.md), [spec.md](spec.md), [research.md](research.md),
+[data-model.md](data-model.md), [contracts/](contracts/), [quickstart.md](quickstart.md)
+
+**Tests**: sí. El proyecto exige Vitest (unitarios, de contrato e integración) en CLAUDE.md, y el
+plan concreta qué cubre cada nivel. Aquí no hay tests de integración: la feature no toca la base de
+datos.
+
+**Organization**: las tareas van agrupadas por historia de usuario, para poder implementar y
+validar cada una por separado.
+
+**Momento**: esta feature se implementa **después del despliegue en producción** (spec, Status).
+No empieces la fase 1 antes de que la instancia real esté desplegada y estable.
+
+## Format: `[ID] [P?] [Story] Description`
+
+- **[P]**: se puede hacer en paralelo (ficheros distintos, sin dependencias pendientes)
+- **[Story]**: a qué historia pertenece (US1, US2, US3)
+- Cada tarea lleva la ruta exacta del fichero
+
+## Path Conventions
+
+Monolito modular: `src/` y `tests/` en la raíz del repositorio. Todos los cambios de producción
+caen en `src/admin/`, más una línea en `src/app.ts`.
+
+---
+
+## Phase 1: Setup
+
+**Purpose**: partir de un punto conocido y dejar anotado lo que se va a tocar
+
+- [ ] T001 Comprobar el punto de partida con `pnpm lint && pnpm typecheck && pnpm test` en verde, y
+      anotar en el seguimiento de la rama los 13 colores literales de
+      `src/admin/views/app.css` que se van a tokenizar (líneas 123, 124, 131, 132, 199, 235, 239,
+      243, 370, 434, 438, 581 y 597), para poder comprobar al final que no queda ninguno.
+
+---
+
+## Phase 2: Foundational (Blocking Prerequisites)
+
+**Purpose**: que todo el color del panel pase por tokens, **sin que el modo claro cambie nada**.
+Es la base de las tres historias.
+
+**⚠️ CRITICAL**: ninguna historia puede empezar hasta terminar esta fase.
+
+- [ ] T002 Añadir al bloque `:root` de `src/admin/views/app.css` las dos paletas completas
+      (`--c-light-*` y `--c-dark-*`, 16 colores cada una) y los tres colores fijos
+      (`--fixed-sample`, `--fixed-canvas-a`, `--fixed-canvas-b`), con los valores exactos de
+      [data-model.md §2.2 y §2.3](data-model.md). Solo declaraciones: todavía no las usa nadie.
+- [ ] T003 Convertir el bloque `:root` de `src/admin/views/app.css` en el primer mapeo:
+      `color-scheme: light` y los 16 tokens de trabajo apuntando a `var(--c-light-*)`, sustituyendo
+      los nueve valores literales que hoy tienen `--bg`, `--fg`, `--muted`, `--line`, `--card`,
+      `--accent`, `--ok`, `--warn` y `--danger`.
+- [ ] T004 Sustituir en `src/admin/views/app.css` los 13 literales por los tokens nuevos, según la
+      tabla de [contracts/panel-theme-css.md §3](contracts/panel-theme-css.md): campos y botones
+      secundarios a `var(--field)`, borde de campos a `var(--control-line)`, texto sobre el color
+      primario a `var(--on-accent)`, `.flash` a `var(--flash-bg)`/`var(--flash-line)`,
+      `.general-error` a `var(--error-bg)`/`var(--error-line)`, el cuadriculado de la vista previa a
+      `var(--fixed-canvas-a)`/`var(--fixed-canvas-b)` y las miniaturas de imágenes y el
+      `input[type='color']` a `var(--fixed-sample)`.
+- [ ] T005 Comprobar que el modo claro quedó idéntico (FR-005): `pnpm test` en verde y un recorrido
+      rápido del panel en claro comparando con el estado anterior, especialmente banda de
+      «Guardado», banda de error, botones secundarios y de borrar, y la vista previa de
+      **Diseño del chat**.
+
+**Checkpoint**: el panel se ve exactamente como antes y todo su color pasa por tokens.
+
+---
+
+## Phase 3: User Story 1 - El panel acompaña al sistema (Priority: P1) 🎯 MVP
+
+**Goal**: el panel y la pantalla de acceso se presentan en oscuro cuando el sistema lo pide, desde
+la primera pintura, y vuelven a claro cuando el sistema vuelve a claro.
+
+**Independent Test**: cambiar la preferencia de color del sistema operativo (o simularla en el
+navegador) y recorrer el panel: cambia de tema, sin destello y sin perder lo escrito. No hace falta
+ni cookie, ni ruta, ni control: esta historia es solo CSS.
+
+### Tests for User Story 1
+
+> Escríbelos primero y comprueba que fallan antes de tocar el CSS.
+
+- [ ] T006 [P] [US1] Crear `tests/unit/admin/theme-css.test.ts` con la primera mitad del contrato de
+      [contracts/panel-theme-css.md §2](contracts/panel-theme-css.md): lee
+      `src/admin/views/app.css`, extrae los bloques de mapeo y comprueba que (1) todos declaran el
+      mismo conjunto de 16 tokens de trabajo, (2) ningún bloque de mapeo contiene un color literal,
+      (3) `color-scheme` está en todos con el valor que le toca y (4) fuera de la paleta y de los
+      tres tokens fijos no queda ningún color literal en el fichero.
+
+### Implementation for User Story 1
+
+- [ ] T007 [US1] Añadir a `src/admin/views/app.css` el bloque
+      `@media (prefers-color-scheme: dark) { :root:not([data-theme='light']) { … } }` con
+      `color-scheme: dark` y los 16 tokens apuntando a `var(--c-dark-*)`.
+- [ ] T008 [US1] Validar a mano la historia con [quickstart.md §2](quickstart.md): sistema en
+      oscuro sin destello, pantalla de acceso incluida, cambio en caliente sin perder un formulario
+      a medio escribir, y modo claro igual que antes.
+
+**Checkpoint**: con solo esta fase, el modo oscuro ya funciona para quien tiene el sistema en
+oscuro. Es un incremento entregable por sí solo.
+
+---
+
+## Phase 4: User Story 2 - Elegir el tema y que se recuerde (Priority: P2)
+
+**Goal**: un control de tres opciones en la barra superior y en la pantalla de acceso, que se aplica
+al momento y se recuerda en el navegador.
+
+**Independent Test**: elegir cada opción, recargar, cerrar sesión, reiniciar la instancia y volver;
+y repetirlo con JavaScript desactivado.
+
+### Tests for User Story 2
+
+> Escríbelos primero y comprueba que fallan.
+
+- [ ] T009 [P] [US2] Crear `tests/unit/admin/theme.test.ts`: cookie ausente, `light`, `dark`, valor
+      desconocido, rodeada de otras cookies, con espacios y repetida; atributos de la cabecera
+      `Set-Cookie` dentro y fuera de producción; borrado con `Max-Age=0` para `auto`; y validación
+      del destino (`/admin/hours` válido; `//evil.com`, `http://x`, `/chat` y vacío → `/admin`).
+- [ ] T010 [P] [US2] Crear `tests/contract/admin/theme.test.ts` con el contrato de
+      [contracts/admin-theme.md §1 y §3](contracts/admin-theme.md): `data-theme` en una página del
+      panel y en `/admin/login` según la cookie, ausencia de atributo sin cookie, presencia del
+      control con su token CSRF en las dos pantallas, y `POST /admin/theme` con los tres valores,
+      con y sin `HX-Request` (`204` / `303`), valor inválido (`422`), sin CSRF (`403`) y atributos
+      y `Max-Age` de la cookie.
+
+### Implementation for User Story 2
+
+- [ ] T011 [US2] Crear `src/admin/theme.ts` (puro, sin Fastify): tipos `ThemeChoice` y
+      `StoredTheme`, `themeFromCookieHeader(header)`, `themeAttribute(theme)`,
+      `themeCookieHeader(choice, { production })` y `safeNext(next)`, según
+      [data-model.md §1](data-model.md) y [contracts/admin-theme.md §3](contracts/admin-theme.md).
+- [ ] T012 [US2] Crear `src/admin/routes/theme.ts` con `POST /theme`: valida `theme` con Zod sobre
+      la lista cerrada, pone la cabecera `Set-Cookie` y responde `204` a htmx o `303` al destino
+      validado. No consulta la base de datos ni la sesión.
+- [ ] T013 [US2] Registrar la ruta en `src/app.ts` dentro del ámbito `/admin` y **fuera** del
+      ámbito del operador, con `csrfOnPost` aplicado, para que también funcione en la pantalla de
+      acceso (R5).
+- [ ] T014 [US2] Añadir `theme` al objeto `layout` en `renderPage` de `src/admin/render.ts`,
+      leyéndolo de la cabecera de cookie de la petición.
+- [ ] T015 [US2] Pasar el tema a la pantalla de acceso en `src/admin/auth/routes.ts`, en las dos
+      llamadas que renderizan `login` (la del `GET` y la del intento fallido).
+- [ ] T016 [US2] Pintar el atributo en `<html>` en `src/admin/views/layout.eta` y en
+      `src/admin/views/login.eta`.
+- [ ] T017 [US2] Crear `src/admin/views/partials/theme-switch.eta` con el formulario de
+      [contracts/admin-theme.md §2](contracts/admin-theme.md) (tres opciones, `fieldset`/`legend`,
+      `_csrf`, `next` y botón de respaldo) e incluirlo en la barra superior de `layout.eta` y en
+      `login.eta`.
+- [ ] T018 [US2] Añadir los estilos de `.theme-switch` a `src/admin/views/app.css` (solo tokens, sin
+      literales) y el bloque de mapeo `:root[data-theme='dark']` con `color-scheme: dark` y los 16
+      tokens oscuros.
+- [ ] T019 [US2] Añadir a `src/admin/views/app.js` el código que aplica el tema al instante: al
+      cambiar la opción, poner `document.documentElement.dataset.theme` o borrarlo si es
+      automático, sin recargar (R6).
+- [ ] T020 [US2] Validar a mano la historia con [quickstart.md §3](quickstart.md), incluidos el
+      recorrido sin JavaScript y la cookie con un valor inventado.
+
+**Checkpoint**: US1 y US2 funcionan por separado; el panel se puede forzar a claro u oscuro y lo
+recuerda.
+
+---
+
+## Phase 5: User Story 3 - Nada se vuelve ilegible ni engañoso en oscuro (Priority: P3)
+
+**Goal**: el modo oscuro es utilizable de verdad: contraste comprobado, foco visible, avisos que
+destacan, impresión legible y los colores del negocio intactos.
+
+**Independent Test**: el test de CSS comprueba los contrastes de forma repetible y el recorrido
+manual de las quince secciones no encuentra ninguna zona del tema contrario.
+
+### Tests for User Story 3
+
+- [ ] T021 [P] [US3] Completar `tests/unit/admin/theme-css.test.ts` con la segunda mitad del
+      contrato: todas las parejas de [data-model.md §2.4](data-model.md) cumplen su mínimo usando
+      `contrastRatio`, `MIN_TEXT_CONTRAST` y `MIN_UI_CONTRAST` de
+      `src/webchat/design/contrast.ts`; la paleta `--c-light-*` es idéntica a los valores de hoy
+      (FR-005); y existe la regla `:focus-visible` con `outline` de 2 px.
+- [ ] T022 [P] [US3] Ampliar `tests/contract/admin/chat-design.test.ts`: la vista previa del chat
+      **no** recibe `data-theme` del panel y su HTML es idéntico con la cookie en `dark` y sin
+      cookie (FR-019), y el aviso de contraste del diseño da el mismo resultado en los dos casos
+      (FR-020).
+
+### Implementation for User Story 3
+
+- [ ] T023 [US3] Añadir a `src/admin/views/app.css` la regla
+      `:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px }` (FR-015).
+- [ ] T024 [US3] Añadir a `src/admin/views/app.css` el bloque `@media print` que mapea siempre la
+      paleta clara y `color-scheme: light` (FR-021).
+- [ ] T025 [US3] Repasar en las plantillas de `src/admin/views/` que ningún estado se distinga solo
+      por color: avisos críticos, badges de activo y borrador, errores de campo, diferencias de la
+      importación y resultado bloqueado conservan su texto o su etiqueta (FR-016); corregir lo que
+      falte.
+- [ ] T026 [US3] Recorrer a mano las quince secciones en oscuro con la tabla de
+      [quickstart.md §4](quickstart.md), incluidos banda de guardado, error de formulario, recorrido
+      con tabulador, aviso de contraste del chat e impresión; anotar y corregir lo que aparezca.
+
+**Checkpoint**: las tres historias funcionan y el modo oscuro está listo para el uso diario.
+
+---
+
+## Phase 6: Polish & Cross-Cutting Concerns
+
+- [ ] T027 Ejecutar `pnpm lint && pnpm typecheck && pnpm test` y comprobar, además, que la rama no
+      ha tocado `src/db`, `src/config-transfer` ni `src/webchat` en producción, y que
+      `formatVersion` sigue igual (`git diff main --stat`), como exige FR-010.
+- [ ] T028 Avisar al usuario y actualizar `README.md` con el estado de la feature 014 y una línea
+      sobre el modo oscuro del panel (convención de CLAUDE.md: avisar antes).
+- [ ] T029 Actualizar `docs/operacion-multicliente.md`: añadir la fila de la 014 a la tabla de specs
+      realizadas (9.1) con su fecha y la nota de que no venía de ninguna propuesta de 9.2, y revisar
+      el orden de las pendientes.
+- [ ] T030 Validar en la instancia real con [quickstart.md §5](quickstart.md): desplegar por tandas
+      (feature 009), confirmar la versión con `pnpm instance:versions`, trabajar una jornada con el
+      tema elegido (SC-008) y comprobar que el chat web de los clientes finales no ha cambiado.
+
+---
+
+## Dependencies & Execution Order
+
+### Phase Dependencies
+
+- **Setup (fase 1)**: sin dependencias.
+- **Foundational (fase 2)**: depende de la 1 y **bloquea las tres historias**. Sin los tokens, el
+  modo oscuro dejaría zonas claras sueltas.
+- **US1 (fase 3)**: depende de la 2. No depende de US2 ni de US3.
+- **US2 (fase 4)**: depende de la 2. Puede hacerse sin US1, pero entregarla antes no tiene sentido:
+  el control solo ofrecería «claro» y «claro».
+- **US3 (fase 5)**: depende de la 2 y comprueba sobre todo lo entregado en US1; T022 necesita la
+  cookie de US2.
+- **Polish (fase 6)**: depende de las historias que se entreguen.
+
+### Within Each User Story
+
+- Los tests van primero y deben fallar antes de implementar.
+- En US2: el módulo puro (T011) antes de la ruta (T012), la ruta antes del registro (T013), y el
+  servidor (T014, T015) antes de las plantillas (T016, T017).
+- La validación manual cierra cada historia.
+
+### Parallel Opportunities
+
+- T006 y T009/T010 son ficheros distintos y pueden escribirse a la vez si se trabajan US1 y US2 en
+  paralelo tras la fase 2.
+- T009 y T010 en paralelo entre sí.
+- T021 y T022 en paralelo entre sí.
+- Dentro de US2, T011 bloquea casi todo lo demás: no hay mucho paralelismo real.
+- Las tareas de CSS (T003, T004, T007, T018, T023, T024) tocan todas `app.css`: **nunca en
+  paralelo**, aunque pertenezcan a fases distintas.
+
+---
+
+## Parallel Example: tests tras la fase 2
+
+```bash
+# Con dos personas, una por historia, en cuanto la fase 2 está cerrada:
+Task: "tests/unit/admin/theme-css.test.ts, primera mitad (T006)"
+Task: "tests/unit/admin/theme.test.ts (T009)"
+Task: "tests/contract/admin/theme.test.ts (T010)"
+```
+
+---
+
+## Implementation Strategy
+
+### MVP primero (solo US1)
+
+1. Fase 1: setup.
+2. Fase 2: tokens, con el modo claro intacto. **Es la parte que más código toca y la que menos se
+   ve**: merece su propio repaso.
+3. Fase 3: el bloque oscuro de la media query.
+4. **Parar y validar**: quickstart §2.
+5. Si solo se entregara esto, el operador con el sistema en oscuro ya tiene el panel en oscuro.
+
+### Entrega incremental
+
+1. Fases 1 y 2 → el panel sigue igual, pero preparado.
+2. US1 → modo oscuro automático. Entregable.
+3. US2 → control y memoria. Entregable.
+4. US3 → contraste, foco, impresión y repaso completo. Cierra la feature.
+5. Fase 6 → documentación y validación en producción.
+
+---
+
+## Notes
+
+- `[P]` = ficheros distintos, sin dependencias pendientes.
+- **Nada de esto toca la base de datos**: no hay migración, no sube `formatVersion`, no hay
+  actualizador de `config-transfer` ni tests de integración nuevos.
+- La CSP del panel no cambia: no se añade ningún script inline ni ningún recurso externo.
+- Haz un commit por tarea o por grupo lógico; el modo claro debe quedar verde en cada uno.
+- Si en el recorrido manual aparece una zona clara en oscuro, el fallo casi siempre es un token
+  olvidado en un bloque de mapeo: T006 debería cazarlo, y si no lo caza, amplía el test antes de
+  arreglar el CSS.
