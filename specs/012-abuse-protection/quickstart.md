@@ -135,9 +135,29 @@ Comprobado sin servidor:
   esquema `SESSION_SECRET no parece aleatoria`), no «es trivial (…)».
 - Escenarios 1–7: cubiertos por las pruebas automáticas (nombres reales abajo).
 
-Pendiente a mano (necesita arrancar el servidor sobre la BD de desarrollo, que aplica la 0008 con
-su copia previa): el bucle de `curl` del frame (60 × 200 y 20 × 429), el registro del webhook con
-`hub.verify_token` y `/health` con `spendCap: "blocked"`.
+Comprobado con el servidor sobre la BD de desarrollo (`pnpm db:migrate` ya aplicada; al arrancar,
+copia diaria con esquema `0008_abuse_protection`):
+
+- Escenario 4: el bucle de 80 `curl` a `/chat/frame` da **60 × 200 y 20 × 429**.
+- Escenario 8, webhook con WhatsApp configurado (cinco variables falsas): con token falso (403) y
+  válido (200, devuelve el `challenge`), el registro muestra
+  `"url":"/webhooks/whatsapp?hub.mode&hub.verify_token&hub.challenge"` y ningún token aparece en
+  todo el registro.
+- Escenario 8, arranque: con la `DATABASE_URL` de desarrollo (contraseña `chatbot` del compose),
+  `NODE_ENV=production` no arranca: `- DATABASE_URL: tiene un valor de ejemplo`. Para seguir se usó
+  un rol temporal con contraseña aleatoria, miembro de `chatbot`, borrado al terminar.
+- Escenario 1, en producción con el negocio activo: con el tope activo, `/health` con el secreto da
+  `spendCap: "normal"` y `POST /chat/api/session` da 201. Con el tope desactivado (por SQL, porque
+  el panel lo impide en producción) pasa a `"blocked"` sin reiniciar, la vista pública sigue siendo
+  solo `{"status":"ok"}` y la sesión del chat devuelve `unavailable` con `reason: "quota"`, «Ahora
+  mismo el chat no está disponible.» y el teléfono del negocio, sin llamar al modelo. Al volver a
+  activarlo, `"normal"` y 201 otra vez.
+
+No comprobado a mano (cubierto por pruebas de contrato; necesita navegador y la contraseña del
+operador): la banda roja del panel, «Activar» rechazado con `SPEND_CAP_REQUIRED` y el 422 al
+desactivar el tope o borrar el precio. Tampoco `pnpm instance:versions` (la instancia de desarrollo
+no está en el inventario) ni la carga de 10 000 peticiones de SC-004 (la prueba automática usa
+1 000).
 
 Desviaciones respecto a lo escrito arriba:
 
@@ -152,3 +172,10 @@ Desviaciones respecto a lo escrito arriba:
   mano); el ataque al login, 40 fallos desde 10 direcciones con el retardo acortado.
 - `webChat.allowedOrigins` no entra en la comprobación previa de longitudes: su máximo ya estaba
   en el esquema de la 008, con sus demás errores.
+- Sin WhatsApp configurado, la ruta del webhook no existe y el 404 por defecto de Fastify registra
+  (y devuelve) la URL completa con su consulta: `Route GET:/webhooks/whatsapp?…&hub.verify_token=XYZ…
+  not found`. No filtra ningún secreto (sin WhatsApp no hay token de verificación), pero cualquier
+  ruta inexistente deja en el registro lo que el cliente ponga en la consulta. Severidad baja;
+  candidato a corregir con un manejador 404 que no repita la URL.
+- El servidor escucha en todas las interfaces (`0.0.0.0:3000`). Es lo esperado dentro de un
+  contenedor; restringir el puerto publicado es parte de la receta de producción de la 013 (P9).

@@ -343,7 +343,7 @@ cualquier forma.
 - [X] T110 [P] Ampliar `tests/integration/config-transfer/round-trip.test.ts`: exportar e importar no incluye ni modifica topes, límites de derivación ni precios de transcripción (FR-036)
 - [X] T111 [P] Comprobar que `src/` no contiene nombres ni límites de un sector o cliente (FR-038) con la prueba existente de núcleo genérico, y añadir los ficheros nuevos a su recorrido si hace falta
 - [X] T112 Ejecutar `pnpm lint`, `pnpm typecheck` y `pnpm test` (unit, contract e integration) y corregir lo que falle
-- [ ] T113 Recorrer [quickstart.md](quickstart.md) escenarios 1–8 a mano (incluido `NODE_ENV=production` con un secreto trivial, `pnpm instance:check .env`, el bucle de `curl` del frame y el registro del webhook) y anotar cualquier desviación
+- [X] T113 Recorrer [quickstart.md](quickstart.md) escenarios 1–8 a mano (incluido `NODE_ENV=production` con un secreto trivial, `pnpm instance:check .env`, el bucle de `curl` del frame y el registro del webhook) y anotar cualquier desviación
 - [X] T114 **Avisar antes al usuario** y actualizar `docs/operacion-multicliente.md`: tabla 9.1 (012 con fecha), orden de 9.2, P8 marcada como hecha, §4.1 (tope obligatorio en producción, tope diario de WhatsApp, precios de transcripción), §5 (antes de cada tanda: configurar el tope y pasar `instance:check` para rotar secretos débiles) y sección nueva de límites de derivación con su tabla de valores por defecto, mínimos y máximos
 - [X] T115 **Avisar antes al usuario** y actualizar `README.md` con el estado de la feature 012
 
@@ -464,8 +464,9 @@ T115). Las pruebas de `tests/integration/backup/` usan ahora `CURRENT_SCHEMA` y
 `PENDING_AFTER_0003` (de `installedSchema()` y `journal()` en `tests/helpers/backup.ts`) en lugar de
 los literales de la última migración.
 
-`pnpm test` completo en verde (257 ficheros, 2 853 pruebas). Pendiente: la parte de T113 que necesita el
-servidor sobre la BD de desarrollo (anotada en [quickstart.md](quickstart.md)).
+`pnpm test` completo en verde (257 ficheros, 2 853 pruebas). T113 cerrada el 2026-10-06 con el
+servidor sobre la BD de desarrollo; resultados, desviaciones y lo que queda sin ver en el navegador
+en [quickstart.md](quickstart.md).
 
 Decisiones tomadas al implementar:
 
