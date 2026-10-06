@@ -82,7 +82,8 @@ Se añade un campo; los demás no cambian (006, contracts/backup-commands.md).
 Ningún nombre de base ni dato del negocio. El evento `verify_completed` del registro de copias
 lleva los mismos tres campos.
 
-`RestoreFailureCode` gana `db_tls_untrusted` y `db_ca_unreadable` (research R4).
+`BackupFailureCode` y `RestoreFailureCode` ganan `db_ca_unreadable`, `db_tls_untrusted` y
+`db_tls_unsupported` (research R4; asignación en contracts/database-tls.md).
 
 ---
 

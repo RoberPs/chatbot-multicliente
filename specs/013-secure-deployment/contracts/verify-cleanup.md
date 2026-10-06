@@ -49,7 +49,8 @@ Texto. Se añade una línea antes de la de la base temporal, solo si hay algo qu
 ```
 
 La línea sale también cuando la copia **no** es restaurable. El código de salida sigue
-dependiendo solo de si la copia es restaurable: 0 sí, 1 no, 2 configuración.
+dependiendo solo de si la copia es restaurable: 0 sí, 1 no, 2 configuración. Con
+`db_ca_unreadable` la orden termina antes de conectar: sale con 2 y `orphans.listed` es `false`.
 
 JSON (`--json`), campo nuevo en el informe:
 

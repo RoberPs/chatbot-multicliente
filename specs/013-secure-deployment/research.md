@@ -136,7 +136,8 @@ coincide entre el equipo del operador y el contenedor.
   `describeDatabaseError`. El mensaje de `ERR_TLS_CERT_ALTNAME_INVALID` incluye el host y los
   nombres del certificado, así que nunca se imprime.
 - **Órdenes de copias**: `restoreFailureReasons` y los textos de `backup-common.ts` ganan
-  `db_tls_untrusted` y `db_ca_unreadable`, con el mismo criterio.
+  `db_ca_unreadable`, `db_tls_untrusted` y `db_tls_unsupported`, con el mismo criterio;
+  `unreachable` sigue siendo `db_error` (o `verify_db_unavailable`), como hoy.
 - **Sin regla de TLS al arrancar** (Assumptions de la spec): el arranque no rechaza una URL remota
   sin `verify-full`; solo traduce los errores.
 

@@ -43,8 +43,16 @@ Se clasifican por `code`, nunca por el texto del error.
 - `src/server.ts` muestra el mensaje de los errores propios del arranque (`InstanceBusyError`,
   `DatabaseConfigError` y los de las migraciones con copia previa). Para cualquier otro error,
   muestra el texto de esta tabla, nunca `error.message`.
-- `db:backup`, `db:restore` y `db:verify` añaden `db_tls_untrusted` y `db_ca_unreadable` a sus
-  motivos de fallo, con los mismos textos. En `--json` va el código.
+- `db:backup`, `db:restore` y `db:verify` añaden a sus motivos de fallo `db_ca_unreadable`,
+  `db_tls_untrusted` y `db_tls_unsupported`, con los textos de esta tabla. `unreachable` sigue
+  siendo `db_error` (y `verify_db_unavailable` en la conexión de mantenimiento de `db:verify`),
+  como hoy. En `--json` va el código.
+- Códigos de salida, según la convención de cada orden:
+
+  | Motivo | `db:backup` | `db:restore` | `db:verify` |
+  |---|---|---|---|
+  | `db_ca_unreadable` (antes de conectar) | 1, `{ ok: false, failure }` | 2 | 2 |
+  | `db_tls_untrusted` · `db_tls_unsupported` (al conectar) | 1 | 1 | 1 (no restaurable) |
 - El registro de la instancia sigue usando `serializeError` (012): tipo y código, sin mensaje.
 
 Ningún mensaje lleva la URL, el host, el usuario, la base, la ruta del certificado ni los nombres

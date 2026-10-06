@@ -150,7 +150,7 @@ src/
 ├── backup/
 │   ├── service.ts                   # verifyBackup: nombre con marca, REVOKE, limpieza, orphans en el informe
 │   ├── verify-names.ts              # NUEVO — nombre, patrones y selección de huérfanas (puro)
-│   ├── errors.ts · log.ts           # db_tls_untrusted, db_ca_unreadable; campos orphans* en verify_completed
+│   ├── errors.ts · log.ts           # db_ca_unreadable, db_tls_untrusted, db_tls_unsupported; campos orphans* en verify_completed
 ├── cli/
 │   ├── instance.ts                  # instance:db: negativa sin TLS, --sslrootcert, verify-full por defecto
 │   ├── verify.ts · backup-common.ts # línea de huérfanas; motivos TLS; assertCaReadable
