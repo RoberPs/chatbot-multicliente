@@ -178,7 +178,7 @@ Referencia de variables del entorno:
 | `EMERGENCY_CONTACT_PHONE` | Teléfono E.164 del negocio |
 | `ANTHROPIC_API_KEY` | La clave de su workspace |
 | `LLM_MODEL` · `LLM_EFFORT` | Los valores por defecto salvo motivo documentado |
-| `WHATSAPP_*` | Las cinco, o ninguna |
+| `WHATSAPP_*` | Las cinco, o ninguna. Ninguna salvo que el cliente lo haya contratado. Antes de activarlo en el primer cliente, revisa en desarrollo todo el canal con una app de pruebas de Meta: webhook (verificación y firma), envío y plazos, tope diario de WhatsApp, derivaciones con plantillas, audios si van incluidos y registros sin tokens (quickstart de la 012, escenarios 2, 3, 6 y 8) |
 | `AUDIO_TRANSCRIPTION` · `STT_*` | `off` salvo que esté contratado y cubierto por el contrato. Antes de activarlo en el primer cliente, completa la evaluación de audios pendiente (tarea T083 de la 002: grabaciones y `pnpm test:eval audio`) |
 | `INSTANCE_ID` | Identificador único de la instancia (minúsculas, cifras y guiones), p. ej. `cliente-x`. Va dentro de cada copia |
 | `BACKUP_DIR` | Ruta absoluta del volumen persistente de copias, p. ej. `/var/lib/chatbot/backups` |
@@ -682,7 +682,11 @@ Estado tomado del [README](../README.md) a 2026-10-06.
 
 Todas están completadas. Quedan aplazadas la evaluación de audios de la 002 (T083), que se hace
 antes de activar los audios en una instancia, y el ensayo de la guía de publicación de la 009 con
-una persona que no haya participado (SC-006).
+una persona que no haya participado (SC-006). Además, el canal WhatsApp no está activo en ningún
+cliente y ha cambiado con la 012: antes de activarlo en el primer cliente se revisa entero en desarrollo
+con una app de pruebas (ver `WHATSAPP_*` en la [sección 2.4](#24-completar-y-validar-pnpm-instancecheck)),
+incluido el 404 que registra la URL completa cuando WhatsApp no está configurado (desviación del
+quickstart de la 012).
 
 ### 9.2 Orden de ejecución
 
