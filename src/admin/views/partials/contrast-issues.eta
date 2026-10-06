@@ -1,0 +1,4 @@
+<% /* Contraste en vivo (011, FR-020): un contenedor por control de color, fuera de banda. */ %>
+<% it.fields.forEach(function (field) { %>
+<span id="contrast-<%= field %>" class="contrast-issues" hx-swap-oob="true" role="status"><% (it.messages[field] || []).forEach(function (message, i) { %><% if (i > 0) { %> · <% } %><%= message %><% }) %></span>
+<% }) %>

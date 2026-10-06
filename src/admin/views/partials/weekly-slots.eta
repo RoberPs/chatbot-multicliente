@@ -1,0 +1,18 @@
+<% const slots = Array.isArray(it.slots) ? it.slots : []; %>
+<p class="hint">Hora local del negocio. Un día sin franjas se considera cerrado. Deja una franja vacía para quitarla.</p>
+<div class="week">
+  <% it.h.weekdays.forEach(function (day) { %>
+  <div class="day">
+    <div class="day-name"><%= day.name %></div>
+    <div>
+      <div id="<%= it.prefix %>-rows-<%= day.n %>">
+        <% slots.forEach(function (s, i) { if (String(s.weekday) !== String(day.n)) return; %>
+          <%~ include('/partials/slot-row', { prefix: it.prefix, index: i, weekday: day.n, start: s.start, end: s.end, errors: it.errors }) %>
+        <% }) %>
+        <%~ include('/partials/slot-row', { prefix: it.prefix, index: slots.length + day.n - 1, weekday: day.n, start: '', end: '', errors: {} }) %>
+      </div>
+      <button type="button" class="link small" hx-get="/admin/partials/slot-row?weekday=<%= day.n %>" hx-target="#<%= it.prefix %>-rows-<%= day.n %>" hx-swap="beforeend">Añadir franja</button>
+    </div>
+  </div>
+  <% }) %>
+</div>

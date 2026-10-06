@@ -1,0 +1,5 @@
+<% layout('/layout') %>
+<div class="card">
+  <p>El elemento que buscas no existe o ya se ha eliminado.</p>
+  <p><a href="/admin">Volver a la portada</a></p>
+</div>

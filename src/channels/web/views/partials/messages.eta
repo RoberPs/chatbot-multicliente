@@ -1,0 +1,2 @@
+<% /* Elementos fijos al principio de la lista; frame.js añade los mensajes al final (FR-007). */ %>
+<% if (it.theme.texts.welcomeText) { %><li class="welcome"><%= it.theme.texts.welcomeText %></li><% } %>

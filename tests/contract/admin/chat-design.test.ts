@@ -1,0 +1,628 @@
+/**
+ * Contrato de la sección "Diseño del chat" del panel (011, contracts/admin-chat-design.md):
+ * sesión y CSRF, formulario, guardado todo o nada, vista previa y sus cabeceras.
+ */
+import { sql } from 'drizzle-orm';
+import type { FastifyInstance } from 'fastify';
+import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
+import { chatDesign } from '../../../src/db/schema.js';
+import { readWebChatSettings } from '../../../src/webchat/settings.js';
+import {
+  buildTestApp,
+  cookieHeader,
+  encodeForm,
+  get,
+  hasFieldError,
+  loggedEvents,
+  login,
+  postForm,
+  type Session,
+} from '../../helpers/app.js';
+import { createTestBot, type TestBot } from '../../helpers/bot.js';
+import {
+  designForm,
+  designImages,
+  designRow,
+  GREEN_FORM,
+  GREEN_PALETTE,
+  loadImageFixture,
+  postDesign,
+  seedChatDesign,
+  seedChatDesignWithImages,
+} from '../../helpers/chat-design.js';
+import { createTestDatabase, type TestDatabase } from '../../helpers/db.js';
+
+const ORIGIN = 'https://negocio.example';
+const WEB_ON = { enabled: true, allowedOrigins: [ORIGIN], privacyUrl: `${ORIGIN}/privacidad` };
+
+const PREVIEW_CSP =
+  "default-src 'none'; style-src 'self'; img-src 'self' blob:; frame-ancestors 'self'; base-uri 'none'; form-action 'none'";
+
+describe('Diseño del chat (/admin/chat-design)', () => {
+  let t: TestDatabase;
+  let bot: TestBot | null = null;
+  let app: FastifyInstance;
+  let session: Session;
+
+  beforeAll(async () => {
+    t = await createTestDatabase();
+  });
+  afterAll(async () => {
+    await t.close();
+  });
+  afterEach(async () => {
+    await bot?.close();
+    bot = null;
+  });
+
+  async function start(opts: Parameters<typeof createTestBot>[1] = {}): Promise<TestBot> {
+    bot = await createTestBot(t, opts);
+    app = bot.app;
+    session = await login(app);
+    return bot;
+  }
+
+  /** La cookie nueva lleva el aviso del guardado. */
+  const keepCookie = (res: { headers: Record<string, unknown> }) => {
+    const cookie = cookieHeader(res as never);
+    if (cookie) session = { ...session, cookie };
+  };
+
+  describe('sesión y CSRF', () => {
+    it('sin sesión: 302 al login (o 401 + HX-Redirect) y no guarda nada (US1-8)', async () => {
+      await start();
+      for (const url of [
+        '/admin/chat-design',
+        '/admin/chat-design/preview',
+        '/admin/chat-design/preview.css',
+      ]) {
+        const res = await app.inject({ method: 'GET', url });
+        expect([url, res.statusCode, res.headers.location]).toEqual([url, 302, '/admin/login']);
+      }
+      const htmx = await app.inject({
+        method: 'GET',
+        url: '/admin/chat-design',
+        headers: { 'hx-request': 'true' },
+      });
+      expect(htmx.statusCode).toBe(401);
+      expect(htmx.headers['hx-redirect']).toBe('/admin/login');
+
+      const post = await app.inject({
+        method: 'POST',
+        url: '/admin/chat-design',
+        headers: { 'content-type': 'application/x-www-form-urlencoded' },
+        payload: encodeForm(designForm(GREEN_FORM)),
+      });
+      expect(post.statusCode).toBe(302);
+      expect(await designRow(t.db)).toBeUndefined();
+    });
+
+    it('POST sin CSRF → 403 y nada guardado', async () => {
+      await start();
+      const res = await app.inject({
+        method: 'POST',
+        url: '/admin/chat-design',
+        headers: { cookie: session.cookie, 'content-type': 'application/x-www-form-urlencoded' },
+        payload: encodeForm(designForm(GREEN_FORM)),
+      });
+      expect(res.statusCode).toBe(403);
+      const multipart = await postDesign(
+        app,
+        { ...session, csrf: 'no-vale' },
+        designForm(GREEN_FORM),
+      );
+      expect(multipart.statusCode).toBe(403);
+      expect(await designRow(t.db)).toBeUndefined();
+    });
+  });
+
+  describe('página', () => {
+    it('sin diseño: los valores originales y "El chat usa el aspecto original" (US1-1)', async () => {
+      await start();
+      const res = await get(app, session, '/admin/chat-design');
+      expect(res.statusCode).toBe(200);
+      expect(res.body).toContain('value="#1f5fbf"');
+      expect(res.body).toContain('El chat usa el aspecto original');
+      expect(res.body).toMatch(/name="shape" value="round"[^>]*checked/);
+      expect(res.body).toContain('data-default="Asistente de Peluquería Tijeras"');
+      // Responsabilidad del operador, junto a los textos (Principio IV).
+      expect(res.body).toContain('el asistente no los usa para responder');
+      // Sin campos para el aviso ni la privacidad (US2-5).
+      expect(res.body).not.toMatch(/name="privacy/);
+    });
+
+    it('con diseño: los valores guardados', async () => {
+      await start();
+      await seedChatDesign(t.db, { ...GREEN_PALETTE, shape: 'soft', chatName: 'Recepción' });
+      const res = await get(app, session, '/admin/chat-design');
+      expect(res.body).toContain('value="#0b6e4f"');
+      expect(res.body).toMatch(/name="shape" value="soft"[^>]*checked/);
+      expect(res.body).toContain('value="Recepción"');
+      expect(res.body).not.toContain('El chat usa el aspecto original');
+    });
+
+    it('"Diseño del chat" aparece en la navegación justo después de "Chat web"', async () => {
+      await start();
+      const res = await get(app, session, '/admin');
+      expect(res.body).toMatch(
+        /<a href="\/admin\/web-chat"[^>]*>Chat web<\/a>\s*<a href="\/admin\/chat-design"[^>]*>Diseño del chat<\/a>/,
+      );
+    });
+
+    it('avisa de los campos guardados que ya no se admiten (R13)', async () => {
+      await start();
+      await t.db.insert(chatDesign).values({
+        ...GREEN_PALETTE,
+        shape: 'round',
+        position: 'right',
+        size: 'huge',
+      });
+      const res = await get(app, session, '/admin/chat-design');
+      expect(res.body).toContain('El tamaño guardado ya no se admite; el chat usa el original');
+      expect(res.body.indexOf('ya no se admite')).toBeLessThan(
+        res.body.indexOf('id="chat-design-form"'),
+      );
+    });
+  });
+
+  describe('guardar', () => {
+    it('urlencoded válido → 303 con el aviso y lo guardado', async () => {
+      await start();
+      const res = await postForm(
+        app,
+        session,
+        '/admin/chat-design',
+        designForm({ ...GREEN_FORM, chat_name: 'Recepción', welcome_text: 'Hola\r\nQué tal' }),
+      );
+      expect(res.statusCode).toBe(303);
+      expect(res.headers.location).toBe('/admin/chat-design');
+      keepCookie(res);
+      const page = await get(app, session, '/admin/chat-design');
+      expect(page.body).toContain('Diseño del chat guardado');
+      expect(await designRow(t.db)).toMatchObject({
+        primaryColor: '#0b6e4f',
+        chatName: 'Recepción',
+        welcomeText: 'Hola\nQué tal',
+      });
+    });
+
+    it('multipart sin ficheros → 303; con htmx → 200 + HX-Location', async () => {
+      await start();
+      const res = await postDesign(app, session, designForm({ shape: 'square' }));
+      expect(res.statusCode).toBe(303);
+      expect((await designRow(t.db))?.shape).toBe('square');
+      const htmx = await postDesign(app, session, designForm({ shape: 'soft' }), [], {
+        headers: { 'hx-request': 'true' },
+      });
+      expect(htmx.statusCode).toBe(200);
+      expect(htmx.headers['hx-location']).toBe('/admin/chat-design');
+      expect((await designRow(t.db))?.shape).toBe('soft');
+    });
+
+    it('con un texto demasiado largo y una opción no válida → 422 con ambos errores y lo escrito', async () => {
+      await start();
+      const res = await postDesign(
+        app,
+        session,
+        designForm({
+          ...GREEN_FORM,
+          chat_name: 'x'.repeat(41),
+          size: 'huge',
+          placeholder: 'Pregunta',
+        }),
+      );
+      expect(res.statusCode).toBe(422);
+      expect(hasFieldError(res.body, 'Máximo 40 caracteres')).toBe(true);
+      expect(hasFieldError(res.body, 'Opción no válida')).toBe(true);
+      expect(res.body).toContain(`value="${'x'.repeat(41)}"`);
+      expect(res.body).toContain('value="Pregunta"');
+      expect(res.body).toContain('value="#0b6e4f"');
+      expect(await designRow(t.db)).toBeUndefined();
+    });
+
+    it('guardar no cambia la configuración del chat web (FR-014)', async () => {
+      await start({ webChat: WEB_ON, activate: false });
+      const before = await readWebChatSettings(t.db);
+      const res = await postDesign(app, session, designForm(GREEN_FORM));
+      expect(res.statusCode).toBe(303);
+      expect(await readWebChatSettings(t.db)).toEqual(before);
+    });
+  });
+
+  describe('contraste (US2)', () => {
+    it('POST con contraste insuficiente → 422 con la pareja, la razón y el mínimo; nada cambia', async () => {
+      await start();
+      await seedChatDesign(t.db, { ...GREEN_PALETTE, chatName: 'Antes' });
+      const before = await designRow(t.db);
+      const res = await postDesign(
+        app,
+        session,
+        designForm({ ...GREEN_FORM, text_color: '#aaaaaa', chat_name: 'Después' }),
+      );
+      expect(res.statusCode).toBe(422);
+      expect(res.body).toMatch(
+        /El texto del chat sobre el fondo tiene un contraste de \d,\d{2}:1; el mínimo es 4,5:1/,
+      );
+      expect(await designRow(t.db)).toEqual(before);
+    });
+
+    it('sin JavaScript también: un urlencoded con contraste insuficiente se rechaza (US2-3)', async () => {
+      await start();
+      const res = await postForm(
+        app,
+        session,
+        '/admin/chat-design',
+        designForm({ primary_color: '#ff8800' }),
+      );
+      expect(res.statusCode).toBe(422);
+      expect(res.body).toContain(
+        'El color principal frente al fondo del chat tiene un contraste de',
+      );
+      // El resumen lista cada pareja una sola vez, aunque marque sus dos campos.
+      const summary = /<ul class="error-summary">([\s\S]*?)<\/ul>/.exec(res.body)?.[1] ?? '';
+      const items = [...summary.matchAll(/<li[^>]*>([^<]*)<\/li>/g)].map((m) => m[1] ?? '');
+      expect(items.length).toBeGreaterThan(1);
+      expect(items.every((item) => !item.includes(' · '))).toBe(true);
+      expect(new Set(items).size).toBe(items.length);
+      expect(await designRow(t.db)).toBeUndefined();
+    });
+
+    it('POST /check: un contenedor por control, vacío si cumple, sin guardar', async () => {
+      await start();
+      const ok = await postForm(app, session, '/admin/chat-design/check', designForm(GREEN_FORM));
+      expect(ok.statusCode).toBe(200);
+      for (const field of [
+        'primary_color',
+        'on_primary_color',
+        'background_color',
+        'text_color',
+        'bot_bubble_color',
+      ]) {
+        expect(ok.body).toMatch(
+          new RegExp(
+            `<span id="contrast-${field}" class="contrast-issues" hx-swap-oob="true" role="status"></span>`,
+          ),
+        );
+      }
+      const bad = await postForm(
+        app,
+        session,
+        '/admin/chat-design/check',
+        designForm({ text_color: '#aaaaaa', primary_color: 'azul' }),
+      );
+      expect(bad.statusCode).toBe(200);
+      expect(bad.body).toMatch(
+        /id="contrast-text_color"[^>]*>El texto del chat sobre el fondo tiene un contraste de 2,\d{2}:1; el mínimo es 4,5:1/,
+      );
+      expect(bad.body).toMatch(
+        /id="contrast-primary_color"[^>]*>Indica un color opaco en formato #RRGGBB/,
+      );
+      expect(await designRow(t.db)).toBeUndefined();
+    });
+
+    it('POST /check multipart con un fichero responde igual y no guarda la imagen', async () => {
+      await start();
+      const res = await postDesign(
+        app,
+        session,
+        designForm({ text_color: '#aaaaaa' }),
+        [{ name: 'logo', bytes: loadImageFixture('valid.png') }],
+        { url: '/admin/chat-design/check' },
+      );
+      expect(res.statusCode).toBe(200);
+      expect(res.body).toContain('El texto del chat sobre el fondo tiene un contraste de');
+      expect(await designRow(t.db)).toBeUndefined();
+      expect(await designImages(t.db)).toEqual({});
+    });
+
+    it('campos inventados para el aviso o la privacidad no tienen efecto (US2-5)', async () => {
+      await start({ webChat: WEB_ON });
+      const res = await postDesign(
+        app,
+        session,
+        designForm({ ...GREEN_FORM, privacy_notice: '', hide_privacy: '1', notice_text: 'Nada' }),
+      );
+      expect(res.statusCode).toBe(303);
+      const frame = await app.inject({ method: 'GET', url: '/chat/frame' });
+      expect(frame.body).toContain(
+        'Estás hablando con el asistente automático de Peluquería Tijeras',
+      );
+      expect(frame.body).toContain('Política de privacidad');
+      expect(frame.body).not.toContain('Nada');
+    });
+  });
+
+  describe('imágenes (US3)', () => {
+    it('guardado multipart con las tres imágenes válidas → 303 y se guardan normalizadas', async () => {
+      await start();
+      const res = await postDesign(app, session, designForm(GREEN_FORM), [
+        { name: 'logo', bytes: loadImageFixture('metadata.png') },
+        {
+          name: 'avatar',
+          bytes: loadImageFixture('valid.jpg'),
+          filename: 'foto.jpg',
+          type: 'image/jpeg',
+        },
+        {
+          name: 'icon',
+          bytes: loadImageFixture('valid.webp'),
+          filename: 'icono.webp',
+          type: 'image/webp',
+        },
+      ]);
+      expect(res.statusCode).toBe(303);
+      const images = await designImages(t.db);
+      expect(Object.keys(images).sort()).toEqual(['avatar', 'icon', 'logo']);
+      expect(images.logo?.mimeType).toBe('image/png');
+      expect(images.logo?.bytes.includes(Buffer.from('tEXt'))).toBe(false);
+      expect(images.avatar?.mimeType).toBe('image/jpeg');
+      expect(images.icon?.mimeType).toBe('image/webp');
+    });
+
+    it.each([
+      ['un SVG renombrado', 'svg-renamed.png', 'Formato no admitido: solo PNG, JPEG o WebP'],
+      ['más de 256 KB (llega cortado)', 'too-big.png', 'La imagen supera el máximo de 256 KB'],
+      [
+        '2000 × 2000 px',
+        'too-large-dims.png',
+        'La imagen debe medir entre 16 y 1024 px de ancho y de alto',
+      ],
+    ])(
+      'con %s junto a colores válidos → 422 con el error en su campo y nada guardado',
+      async (_name, file, message) => {
+        await start();
+        const res = await postDesign(
+          app,
+          session,
+          designForm({ ...GREEN_FORM, chat_name: 'Nuevo' }),
+          [
+            { name: 'logo', bytes: loadImageFixture('valid.png') },
+            { name: 'icon', bytes: loadImageFixture(file) },
+          ],
+        );
+        expect(res.statusCode).toBe(422);
+        // El error está en el campo del icono, no en el del logo.
+        const iconBlock = res.body.slice(
+          res.body.indexOf('id="icon"'),
+          res.body.indexOf('</fieldset>', res.body.indexOf('id="icon"')),
+        );
+        expect(iconBlock).toContain(`class="field-error" role="alert">${message}`);
+        const logoBlock = res.body.slice(
+          res.body.indexOf('id="logo"'),
+          res.body.indexOf('id="avatar"'),
+        );
+        expect(logoBlock).not.toContain('class="field-error"');
+        // Las elegidas hay que volver a elegirlas.
+        expect(logoBlock).toContain('Vuelve a elegir la imagen');
+        expect(iconBlock).toContain('Vuelve a elegir la imagen');
+        expect(await designRow(t.db)).toBeUndefined();
+        expect(await designImages(t.db)).toEqual({});
+      },
+    );
+
+    it('"Quitar" solo aparece si hay imagen guardada', async () => {
+      await start();
+      const empty = await get(app, session, '/admin/chat-design');
+      expect(empty.body).not.toContain('name="logo_remove"');
+      await seedChatDesignWithImages(t.db, { logo: 'valid.png' });
+      const page = await get(app, session, '/admin/chat-design');
+      expect(page.body).toContain('name="logo_remove"');
+      expect(page.body).not.toContain('name="icon_remove"');
+      expect(page.body).toMatch(/<img src="\/chat\/design\/logo\/[0-9a-f]{16}\.png"/);
+    });
+
+    it('registra el guardado sin nombres de fichero, textos ni colores (R12)', async () => {
+      const lines: string[] = [];
+      bot = await createTestBot(t);
+      // App con registros capturados sobre la misma BD.
+      const logged = await buildTestApp(t.db, undefined, null, {}, lines);
+      try {
+        const s = await login(logged);
+        await postDesign(logged, s, designForm({ ...GREEN_FORM, chat_name: 'Nombre secreto' }), [
+          { name: 'icon', bytes: loadImageFixture('valid.png'), filename: 'mi-foto-privada.png' },
+        ]);
+        await postDesign(logged, s, designForm({ text_color: '#aaaaaa' }));
+        const events = loggedEvents(lines, 'chat_design');
+        expect(events.map((e) => [e.event, e.outcome])).toEqual([
+          ['chat_design_saved', 'saved'],
+          ['chat_design_saved', 'rejected'],
+        ]);
+        expect(events[0]?.images).toEqual({ logo: 'none', avatar: 'none', icon: 'added' });
+        expect(events[1]?.reasons).toEqual(['contrast']);
+        const all = lines.join('\n');
+        expect(all).not.toContain('Nombre secreto');
+        expect(all).not.toContain('mi-foto-privada');
+        expect(all).not.toContain('#0b6e4f');
+      } finally {
+        await logged.close();
+      }
+    });
+  });
+
+  describe('restaurar el aspecto original (US6)', () => {
+    const CONFIRM =
+      '¿Restaurar el aspecto original? Se borrarán los colores, los textos y las imágenes del diseño.';
+
+    it('con diseño, la página muestra el botón con hx-confirm y la confirmación sin JavaScript', async () => {
+      await start();
+      await seedChatDesign(t.db, GREEN_PALETTE);
+      const page = await get(app, session, '/admin/chat-design');
+      expect(page.body).toContain('Restaurar el aspecto original');
+      expect(page.body).toContain(`hx-confirm="${CONFIRM}"`);
+      expect(page.body).toContain('href="/admin/chat-design/reset"');
+      expect(page.body).not.toContain('El chat usa el aspecto original');
+
+      const confirm = await get(app, session, '/admin/chat-design/reset');
+      expect(confirm.statusCode).toBe(200);
+      expect(confirm.body).toContain(CONFIRM);
+      expect(confirm.body).toMatch(/<form method="post" action="\/admin\/chat-design\/reset"/);
+      expect(confirm.body).toContain('name="_csrf"');
+    });
+
+    it('POST /reset → 303 con "Aspecto original restaurado" y sin fila', async () => {
+      await start();
+      await seedChatDesignWithImages(t.db, { logo: 'valid.png' }, GREEN_PALETTE);
+      const res = await postForm(app, session, '/admin/chat-design/reset');
+      expect(res.statusCode).toBe(303);
+      expect(res.headers.location).toBe('/admin/chat-design');
+      keepCookie(res);
+      const page = await get(app, session, '/admin/chat-design');
+      expect(page.body).toContain('Aspecto original restaurado');
+      expect(page.body).toContain('value="#1f5fbf"');
+      expect(await designRow(t.db)).toBeUndefined();
+      expect(await designImages(t.db)).toEqual({});
+    });
+
+    it('sin diseño → "El chat ya usa el aspecto original" y la página no muestra el botón (US6-3)', async () => {
+      await start();
+      const page = await get(app, session, '/admin/chat-design');
+      expect(page.body).not.toContain('hx-post="/admin/chat-design/reset"');
+      const res = await postForm(app, session, '/admin/chat-design/reset');
+      expect(res.statusCode).toBe(303);
+      keepCookie(res);
+      expect((await get(app, session, '/admin/chat-design')).body).toContain(
+        'El chat ya usa el aspecto original',
+      );
+    });
+
+    it('sin sesión o sin CSRF no borra nada', async () => {
+      await start();
+      await seedChatDesign(t.db, GREEN_PALETTE);
+      const anon = await app.inject({ method: 'POST', url: '/admin/chat-design/reset' });
+      expect(anon.statusCode).toBe(302);
+      const noCsrf = await app.inject({
+        method: 'POST',
+        url: '/admin/chat-design/reset',
+        headers: { cookie: session.cookie, 'content-type': 'application/x-www-form-urlencoded' },
+        payload: '',
+      });
+      expect(noCsrf.statusCode).toBe(403);
+      expect(await designRow(t.db)).toBeDefined();
+    });
+  });
+
+  describe('seguridad de los textos y de la hoja (FR-040, SC-010)', () => {
+    const EVIL = {
+      chat_name: '"><img src=x onerror=alert(1)>',
+      welcome_text: '<script>alert(1)</script> {{ it.secreto }}',
+      placeholder: '"><script>alert(2)</script>',
+      send_label: '<b>{{x}}</b>',
+    };
+
+    const expectEscaped = (html: string) => {
+      expect(html).not.toContain('<img src=x');
+      expect(html).not.toContain('<script>alert');
+      expect(html).not.toContain('<b>{{x}}</b>');
+    };
+
+    it('salen escapados en el formulario, en la vista previa y en el frame', async () => {
+      await start({ webChat: WEB_ON });
+      const saved = await postDesign(app, session, designForm({ ...GREEN_FORM, ...EVIL }));
+      expect(saved.statusCode).toBe(303);
+
+      const form = await get(app, session, '/admin/chat-design');
+      expect(form.body).toContain('value="&quot;&gt;&lt;img src=x onerror=alert(1)&gt;"');
+      expect(form.body).toContain('&lt;script&gt;alert(1)&lt;/script&gt; {{ it.secreto }}');
+      const formMain = form.body.slice(form.body.indexOf('<main'));
+      expect(formMain).not.toContain('<img src=x');
+      expect(formMain).not.toContain('<script>alert');
+
+      const preview = await get(app, session, '/admin/chat-design/preview?view=open');
+      expectEscaped(preview.body);
+      expect(preview.body).toContain('&lt;b&gt;{{x}}&lt;/b&gt;');
+
+      const frame = await app.inject({ method: 'GET', url: '/chat/frame' });
+      expectEscaped(frame.body);
+      expect(frame.body).toContain('{{ it.secreto }}');
+    });
+
+    it('preview.css con valores maliciosos en la consulta no los contiene', async () => {
+      await start();
+      const evil = encodeURIComponent(
+        '#fff;} body{background:url(https://ajeno.example/x)} </style><script>',
+      );
+      const res = await get(
+        app,
+        session,
+        `/admin/chat-design/preview.css?primary_color=${evil}&shape=${evil}&size=${evil}&position=${evil}&text_color=%230b6e4f`,
+      );
+      expect(res.statusCode).toBe(200);
+      expect(res.body).not.toContain('ajeno');
+      expect(res.body).not.toContain('script');
+      expect(res.body).not.toContain('body');
+      expect((res.body.match(/\{/g) ?? []).length).toBeLessThanOrEqual(1);
+    });
+  });
+
+  describe('vista previa', () => {
+    const counts = async () => {
+      const rows = await t.db.execute<{ n: string }>(sql`
+        select (select count(*) from conversation) + (select count(*) from customer)
+             + (select count(*) from message) + (select count(*) from model_usage)
+             + (select count(*) from web_usage_day) as n`);
+      return Number(rows.rows[0]?.n);
+    };
+
+    it('abierta: las mismas parciales que el frame, conversación de ejemplo, sin scripts', async () => {
+      await start({ webChat: WEB_ON });
+      await seedChatDesign(t.db, { ...GREEN_PALETTE, welcomeText: 'Bienvenida' });
+      const before = await counts();
+      const res = await get(app, session, '/admin/chat-design/preview?view=open');
+      expect(res.statusCode).toBe(200);
+      expect(res.headers['content-security-policy']).toBe(PREVIEW_CSP);
+      expect(res.headers['x-frame-options']).toBe('SAMEORIGIN');
+      expect(res.headers['cache-control']).toBe('no-store');
+      expect(res.body).toContain('/chat/assets/frame.css');
+      expect(res.body).toContain('id="chat-design-css"');
+      expect(res.body).toContain('class="panel-head"');
+      expect(res.body).toContain(
+        'Estás hablando con el asistente automático de Peluquería Tijeras',
+      );
+      expect(res.body).toContain('<li class="welcome">Bienvenida</li>');
+      expect(res.body).toContain('Conversación de ejemplo');
+      expect(res.body).toContain('data-sample');
+      expect(res.body).toContain('id="chat-text"');
+      expect(res.body).not.toContain('<script');
+      expect(res.body).not.toContain('/chat/api');
+      expect(await counts()).toBe(before);
+    });
+
+    it('cerrada: solo el botón flotante; un view desconocido es "open"', async () => {
+      await start({ webChat: WEB_ON });
+      const closed = await get(app, session, '/admin/chat-design/preview?view=closed');
+      expect(closed.body).toContain('id="chat-toggle"');
+      expect(closed.body).not.toContain('class="panel-head"');
+      const other = await get(app, session, '/admin/chat-design/preview?view=otro');
+      expect(other.body).toContain('class="panel-head"');
+    });
+
+    it('funciona con el chat desactivado y el negocio en preparación (FR-010)', async () => {
+      await start({ activate: false });
+      const res = await get(app, session, '/admin/chat-design/preview?view=open');
+      expect(res.statusCode).toBe(200);
+      expect(res.body).toContain('Conversación de ejemplo');
+      expect(res.body).not.toContain('no está disponible');
+    });
+
+    it('preview.css usa las opciones de la consulta y el original si no valen', async () => {
+      await start();
+      const res = await get(
+        app,
+        session,
+        '/admin/chat-design/preview.css?primary_color=%23ff0000&shape=soft',
+      );
+      expect(res.statusCode).toBe(200);
+      expect(res.headers['content-type']).toBe('text/css; charset=utf-8');
+      expect(res.headers['cache-control']).toBe('no-store');
+      expect(res.body).toContain('--chat-accent: #ff0000;');
+      expect(res.body).toContain('--chat-radius-panel: 6px;');
+      const bad = await get(
+        app,
+        session,
+        '/admin/chat-design/preview.css?primary_color=rojo&shape=x',
+      );
+      expect(bad.statusCode).toBe(200);
+      expect(bad.body).toBe('');
+    });
+  });
+});

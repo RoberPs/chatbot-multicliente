@@ -1,0 +1,18 @@
+<li class="msg msg-<%= it.m.direction === 'outbound' ? 'bot' : 'operator' %>">
+  <% if (it.m.direction === 'outbound') { %>
+    <% /* Enlaces https:// del bot pulsables (FR-020a); cada trozo se escribe escapado. */ %>
+    <p class="bubble"><% it.h.links(it.m.body ?? '').forEach(function (part) { %><% if (part.href) { %><a href="<%= part.href %>" target="_blank" rel="noopener noreferrer nofollow"><%= part.text %></a><% } else { %><%= part.text %><% } %><% }) %></p>
+  <% } else { %>
+    <p class="bubble"><%= it.m.body %></p>
+    <% if (it.m.held) { %><p class="meta" data-held>retenido (no reenviado)</p><% } %>
+  <% } %>
+  <% if (it.m.direction === 'outbound' && it.m.replyTrace) { %>
+    <%~ include('/partials/playground-trace', { trace: it.m.replyTrace, h: it.h }) %>
+  <% } %>
+  <% (it.m.notices || []).forEach(function (n) { %>
+    <details class="handoff-notice">
+      <summary><%= n.type === 'alert' ? 'Aviso al negocio (simulado)' : 'Reenviado al negocio (simulado)' %></summary>
+      <pre><%= n.body %></pre>
+    </details>
+  <% }) %>
+</li>

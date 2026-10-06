@@ -1,0 +1,23 @@
+<% /* Tabla de consumo (010): una fila por canal o por día; celdas ya formateadas en la ruta. */ %>
+<table data-usage-table="<%= it.id %>">
+  <thead>
+    <tr>
+      <th scope="col"><%= it.first %></th>
+      <th scope="col">Respuestas con modelo</th>
+      <th scope="col">Resúmenes</th>
+      <th scope="col">Tokens de entrada</th>
+      <th scope="col">Tokens de salida</th>
+      <th scope="col">Escritura en caché</th>
+      <th scope="col">Lectura de caché</th>
+      <th scope="col">Coste estimado</th>
+    </tr>
+  </thead>
+  <tbody>
+    <% it.rows.forEach(function (row) { %>
+    <tr<% if (row.label === 'Clientes finales' || row.label === 'Instancia') { %> class="total"<% } %>>
+      <th scope="row"><%= row.label %></th>
+      <% row.cells.forEach(function (cell, i) { %><td<% if (i < 6) { %> class="num"<% } %>><%= cell %></td><% }) %>
+    </tr>
+    <% }) %>
+  </tbody>
+</table>

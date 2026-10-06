@@ -1,0 +1,1 @@
+<a id="warnings-count" class="warnings-count<%= it.critical > 0 ? " has-critical" : "" %>" href="/admin#avisos">Avisos: <%= it.count %><% if (it.critical > 0) { %> (<%= it.critical %> crítico<%= it.critical > 1 ? "s" : "" %>)<% } %></a>

@@ -1,0 +1,16 @@
+node_modules/
+dist/
+coverage/
+.git/
+.env
+.env.*
+*.log*
+Dockerfile*
+.dockerignore
+specs/
+.specify/
+.claude/
+tests/
+*.cbak
+*.cbak.partial
+backups/

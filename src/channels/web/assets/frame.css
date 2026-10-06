@@ -1,0 +1,276 @@
+/* Chat web dentro del iframe (004). Sin dependencias externas; legible en móvil. */
+:root {
+  --chat-fg: #1d2330;
+  --chat-muted: #5f6878;
+  --chat-line: #d9dde4;
+  --chat-bg: #fff;
+  --chat-accent: #1f5fbf;
+  font-family:
+    system-ui,
+    -apple-system,
+    'Segoe UI',
+    Roboto,
+    sans-serif;
+}
+* {
+  box-sizing: border-box;
+}
+html,
+body {
+  margin: 0;
+  height: 100%;
+  background: transparent;
+  color: var(--chat-fg);
+}
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+.toggle {
+  position: absolute;
+  right: 8px;
+  bottom: 8px;
+  width: 56px;
+  height: 56px;
+  border: 0;
+  border-radius: var(--chat-radius-toggle, 50%);
+  background: var(--chat-accent);
+  color: var(--chat-on-accent, #fff);
+  font-size: 1.5rem;
+  cursor: pointer;
+  box-shadow: 0 2px 10px rgb(0 0 0 / 25%);
+}
+
+.panel {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  background: var(--chat-bg);
+  border: 1px solid var(--chat-line);
+  border-radius: var(--chat-radius-panel, 12px);
+  overflow: hidden;
+}
+.panel[hidden] {
+  display: none;
+}
+.panel-head {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.5rem 0.75rem;
+  border-bottom: 1px solid var(--chat-line);
+}
+.panel-head h1 {
+  margin: 0;
+  font-size: 0.95rem;
+  flex: 1;
+  /* Una línea con puntos suspensivos: un nombre largo nunca tapa el botón cerrar (011, FR-030b). */
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.close {
+  border: 0;
+  background: none;
+  font-size: 1.4rem;
+  line-height: 1;
+  cursor: pointer;
+  color: var(--chat-muted);
+}
+
+.privacy {
+  margin: 0;
+  padding: 0.5rem 0.75rem;
+  font-size: 0.75rem;
+  color: var(--chat-muted);
+  border-bottom: 1px dashed var(--chat-line);
+}
+
+/* Franja fija mientras la conversación está derivada al negocio (005): aviso, no burbuja. */
+.handoff {
+  margin: 0;
+  padding: 0.5rem 0.75rem;
+  font-size: 0.85rem;
+  color: var(--chat-fg);
+  background: #fff6d6;
+  border-bottom: 1px solid #e8d48a;
+}
+.handoff[hidden] {
+  display: none;
+}
+
+.messages {
+  flex: 1;
+  list-style: none;
+  margin: 0;
+  padding: 0.75rem;
+  overflow-y: auto;
+  display: grid;
+  gap: 0.5rem;
+  align-content: start;
+}
+.messages li {
+  max-width: 85%;
+  padding: 0.4rem 0.6rem;
+  border-radius: var(--chat-radius-bubble, 10px);
+  border: 1px solid var(--chat-line);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  font-size: 0.9rem;
+}
+.messages .from-bot {
+  background: var(--chat-bot-bg, var(--chat-bg));
+}
+/* Enlaces https:// de las respuestas del bot (FR-020a). */
+.messages .from-bot a {
+  color: var(--chat-accent);
+  text-decoration: underline;
+}
+.messages .from-visitor {
+  margin-left: auto;
+  background: var(--chat-accent);
+  border-color: var(--chat-accent);
+  color: var(--chat-on-accent, #fff);
+}
+/* Mensaje del propio chat (aviso, disculpa, "no disponible"), no del bot ni del visitante. */
+.messages .notice {
+  max-width: 100%;
+  background: var(--chat-bg);
+  border-style: dashed;
+  color: var(--chat-muted);
+  font-size: 0.85rem;
+}
+
+.status {
+  margin: 0;
+  padding: 0 0.75rem 0.4rem;
+  font-size: 0.75rem;
+  color: var(--chat-muted);
+  font-style: italic;
+  min-height: 1rem;
+}
+
+.composer {
+  display: flex;
+  gap: 0.4rem;
+  padding: 0.5rem 0.75rem 0.75rem;
+  border-top: 1px solid var(--chat-line);
+}
+.composer textarea {
+  flex: 1;
+  resize: none;
+  font: inherit;
+  font-size: 0.9rem;
+  padding: 0.4rem;
+  border: 1px solid var(--chat-field-border, var(--chat-line));
+  border-radius: var(--chat-radius-control, 8px);
+}
+.composer button {
+  border: 0;
+  border-radius: var(--chat-radius-control, 8px);
+  background: var(--chat-accent);
+  color: var(--chat-on-accent, #fff);
+  padding: 0 0.8rem;
+  font: inherit;
+  cursor: pointer;
+}
+
+.unavailable {
+  padding: 0.75rem;
+  display: grid;
+  gap: 0.6rem;
+  font-size: 0.9rem;
+}
+.unavailable .contact {
+  margin: 0;
+  color: var(--chat-muted);
+  white-space: pre-wrap;
+}
+.unavailable .message {
+  margin: 0;
+}
+
+/* --- Diseño del chat (011): reglas que solo se activan con un diseño guardado. --- */
+
+/* Bienvenida: primer elemento de la lista, junto al aviso; se desplaza con los mensajes. */
+.messages .welcome {
+  max-width: 100%;
+  background: var(--chat-bot-bg, var(--chat-bg));
+  white-space: pre-wrap;
+}
+
+/* Con colores propios: enlace de privacidad distinguido por color y subrayado (FR-023) y el
+   campo de escritura con los colores del chat. */
+[data-palette] .privacy a {
+  color: var(--chat-accent);
+  text-decoration: underline;
+}
+[data-palette] .composer textarea {
+  background: var(--chat-bg);
+  color: var(--chat-fg);
+}
+[data-palette] .composer textarea::placeholder {
+  color: var(--chat-muted);
+  opacity: 1;
+}
+/* Foco visible con el color del texto: cumple 4,5:1 con el fondo y con los mensajes del bot. */
+[data-palette] :focus-visible {
+  outline: 2px solid var(--chat-focus);
+  outline-offset: 2px;
+}
+/* La franja de derivación (005) conserva su amarillo y su borde; el texto, fijo y legible. */
+[data-palette] .handoff {
+  color: #1d2330;
+}
+
+/* Imágenes del diseño (011): tamaño fijo del hueco, sin deformar y sin girar por EXIF (R7). */
+.toggle .design-icon {
+  display: block;
+  width: 28px;
+  height: 28px;
+  margin: auto;
+  object-fit: contain;
+  image-orientation: none;
+}
+/* El emoji solo se oculta si hay icono; si la imagen falla, frame.js la quita y vuelve. */
+.toggle .design-icon + span {
+  display: none;
+}
+.panel-head .design-logo {
+  width: 28px;
+  height: 28px;
+  flex: none;
+  object-fit: contain;
+  image-orientation: none;
+}
+/* Avatar junto a los mensajes del bot, sin cambiar la disposición (FR-030). */
+[data-avatar] .messages .from-bot:not(.notice) {
+  position: relative;
+  margin-left: 30px;
+  max-width: calc(85% - 30px);
+}
+[data-avatar] .messages .from-bot:not(.notice)::before {
+  content: '';
+  position: absolute;
+  left: -30px;
+  top: 0;
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  background: var(--chat-avatar) center / cover no-repeat;
+  image-orientation: none;
+}
+
+/* Chat abajo a la izquierda (011, R5): el botón se pega a la izquierda del iframe. */
+[data-position='left'] .toggle {
+  left: 8px;
+  right: auto;
+}

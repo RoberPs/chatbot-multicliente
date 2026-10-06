@@ -1,0 +1,13 @@
+<% if (it.warnings.length === 0) { %>
+  <% if (it.emptyText) { %><p class="meta"><%= it.emptyText %></p><% } %>
+<% } else { %>
+<ul class="warnings" id="<%= it.id || '' %>">
+  <% it.warnings.forEach(function (w) { %>
+  <li class="warning <%= w.severity === 'critical' ? 'critical' : '' %>" data-code="<%= w.code %>">
+    <strong><%= w.severity === 'critical' ? 'Crítico' : 'Aviso' %> · <%= w.target.label %><% if (w.field) { %> · <%= w.field %><% } %></strong>
+    <div><%= w.message %></div>
+    <div class="code"><%= w.code %><% if (it.links !== false) { %> · <a href="<%= it.h.warningLink(w) %>">Corregir</a><% } %></div>
+  </li>
+  <% }) %>
+</ul>
+<% } %>

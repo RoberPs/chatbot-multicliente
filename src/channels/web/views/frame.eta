@@ -1,0 +1,29 @@
+<!doctype html>
+<html lang="es"<% Object.entries(it.theme.htmlAttrs).forEach(function (attr) { %> <%= attr[0] %>="<%= attr[1] %>"<% }) %>>
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Chat con el asistente</title>
+  <link rel="stylesheet" href="/chat/assets/frame.css">
+  <% if (it.designHref) { %>
+  <link rel="stylesheet" href="<%= it.designHref %>">
+  <% } %>
+</head>
+<body>
+<%~ include('/partials/toggle', it) %>
+  <section id="chat-panel" class="panel" hidden>
+<%~ include('/partials/header', it) %>
+    <% if (it.available) { %>
+<%~ include('/partials/notice', it) %>
+      <p id="chat-handoff" class="handoff" role="status" hidden></p>
+      <ul id="chat-messages" class="messages" aria-live="polite"><%~ include('/partials/messages', it) %></ul>
+      <p id="chat-status" class="status" role="status"></p>
+<%~ include('/partials/composer', it) %>
+    <% } else { %>
+<%~ include('/partials/unavailable', it) %>
+    <% } %>
+  </section>
+  <script src="/chat/assets/links.js" defer></script>
+  <script src="/chat/assets/frame.js" defer></script>
+</body>
+</html>

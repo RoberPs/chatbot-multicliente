@@ -1,0 +1,39 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Chat con el asistente</title>
+  <link rel="stylesheet" href="/chat/assets/frame.css">
+</head>
+<body>
+  <button id="chat-toggle" type="button" class="toggle" aria-expanded="false" aria-controls="chat-panel">
+    <span aria-hidden="true">💬</span>
+    <span class="sr-only">Abrir el chat</span>
+  </button>
+  <section id="chat-panel" class="panel" hidden>
+    <header class="panel-head">
+      <h1>Asistente de Peluquería Tijeras</h1>
+      <button id="chat-close" type="button" class="close" aria-label="Cerrar el chat">
+        <span aria-hidden="true">×</span>
+      </button>
+    </header>
+          <p class="privacy">
+        Estás hablando con el asistente automático de Peluquería Tijeras. Tus mensajes se usan
+        para responderte y se borran a los 30 días.
+                  <a href="https://negocio.example/privacidad" target="_blank" rel="noopener noreferrer">Política de privacidad</a>
+              </p>
+      <p id="chat-handoff" class="handoff" role="status" hidden></p>
+      <ul id="chat-messages" class="messages" aria-live="polite"></ul>
+      <p id="chat-status" class="status" role="status"></p>
+      <form id="chat-form" class="composer">
+        <label class="sr-only" for="chat-text">Tu mensaje</label>
+        <textarea id="chat-text" rows="2" maxlength="1000" required
+                  placeholder="Escribe tu mensaje"></textarea>
+        <button type="submit">Enviar</button>
+      </form>
+      </section>
+  <script src="/chat/assets/links.js" defer></script>
+  <script src="/chat/assets/frame.js" defer></script>
+</body>
+</html>

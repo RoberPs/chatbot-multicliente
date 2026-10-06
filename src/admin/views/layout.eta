@@ -1,0 +1,63 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="htmx-config" content='{"includeIndicatorStyles":false,"allowEval":false,"allowScriptTags":false,"responseHandling":[{"code":"204","swap":false},{"code":"[23]..","swap":true},{"code":"404","swap":true},{"code":"409","swap":true},{"code":"422","swap":true},{"code":"[45]..","swap":false,"error":true}]}'>
+  <title><%= it.layout.title %> · Panel del operador</title>
+  <link rel="stylesheet" href="/assets/app.css">
+  <script src="/assets/htmx.min.js" defer></script>
+  <script src="/assets/app.js" defer></script>
+  <script src="/assets/chat-design.js" defer></script>
+</head>
+<body hx-boost="true" hx-headers='{"x-csrf-token": "<%= it.layout.csrf %>"}'>
+  <header class="topbar">
+    <a class="brand" href="/admin"><%= it.layout.businessName || 'Negocio sin nombre' %></a>
+    <span class="badge <%= it.layout.status === 'active' ? 'badge-ok' : 'badge-draft' %>">
+      <%= it.layout.status === 'active' ? 'Activo' : 'En preparación' %>
+    </span>
+    <%~ include('/partials/warnings-count', { count: it.layout.warningsCount, critical: it.layout.criticalCount }) %>
+    <form class="logout" method="post" action="/admin/logout">
+      <%~ include('/partials/csrf', { token: it.layout.csrf }) %>
+      <button type="submit" class="link">Salir</button>
+    </form>
+  </header>
+  <nav class="sections" aria-label="Secciones">
+    <% [
+      ['/admin', 'Portada'],
+      ['/admin/business', 'Datos'],
+      ['/admin/hours', 'Horario y cierres'],
+      ['/admin/services', 'Servicios'],
+      ['/admin/resources', 'Recursos'],
+      ['/admin/faqs', 'Preguntas frecuentes'],
+      ['/admin/policies', 'Políticas'],
+      ['/admin/tone', 'Tono'],
+      ['/admin/handoff', 'Derivación'],
+      ['/admin/handoffs', 'Derivaciones'],
+      ['/admin/playground', 'Probar el bot'],
+      ['/admin/web-chat', 'Chat web'],
+      ['/admin/chat-design', 'Diseño del chat'],
+      ['/admin/usage', 'Consumo'],
+      ['/admin/config', 'Exportar e importar'],
+    ].forEach(function (item) {
+      const path = it.layout.path.split('?')[0]; const current = item[0] === '/admin' ? path === '/admin' || path === '/admin/' : path === item[0] || path.startsWith(item[0] + '/'); %>
+      <a href="<%= item[0] %>"<% if (current) { %> aria-current="page"<% } %>><%= item[1] %></a>
+    <% }) %>
+  </nav>
+  <%~ include('/partials/protection-banner', { warnings: it.layout.protection }) %>
+  <%~ include('/partials/spend-banner', { spend: it.layout.spend }) %>
+  <main id="main">
+    <%~ include('/partials/flash', { flash: it.layout.flash }) %>
+    <h1><%= it.layout.title %></h1>
+    <%~ it.body %>
+  </main>
+  <footer class="version" aria-label="Versión de la instancia">
+    <% if (it.layout.version) { %>
+      Núcleo <%= it.layout.version.coreVersion %> · Esquema <%= it.layout.version.schemaTag || '—' %>
+      <% if (!it.layout.version.matches) { %><span class="badge badge-warn">Esquema distinto del esperado</span><% } %>
+    <% } else { %>
+      Versión no disponible
+    <% } %>
+  </footer>
+</body>
+</html>

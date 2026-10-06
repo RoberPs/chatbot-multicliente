@@ -1,0 +1,600 @@
+/* Panel del operador: estilos mínimos, sin dependencias externas. */
+:root {
+  --bg: #f6f7f9;
+  --fg: #1d2330;
+  --muted: #5f6878;
+  --line: #d9dde4;
+  --card: #fff;
+  --accent: #1f5fbf;
+  --ok: #1f7a4a;
+  --warn: #9a6200;
+  --danger: #b3261e;
+  font-family:
+    system-ui,
+    -apple-system,
+    'Segoe UI',
+    Roboto,
+    sans-serif;
+  color: var(--fg);
+  background: var(--bg);
+}
+* {
+  box-sizing: border-box;
+}
+body {
+  margin: 0;
+}
+a {
+  color: var(--accent);
+}
+h1 {
+  font-size: 1.5rem;
+  margin: 0 0 1rem;
+}
+h2 {
+  font-size: 1.15rem;
+  margin: 1.5rem 0 0.75rem;
+}
+
+.topbar {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.6rem 1.25rem;
+  background: var(--card);
+  border-bottom: 1px solid var(--line);
+}
+.brand {
+  font-weight: 600;
+  text-decoration: none;
+  color: var(--fg);
+}
+.logout {
+  margin-left: auto;
+}
+.sections {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.25rem 1rem;
+  padding: 0.5rem 1.25rem;
+  background: var(--card);
+  border-bottom: 1px solid var(--line);
+}
+.sections a {
+  text-decoration: none;
+  color: var(--muted);
+  padding: 0.2rem 0;
+}
+.sections a[aria-current='page'] {
+  color: var(--fg);
+  font-weight: 600;
+  border-bottom: 2px solid var(--accent);
+}
+main {
+  max-width: 60rem;
+  margin: 0 auto;
+  padding: 1.5rem 1.25rem 4rem;
+}
+
+.badge {
+  font-size: 0.8rem;
+  padding: 0.15rem 0.55rem;
+  border-radius: 999px;
+  border: 1px solid currentColor;
+}
+.badge-ok {
+  color: var(--ok);
+}
+.badge-draft {
+  color: var(--warn);
+}
+.badge-warn {
+  color: var(--danger);
+}
+
+/* Versión de la instancia (009): línea fija al pie de todas las páginas. */
+.version {
+  max-width: 60rem;
+  margin: 0 auto;
+  padding: 0.75rem 1.25rem 1.5rem;
+  font-size: 0.8rem;
+  color: var(--muted);
+}
+.version .badge {
+  margin-left: 0.5rem;
+}
+.warnings-count {
+  font-size: 0.85rem;
+  text-decoration: none;
+}
+.warnings-count.has-critical {
+  color: var(--danger);
+  font-weight: 600;
+}
+
+.card {
+  background: var(--card);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 1rem 1.25rem;
+  margin-bottom: 1rem;
+}
+.flash {
+  background: #e8f5ec;
+  border: 1px solid #b7dcc4;
+  color: var(--ok);
+  padding: 0.6rem 1rem;
+  border-radius: 6px;
+  margin-bottom: 1rem;
+}
+.general-error {
+  background: #fdecea;
+  border: 1px solid #f1b7b2;
+  color: var(--danger);
+  padding: 0.75rem 1rem;
+  border-radius: 6px;
+  margin-bottom: 1rem;
+}
+.meta {
+  color: var(--muted);
+  font-size: 0.85rem;
+}
+.hint {
+  color: var(--muted);
+  font-size: 0.85rem;
+  margin: 0.25rem 0 0.75rem;
+}
+/* Recuadro "Contacto que usa el bot" (003, FR-005). */
+.handoff-effective {
+  border-left: 4px solid var(--accent);
+  background: var(--card);
+  padding: 0.6rem 1rem;
+  border-radius: 6px;
+  margin-bottom: 1rem;
+}
+.handoff-effective.is-none {
+  border-left-color: var(--danger);
+}
+.handoff-effective p {
+  margin: 0.2rem 0;
+}
+/* Medio marcado para quitar: se ve el efecto antes de guardar, sin JavaScript (003, FR-001). */
+.channel-row:has(.remove input:checked) {
+  opacity: 0.55;
+}
+.channel-row:has(.remove input:checked) select,
+.channel-row:has(.remove input:checked) input[type='text'] {
+  text-decoration: line-through;
+}
+
+form.stack {
+  display: grid;
+  gap: 0.9rem;
+}
+label {
+  display: grid;
+  gap: 0.25rem;
+  font-weight: 500;
+}
+label.inline,
+.checkbox {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-weight: 400;
+}
+input[type='text'],
+input[type='email'],
+input[type='tel'],
+input[type='number'],
+input[type='password'],
+input[type='date'],
+input[type='time'],
+select,
+textarea {
+  font: inherit;
+  padding: 0.45rem 0.55rem;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: #fff;
+  max-width: 100%;
+}
+textarea {
+  min-height: 6rem;
+}
+.has-error input,
+.has-error select,
+.has-error textarea,
+input.has-error {
+  border-color: var(--danger);
+}
+.field-error {
+  color: var(--danger);
+  font-size: 0.85rem;
+  font-weight: 400;
+}
+.row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+  align-items: end;
+}
+.actions {
+  display: flex;
+  gap: 0.75rem;
+  align-items: center;
+  margin-top: 0.5rem;
+}
+
+button {
+  font: inherit;
+  padding: 0.45rem 0.9rem;
+  border-radius: 6px;
+  border: 1px solid var(--accent);
+  background: var(--accent);
+  color: #fff;
+  cursor: pointer;
+}
+button.secondary {
+  background: #fff;
+  color: var(--accent);
+}
+button.danger {
+  background: #fff;
+  color: var(--danger);
+  border-color: var(--danger);
+}
+button.link {
+  background: none;
+  border: none;
+  color: var(--accent);
+  padding: 0;
+  text-decoration: underline;
+}
+button.small {
+  padding: 0.15rem 0.5rem;
+  font-size: 0.85rem;
+}
+form.inline {
+  display: inline;
+}
+
+table {
+  width: 100%;
+  border-collapse: collapse;
+  background: var(--card);
+}
+th,
+td {
+  text-align: left;
+  padding: 0.5rem 0.6rem;
+  border-bottom: 1px solid var(--line);
+  vertical-align: top;
+}
+th {
+  font-size: 0.85rem;
+  color: var(--muted);
+  font-weight: 600;
+}
+tr.inactive td {
+  color: var(--muted);
+}
+
+.week {
+  display: grid;
+  gap: 0.5rem;
+}
+.day {
+  display: grid;
+  grid-template-columns: 7rem 1fr;
+  gap: 0.5rem;
+  align-items: start;
+  padding: 0.4rem 0;
+  border-bottom: 1px dashed var(--line);
+}
+.day-name {
+  font-weight: 500;
+  padding-top: 0.45rem;
+}
+.slot-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+  align-items: center;
+  margin-bottom: 0.3rem;
+}
+
+.warnings {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: grid;
+  gap: 0.5rem;
+}
+.warning {
+  border-left: 4px solid var(--warn);
+  background: var(--card);
+  padding: 0.5rem 0.75rem;
+  border-radius: 4px;
+}
+.warning.critical {
+  border-left-color: var(--danger);
+}
+.warning .code {
+  font-family: ui-monospace, monospace;
+  font-size: 0.75rem;
+  color: var(--muted);
+}
+
+.login {
+  max-width: 22rem;
+  margin: 10vh auto;
+}
+
+/* Probar el bot (004, US1): conversación de prueba e información técnica. */
+.notice {
+  border-left: 4px solid var(--warn);
+  background: var(--card);
+  padding: 0.5rem 0.75rem;
+  border-radius: 4px;
+  margin: 0 0 1rem;
+}
+.thread {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: grid;
+  gap: 0.75rem;
+}
+.msg {
+  display: grid;
+  gap: 0.35rem;
+  max-width: 34rem;
+}
+.msg-operator {
+  justify-items: end;
+  margin-left: auto;
+}
+.bubble {
+  margin: 0;
+  padding: 0.5rem 0.75rem;
+  border-radius: 10px;
+  border: 1px solid var(--line);
+  background: var(--bg);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.msg-operator .bubble {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #fff;
+}
+.typing {
+  color: var(--muted);
+  font-style: italic;
+}
+.trace {
+  font-size: 0.8rem;
+  color: var(--muted);
+  border-collapse: collapse;
+}
+.trace caption {
+  text-align: left;
+  font-size: 0.75rem;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  color: var(--muted);
+  padding-bottom: 0.2rem;
+}
+.trace th,
+.trace td {
+  border: 0;
+  padding: 0.1rem 0.6rem 0.1rem 0;
+  text-align: left;
+  font-weight: 400;
+  vertical-align: top;
+}
+.trace th {
+  color: var(--muted);
+  white-space: nowrap;
+}
+
+/* Chat web (004, US2): fragmento para la web del negocio y casilla de activación. */
+label.inline {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  font-weight: 500;
+}
+.snippet {
+  width: 100%;
+  font-family: ui-monospace, monospace;
+  font-size: 0.8rem;
+  resize: vertical;
+  background: var(--bg);
+}
+code {
+  font-family: ui-monospace, monospace;
+  font-size: 0.85em;
+  background: var(--bg);
+  padding: 0 0.2em;
+  border-radius: 3px;
+}
+.notice.critical {
+  border-left-color: var(--danger);
+}
+
+/* Exportar e importar la configuración (008). */
+a.button {
+  display: inline-block;
+  padding: 0.45rem 0.9rem;
+  border-radius: 6px;
+  border: 1px solid var(--accent);
+  background: var(--accent);
+  color: #fff;
+  text-decoration: none;
+}
+a.button.secondary {
+  background: #fff;
+  color: var(--accent);
+}
+button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+.import-issues h3,
+.config-diff h3 {
+  font-size: 1rem;
+  margin: 1rem 0 0.4rem;
+}
+.issues,
+.config-diff ul {
+  margin: 0;
+  padding-left: 1.2rem;
+}
+.issues li,
+.config-diff li {
+  margin: 0.2rem 0;
+}
+.issues strong,
+.issues code {
+  margin-right: 0.4rem;
+}
+.config-diff .added {
+  color: var(--ok);
+}
+.config-diff .removed {
+  color: var(--danger);
+}
+.config-diff .change {
+  color: var(--muted);
+}
+.outcome {
+  font-weight: 600;
+}
+.outcome.ok {
+  color: var(--ok);
+}
+.outcome.blocked {
+  color: var(--danger);
+}
+
+/* Consumo (010): tablas anchas con desplazamiento propio y aviso del tope de gasto. */
+.table-scroll {
+  overflow-x: auto;
+}
+td.num {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+tr.total th,
+tr.total td {
+  font-weight: 600;
+}
+.visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+}
+.spend-banner {
+  margin: 0;
+  border-radius: 0;
+}
+
+/* Diseño del chat (011): formulario a la izquierda y vista previa a la derecha en escritorio. */
+.chat-design {
+  display: grid;
+  gap: 1rem;
+  align-items: start;
+}
+@media (min-width: 1100px) {
+  .chat-design {
+    grid-template-columns: minmax(0, 1fr) auto;
+  }
+  .design-preview {
+    position: sticky;
+    top: 1rem;
+  }
+}
+.chat-design fieldset {
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  padding: 0.75rem;
+  display: grid;
+  gap: 0.6rem;
+}
+.chat-design legend {
+  font-weight: 600;
+  padding: 0 0.3rem;
+}
+.color-field {
+  display: grid;
+  gap: 0.2rem;
+}
+.color-pair {
+  display: flex;
+  gap: 0.4rem;
+  align-items: center;
+}
+.color-pair input[type='color'] {
+  width: 2.6rem;
+  height: 2.2rem;
+  padding: 0.1rem;
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  background: var(--card);
+}
+.color-pair .color-text {
+  width: 8rem;
+  font-family: ui-monospace, monospace;
+}
+.contrast-issues:empty {
+  display: none;
+}
+.contrast-issues {
+  color: var(--danger);
+  font-size: 0.85rem;
+}
+.design-image {
+  display: grid;
+  gap: 0.3rem;
+}
+.design-image img {
+  width: 48px;
+  height: 48px;
+  object-fit: contain;
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  background: var(--card);
+}
+.preview-frames {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 1rem;
+  align-items: flex-end;
+}
+.preview-frames iframe {
+  border: 1px dashed var(--line);
+  background: repeating-linear-gradient(45deg, #f6f7f9 0 10px, #eef0f3 10px 20px);
+  max-width: 100%;
+}
+.field-warning {
+  color: var(--warn);
+  font-size: 0.85rem;
+}
+.field-warning:empty {
+  display: none;
+}
+/* Chat abajo a la izquierda en la vista previa: el chat abierto pasa al lado izquierdo. */
+.preview-frames[data-position='left'] {
+  flex-direction: row-reverse;
+  justify-content: flex-end;
+}
+a.button.danger {
+  background: #fff;
+  color: var(--danger);
+  border-color: var(--danger);
+}

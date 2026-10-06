@@ -1,0 +1,12 @@
+<% /* Avisos de protección (012, data-model §2.2): calculados en cada página, nunca guardados; encima del aviso de gasto de la 010. */ %>
+<% const list = it.warnings || []; %>
+<% if (list.length > 0) { %>
+<div class="protection-banner" data-protection-banner>
+  <% list.forEach(function (w) { %>
+  <p class="notice<%= w.severity === 'critical' ? ' critical' : '' %>" role="<%= w.severity === 'critical' ? 'alert' : 'status' %>" data-protection-warning="<%= w.code %>">
+    <%= w.message %>
+    <a href="/admin/usage">Consumo</a>
+  </p>
+  <% }) %>
+</div>
+<% } %>

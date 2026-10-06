@@ -1,0 +1,7 @@
+    <header class="panel-head">
+      <% if (it.theme.images.logo) { %><img class="design-logo" src="<%= it.theme.images.logo %>" alt=""><% } %>
+      <h1><%= it.available ? it.theme.texts.chatName : it.theme.texts.unavailableTitle %></h1>
+      <button id="chat-close" type="button" class="close" aria-label="Cerrar el chat">
+        <span aria-hidden="true">×</span>
+      </button>
+    </header>

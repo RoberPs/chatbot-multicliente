@@ -1,0 +1,23 @@
+<% layout('/layout') %>
+<% const r = it.result; %>
+<p class="outcome ok">Importación aplicada el <%= it.importedAt %>. El bot usa la configuración nueva desde la siguiente respuesta.</p>
+<p class="hint">El estado del negocio y la activación del chat web no han cambiado<% if (!r.includeAlerts) { %>, y se han conservado los destinos de los avisos de esta instancia<% } %>.</p>
+
+<section class="card">
+  <h2>Cambios aplicados</h2>
+  <%~ include('/partials/config-diff', { sections: r.sections, emptyText: 'No ha cambiado nada: la configuración ya era la del fichero.', verbs: { added: 'Añadido', modified: 'Cambiado', removed: 'Eliminado' } }) %>
+</section>
+
+<section class="card">
+  <h2>Avisos vigentes</h2>
+  <%~ include('/partials/warnings-list', { warnings: r.warnings, h: it.h, emptyText: 'Ningún aviso.' }) %>
+</section>
+
+<section class="card">
+  <h2>Deshacer</h2>
+  <p>Se ha guardado la configuración que había justo antes de esta importación (con los destinos de los avisos). Para volver a ella, descárgala e impórtala marcando los destinos.</p>
+  <div class="actions">
+    <a class="button secondary" href="/admin/config/pre-import" hx-boost="false">Descargar la configuración anterior</a>
+    <a href="/admin/config">Volver a Exportar e importar</a>
+  </div>
+</section>

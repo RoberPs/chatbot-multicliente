@@ -1,0 +1,162 @@
+{
+  "format": "business-config",
+  "formatVersion": 2,
+  "exportedAt": "2026-09-30T10:15:00.000Z",
+  "source": {
+    "instanceId": "demo-01",
+    "schema": "0005_config_transfer"
+  },
+  "includesAlertDestinations": true,
+  "info": {
+    "businessStatus": "active",
+    "webChatEnabled": true
+  },
+  "business": {
+    "name": "Negocio de ejemplo",
+    "address": "Calle Mayor 1",
+    "directions": null,
+    "mapUrl": "https://maps.example.com/abc",
+    "phone": "+34910123456",
+    "email": "hola@example.com",
+    "timezone": "Europe/Madrid",
+    "currency": "EUR"
+  },
+  "openingHours": [
+    {
+      "weekday": 1,
+      "start": "09:00",
+      "end": "14:00"
+    },
+    {
+      "weekday": 1,
+      "start": "16:00",
+      "end": "20:00"
+    },
+    {
+      "weekday": 2,
+      "start": "09:00",
+      "end": "14:00"
+    },
+    {
+      "weekday": 6,
+      "start": "10:00",
+      "end": "14:00"
+    }
+  ],
+  "closures": [
+    {
+      "startDate": "2026-11-02",
+      "endDate": "2026-11-02",
+      "startTime": "09:00",
+      "endTime": "12:00",
+      "reason": "Formación"
+    },
+    {
+      "startDate": "2026-12-24",
+      "endDate": "2026-12-26",
+      "startTime": null,
+      "endTime": null,
+      "reason": "Navidad"
+    }
+  ],
+  "services": [
+    {
+      "name": "Servicio A",
+      "description": null,
+      "priceType": "fixed",
+      "priceCents": 2500,
+      "durationMinutes": 30,
+      "bookable": true,
+      "active": true
+    },
+    {
+      "name": "Servicio B",
+      "description": "Descripción del servicio B",
+      "priceType": "from",
+      "priceCents": 4000,
+      "durationMinutes": 60,
+      "bookable": false,
+      "active": true
+    }
+  ],
+  "resources": [
+    {
+      "name": "Recurso 1",
+      "active": true,
+      "services": [
+        "Servicio A"
+      ],
+      "hours": [
+        {
+          "weekday": 1,
+          "start": "09:00",
+          "end": "14:00"
+        }
+      ],
+      "absences": [
+        {
+          "startDate": "2026-08-01",
+          "endDate": "2026-08-15",
+          "startTime": null,
+          "endTime": null
+        }
+      ]
+    }
+  ],
+  "faqs": [
+    {
+      "question": "¿Hay aparcamiento?",
+      "answer": "Sí, en la calle de atrás."
+    },
+    {
+      "question": "¿Se puede pagar con tarjeta?",
+      "answer": "Sí, con cualquier tarjeta."
+    }
+  ],
+  "policies": {
+    "cancellationText": "Avisa con un día de antelación.",
+    "cancellationNoticeMinutes": 1440,
+    "minAdvanceMinutes": 60,
+    "maxAdvanceMinutes": 43200,
+    "paymentMethods": [
+      "Efectivo",
+      "Tarjeta"
+    ]
+  },
+  "tone": {
+    "addressForm": "informal",
+    "styleDescription": null
+  },
+  "handoff": {
+    "channels": [
+      {
+        "type": "phone",
+        "value": "+34910123456"
+      },
+      {
+        "type": "email",
+        "value": "atencion@example.com"
+      }
+    ],
+    "hours": [
+      {
+        "weekday": 1,
+        "start": "09:00",
+        "end": "14:00"
+      }
+    ]
+  },
+  "webChat": {
+    "allowedOrigins": [
+      "https://www.example.com"
+    ],
+    "privacyUrl": "https://www.example.com/privacidad",
+    "dailyCap": 200,
+    "monthlyCap": 3000
+  },
+  "chatDesign": null,
+  "alertDestinations": {
+    "whatsapp": "+34600123456",
+    "email": "avisos@example.com"
+  }
+}

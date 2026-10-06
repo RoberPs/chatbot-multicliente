@@ -1,0 +1,29 @@
+<!doctype html>
+<html lang="es"<% Object.entries(it.theme.htmlAttrs).forEach(function (attr) { %> <%= attr[0] %>="<%= attr[1] %>"<% }) %>>
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Vista previa del chat</title>
+  <link rel="stylesheet" href="/chat/assets/frame.css">
+  <link id="chat-design-css" rel="stylesheet" href="<%= it.designHref %>">
+</head>
+<body>
+<% /* Vista previa (011, R9): las mismas parciales que /chat/frame, sin frame.js ni la API. */ %>
+<% if (it.view === 'closed') { %>
+<%~ include('/channels/web/views/partials/toggle', it) %>
+<% } else { %>
+  <section id="chat-panel" class="panel">
+<%~ include('/channels/web/views/partials/header', it) %>
+<%~ include('/channels/web/views/partials/notice', it) %>
+      <ul id="chat-messages" class="messages"><%~ include('/channels/web/views/partials/messages', it) %>
+        <li class="from-bot notice" data-sample>Conversación de ejemplo: así verán el chat tus clientes.</li>
+        <% it.sample.forEach(function (m) { %>
+        <li class="<%= m.from === 'bot' ? 'from-bot' : 'from-visitor' %>" data-sample><%= m.text %></li>
+        <% }) %>
+      </ul>
+      <p id="chat-status" class="status" role="status"></p>
+<%~ include('/channels/web/views/partials/composer', it) %>
+  </section>
+<% } %>
+</body>
+</html>

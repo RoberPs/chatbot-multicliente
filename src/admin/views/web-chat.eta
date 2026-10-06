@@ -1,0 +1,77 @@
+<% layout('/layout') %>
+<% const v = it.values; const e = it.errors; const s = it.settings; %>
+<%~ include('/partials/general-error', { errors: it.errors, general: it.general, blocking: it.blocking, h: it.h }) %>
+<p class="hint">Chat en la web del negocio, atendido por el mismo asistente que WhatsApp. Empieza desactivado: no se muestra en ninguna web hasta que lo actives.</p>
+
+<% if (it.capReached) { %>
+  <p class="notice critical" role="alert">
+    <% if (it.capReached === 'day') { %>
+      El chat web ha alcanzado el tope diario: no responde hasta mañana. Los clientes ven el contacto del negocio.
+    <% } else { %>
+      El chat web ha alcanzado el tope mensual: no responde hasta el mes que viene. Los clientes ven el contacto del negocio.
+    <% } %>
+  </p>
+<% } %>
+
+<section class="card">
+  <h2>Estado</h2>
+  <p>
+    <span class="badge <%= s.enabled ? 'badge-ok' : 'badge-draft' %>"><%= s.enabled ? 'Activado' : 'Desactivado' %></span>
+    <% if (s.enabled) { %>
+      en <%= s.allowedOrigins.length %> <%= s.allowedOrigins.length === 1 ? 'web' : 'webs' %>.
+    <% } else { %>
+      Los visitantes no ven el chat.
+    <% } %>
+  </p>
+  <p class="meta">Uso del canal web: Hoy: <%= it.usage.today %> de <%= it.usage.dailyCap %> · Este mes: <%= it.usage.month %> de <%= it.usage.monthlyCap %> respuestas.</p>
+</section>
+
+<form class="stack card" method="post" action="/admin/web-chat">
+  <%~ include('/partials/csrf', { token: it.layout.csrf }) %>
+  <h2>Configuración</h2>
+  <div>
+    <label for="allowed_origins">Webs donde se mostrará el chat (una por línea, máximo <%= it.maxOrigins %>)</label>
+    <textarea id="allowed_origins" name="allowed_origins" rows="4"
+              placeholder="https://www.minegocio.example"><%= it.h.str(v.allowed_origins) %></textarea>
+    <span class="hint">Solo el esquema y el dominio, sin ruta: <code>https://www.minegocio.example</code>. Con <code>http</code> solo se admiten <code>localhost</code> y <code>127.0.0.1</code>, para pruebas.</span>
+    <%~ include('/partials/field-error', { message: it.h.err(e, 'allowed_origins') }) %>
+  </div>
+  <div>
+    <label for="privacy_url">Enlace a la política de privacidad del negocio</label>
+    <input id="privacy_url" name="privacy_url" type="url" value="<%= it.h.str(v.privacy_url) %>"
+           placeholder="https://www.minegocio.example/privacidad">
+    <span class="hint">Se muestra en el chat antes del primer mensaje, junto al aviso de que atiende un asistente automático.</span>
+    <%~ include('/partials/field-error', { message: it.h.err(e, 'privacy_url') }) %>
+  </div>
+  <div>
+    <label for="daily_cap">Tope de respuestas al día</label>
+    <input id="daily_cap" name="daily_cap" type="number" min="1" step="1" value="<%= it.h.str(v.daily_cap) %>">
+    <%~ include('/partials/field-error', { message: it.h.err(e, 'daily_cap') }) %>
+  </div>
+  <div>
+    <label for="monthly_cap">Tope de respuestas al mes</label>
+    <input id="monthly_cap" name="monthly_cap" type="number" min="1" step="1" value="<%= it.h.str(v.monthly_cap) %>">
+    <span class="hint">Al alcanzar un tope el chat deja de responder y muestra el contacto del negocio hasta el día o el mes siguiente.</span>
+    <%~ include('/partials/field-error', { message: it.h.err(e, 'monthly_cap') }) %>
+  </div>
+  <div>
+    <label for="enabled" class="inline">
+      <input id="enabled" name="enabled" type="checkbox"<% if (v.enabled) { %> checked<% } %>>
+      Activar el chat en estas webs
+    </label>
+    <%~ include('/partials/field-error', { message: it.h.err(e, 'enabled') }) %>
+  </div>
+  <div class="actions">
+    <button type="submit">Guardar</button>
+  </div>
+</form>
+
+<section class="card">
+  <h2>Fragmento para la web del negocio</h2>
+  <p class="hint">Pega esto una vez en la web del negocio, antes de cerrar <code>&lt;/body&gt;</code>. No hay que volver a cambiarlo al activar o desactivar el chat.</p>
+  <textarea id="snippet" class="snippet" rows="2" readonly><%= it.snippet %></textarea>
+  <div class="actions">
+    <button type="button" class="secondary" data-copy="#snippet" data-copied="Copiado">Copiar</button>
+    <% if (!s.enabled) { %><span class="meta">No mostrará nada hasta que actives el chat.</span><% } %>
+  </div>
+</section>

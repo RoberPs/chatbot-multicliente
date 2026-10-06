@@ -17,7 +17,7 @@ Create and switch to a new git feature branch for the given specification. This 
 $ARGUMENTS
 ```
 
-You **MUST** consider the user input before proceeding (if not empty).
+Take the user input above into account (if not empty).
 
 ## Environment Variable Override
 

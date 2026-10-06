@@ -1,0 +1,266 @@
+/**
+ * Recepción de mensajes (research R2, R3; contracts/whatsapp-webhook.md y, desde la 004,
+ * contracts/conversation-channels.md).
+ *
+ * Único punto de entrada para todos los canales. Con la política del canal de cada evento
+ * decide si se descarta sin guardar (negocio no activo, chat web desactivado, tope alcanzado) o
+ * se guarda en una transacción antes de responder a quien lo envía. Los errores se propagan: el
+ * webhook responde 503 y Meta reintenta; la deduplicación hace inocuos los reintentos.
+ */
+import type { Db } from '../db/client.js';
+import type { KnowledgeReader, KnowledgeSnapshot } from '../knowledge/types.js';
+import { readWebChatSettings, type WebChatSettings } from '../webchat/settings.js';
+import {
+  canCallModel,
+  checkProtection,
+  defaultProtectionConfig,
+  type ProtectionConfig,
+} from '../usage/protection.js';
+import type { CapReason } from '../usage/types.js';
+import { capReached, readWebUsage, type QuotaWatch } from '../webchat/usage.js';
+import type { ActivityLog, DiscardReason, EventContext } from './activity-log.js';
+import type { ChannelPolicies, ChannelPolicy } from './channels.js';
+import type { Clock } from './ports.js';
+import * as conversations from './repositories/conversation.js';
+import { markRateLimitNotified, upsertByChannel } from './repositories/customer.js';
+import { countInboundSince, insertInbound } from './repositories/message.js';
+import { conversationSettings, type ConversationSettings } from './settings.js';
+import type { Transcriber } from './transcription.js';
+import type { InboundEvent } from './types.js';
+
+export interface IntakeDeps {
+  db: Db;
+  reader: KnowledgeReader;
+  clock: Clock;
+  activityLog: ActivityLog;
+  /** Qué exige cada canal (R1). */
+  policies: ChannelPolicies;
+  /** Avisa al procesador de que una conversación tiene mensajes nuevos. */
+  wake?: (conversationId: string) => void;
+  /** Solo con los audios activados: los audios llegan como `kind = audio`. */
+  transcriber?: Transcriber;
+  /** Pide al procesador el aviso de límite (R-LIMIT) para una conversación (FR-004a). */
+  notifyRateLimit?: (conversationId: string) => void;
+  /** Registra `web_quota_reached` una vez por periodo (compartido con el procesador). */
+  quotaWatch?: QuotaWatch;
+  settings?: ConversationSettings;
+  /** Producción y modelos de la instancia (012); sin ella, como fuera de producción. */
+  protection?: ProtectionConfig;
+}
+
+/** Resultado por evento, para que la ruta del chat web pueda contestar. */
+export type IntakeOutcome =
+  | { status: 'stored'; conversationId: string }
+  | { status: 'duplicate' }
+  | { status: 'rate_limited'; conversationId: string }
+  | { status: 'discarded'; reason: 'not_active' | 'disabled' | 'quota' | 'spend_cap' | 'group' };
+
+export interface Intake {
+  handle(events: InboundEvent[]): Promise<IntakeOutcome[]>;
+}
+
+/** Deshace la transacción de un duplicado (no deja una conversación vacía). */
+class DuplicateMessage extends Error {}
+
+export function createIntake(deps: IntakeDeps): Intake {
+  const { db, reader, clock, activityLog, policies } = deps;
+  const settings = deps.settings ?? conversationSettings;
+  const protection = deps.protection ?? defaultProtectionConfig('');
+
+  interface Stored {
+    conversationId: string;
+    messageId: string;
+    /** Solo si el mensaje supera el límite por cliente (R6). */
+    rateLimit: { count: number; noticeSent: boolean } | null;
+  }
+
+  async function store(event: InboundEvent): Promise<Stored | null> {
+    const receivedAt = clock.now();
+    try {
+      return await db.transaction(async (tx) => {
+        const customer = await upsertByChannel(tx, event.channel, event.channelUserId);
+        // R6: cuentan todos los entrantes de la ventana, también los ya limitados.
+        const windowStart = new Date(receivedAt.getTime() - settings.rateLimitWindowMs);
+        const count = (await countInboundSince(tx, customer.id, windowStart)) + 1;
+        const limited = count > settings.rateLimitMessages;
+        const noticeSent =
+          limited &&
+          (customer.rateLimitNotifiedAt === null || customer.rateLimitNotifiedAt <= windowStart);
+        if (noticeSent) await markRateLimitNotified(tx, customer.id, receivedAt);
+        const latest = await conversations.findLatestForCustomer(tx, customer.id);
+        // FR-019: conversación nueva si no hay ninguna o han pasado más de 24 h.
+        const conversation =
+          latest &&
+          event.sentAt.getTime() - latest.lastInboundAt.getTime() <= settings.conversationWindowMs
+            ? latest
+            : await conversations.create(tx, {
+                customerId: customer.id,
+                sentAt: event.sentAt,
+                receivedAt,
+              });
+        const inserted = await insertInbound(tx, {
+          conversationId: conversation.id,
+          channelMessageId: event.channelMessageId,
+          kind: event.kind,
+          body: event.kind === 'other' ? event.caption : event.text,
+          otherType: event.otherType,
+          sentAt: event.sentAt,
+          receivedAt,
+          status: limited ? 'rate_limited' : 'pending',
+          transcription: event.kind === 'audio' && !limited ? 'pending' : null,
+        });
+        if (!inserted.id) throw new DuplicateMessage();
+        await conversations.touchInbound(tx, conversation.id, event.sentAt, receivedAt);
+        // 005, R10: el nombre de perfil de WhatsApp es el nombre del cliente para la derivación.
+        if (event.profileName) {
+          await conversations.setProfileName(tx, conversation.id, event.profileName);
+        }
+        return {
+          conversationId: conversation.id,
+          messageId: inserted.id,
+          rateLimit: limited ? { count, noticeSent } : null,
+        };
+      });
+    } catch (error) {
+      if (error instanceof DuplicateMessage) return null;
+      throw error;
+    }
+  }
+
+  /** Configuración y uso del chat web, leídos una vez por lote y sin caché. */
+  function webChecks(snapshot: KnowledgeSnapshot) {
+    let web: Promise<WebChatSettings> | null = null;
+    let cap: Promise<'day' | 'month' | null> | null = null;
+    let spend: Promise<CapReason | null> | null = null;
+    const readSettings = () => (web ??= readWebChatSettings(db));
+    return {
+      readSettings,
+      capReached: () =>
+        (cap ??= (async () => {
+          const now = clock.now();
+          const current = await readSettings();
+          const usage = await readWebUsage(db, now, snapshot.business.timezone);
+          const period = capReached(usage, current);
+          if (period) deps.quotaWatch?.reached(period, current, now, snapshot.business.timezone);
+          return period;
+        })()),
+      /**
+       * El chat web no puede llamar al modelo: tope de gasto (010, R7) o un motivo de solo
+       * contacto (012, R1); emite los eventos de cada periodo si toca (R10).
+       */
+      spendCapReached: (logContext: EventContext) =>
+        (spend ??= (async () => {
+          const state = await checkProtection(
+            db,
+            { ...protection, now: clock.now(), timezone: snapshot.business.timezone },
+            activityLog,
+            logContext,
+          );
+          const decision = canCallModel(state, 'web');
+          return decision.ok ? null : decision.reason;
+        })()),
+    };
+  }
+
+  /** Motivo para descartar sin guardar, en el orden del contrato; `null` si se guarda. */
+  async function discardReason(
+    policy: ChannelPolicy,
+    snapshot: KnowledgeSnapshot,
+    web: ReturnType<typeof webChecks>,
+    logContext: EventContext,
+  ): Promise<Extract<DiscardReason, 'not_active' | 'disabled' | 'quota' | 'spend_cap'> | null> {
+    if (policy.requiresActiveBusiness && snapshot.status !== 'active') return 'not_active';
+    if (policy.requiresWebChatEnabled && !(await web.readSettings()).enabled) return 'disabled';
+    if (policy.usageCap && (await web.capReached()) !== null) return 'quota';
+    // 010: los dos topes se aplican a la vez (FR-017); el de gasto y la protección de la 012,
+    // solo en la web (R7): WhatsApp guarda y decide el procesador.
+    if (policy.spendCap && policy.usageCap) {
+      const blocked = await web.spendCapReached(logContext);
+      if (blocked !== null) {
+        if (blocked !== 'spend_cap') {
+          activityLog.log({ event: 'contact_only_reply', reason: blocked }, logContext);
+        }
+        return 'spend_cap';
+      }
+    }
+    return null;
+  }
+
+  return {
+    async handle(events) {
+      let snapshot;
+      try {
+        snapshot = await reader.getSnapshot();
+      } catch (error) {
+        activityLog.log({
+          event: 'knowledge_read_failed',
+          errorClass: (error as Error).name,
+          stage: 'intake',
+        });
+        throw error;
+      }
+
+      const web = webChecks(snapshot);
+      const outcomes: IntakeOutcome[] = [];
+      const woken = new Set<string>();
+      for (const event of events) {
+        const policy = policies[event.channel];
+        if (!policy) throw new Error(`Canal sin configurar: ${event.channel}`);
+        const logContext = { channel: event.channel, customerKey: event.channelUserId };
+
+        const reason = await discardReason(policy, snapshot, web, logContext);
+        if (reason) {
+          activityLog.log({ event: 'message_discarded', reason }, logContext);
+          outcomes.push({ status: 'discarded', reason });
+          continue;
+        }
+
+        const stored = await store(event);
+        if (stored === null) {
+          activityLog.log({ event: 'duplicate_ignored' }, logContext);
+          outcomes.push({ status: 'duplicate' });
+          continue;
+        }
+        const { conversationId, messageId, rateLimit } = stored;
+        const context = { ...logContext, conversationId };
+        activityLog.log(
+          {
+            event: 'message_received',
+            kind: event.kind,
+            ...(event.otherType ? { otherType: event.otherType } : {}),
+          },
+          context,
+        );
+        if (rateLimit) {
+          // No se contesta nunca; como mucho, un aviso por ventana.
+          activityLog.log(
+            {
+              event: 'rate_limit_exceeded',
+              count: rateLimit.count,
+              windowMinutes: settings.rateLimitWindowMs / 60_000,
+              noticeSent: rateLimit.noticeSent,
+            },
+            context,
+          );
+          if (rateLimit.noticeSent) deps.notifyRateLimit?.(conversationId);
+          outcomes.push({ status: 'rate_limited', conversationId });
+          continue;
+        }
+        outcomes.push({ status: 'stored', conversationId });
+        woken.add(conversationId);
+        if (event.kind === 'audio' && event.mediaId && deps.transcriber) {
+          // En paralelo con la espera de agrupado (R10); el webhook no espera.
+          void deps.transcriber.transcribe({
+            messageId,
+            mediaId: event.mediaId,
+            conversationId,
+            channel: event.channel,
+            customerKey: event.channelUserId,
+          });
+        }
+      }
+      for (const id of woken) deps.wake?.(id);
+      return outcomes;
+    },
+  };
+}

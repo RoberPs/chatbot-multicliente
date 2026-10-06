@@ -1,0 +1,94 @@
+<% layout('/layout') %>
+<% const p = it.preview; const hl = p.highlights; const blocked = p.outcome !== 'will_apply'; %>
+<div id="config-preview">
+<% if (it.general) { %>
+  <p class="notice critical" role="alert"><%= it.general %></p>
+<% } %>
+<p class="hint">Todavía no se ha cambiado nada. Revisa lo que va a cambiar y confirma, o cancela.</p>
+
+<section class="card">
+  <h2>Fichero</h2>
+  <p>
+    Exportado el <%= it.meta.exportedAt %>
+    <% if (it.meta.instanceId) { %>desde la instancia <code><%= it.meta.instanceId %></code><% } else { %>desde una instancia sin identificador<% } %>
+    · esquema <code><%= it.meta.schema %></code> · formato v<%= it.meta.formatVersion %>.
+  </p>
+  <% if (hl.sameInstance === true) { %>
+    <p class="notice">Exportado de esta misma instancia: sirve para volver a esa configuración.</p>
+  <% } %>
+  <% if (hl.timezoneChanged) { %>
+    <p class="notice" data-highlight="timezone">Cambia la zona horaria: <%= hl.timezoneChanged.before %> → <strong><%= hl.timezoneChanged.after %></strong>. Todos los horarios se leerán en la zona nueva.</p>
+  <% } %>
+  <% if (hl.currencyChanged) { %>
+    <p class="notice" data-highlight="currency">Cambia la moneda: <%= hl.currencyChanged.before %> → <strong><%= hl.currencyChanged.after %></strong>. Todos los precios se leerán en la moneda nueva.</p>
+  <% } %>
+  <% if (hl.webChat && (hl.webChat.removedOrigins.length > 0 || hl.webChat.addedOrigins.length > 0 || hl.webChat.capsChanged)) { %>
+    <div class="notice critical" data-highlight="web-chat">
+      <p>El chat web de esta instancia está activado y cambia:</p>
+      <ul>
+        <% if (hl.webChat.removedOrigins.length > 0) { %>
+        <li>Dejarán de poder usar el chat: <% hl.webChat.removedOrigins.forEach(function (o, i) { %><%= i > 0 ? ', ' : '' %><code><%= o %></code><% }) %></li>
+        <% } %>
+        <% if (hl.webChat.addedOrigins.length > 0) { %>
+        <li>Podrán usar el chat: <% hl.webChat.addedOrigins.forEach(function (o, i) { %><%= i > 0 ? ', ' : '' %><code><%= o %></code><% }) %></li>
+        <% } %>
+        <% if (hl.webChat.capsChanged) { %>
+        <li>Cambian los topes de respuestas al día o al mes.</li>
+        <% } %>
+      </ul>
+    </div>
+  <% } %>
+</section>
+
+<% if (it.fileAlerts) { %>
+<section class="card" data-alerts>
+  <h2>Destinos de los avisos de derivación</h2>
+  <p class="notice">La instancia enviará los avisos de derivación a estos destinos si los importas:
+    WhatsApp <code><%= it.fileAlerts.whatsapp || '—' %></code> · email <code><%= it.fileAlerts.email || '—' %></code>.
+    Si no los importas, se conservan los de esta instancia.</p>
+  <form method="get" action="/admin/config/import/<%= it.id %>" class="stack"
+        hx-get="/admin/config/import/<%= it.id %>" hx-trigger="change" hx-target="#config-preview" hx-select="#config-preview" hx-swap="outerHTML" hx-push-url="true">
+    <label for="include_alerts" class="inline">
+      <input id="include_alerts" name="alerts" type="checkbox" value="1"<% if (p.includeAlerts) { %> checked<% } %>>
+      Importar también los destinos de los avisos
+    </label>
+    <div class="actions">
+      <button type="submit" class="secondary">Actualizar vista previa</button>
+    </div>
+  </form>
+</section>
+<% } %>
+
+<section class="card">
+  <h2>Cambios</h2>
+  <%~ include('/partials/config-diff', { sections: p.sections, verbs: { added: 'Se añade', modified: 'Cambia', removed: 'Se elimina' } }) %>
+</section>
+
+<section class="card">
+  <h2>Avisos que tendría el negocio</h2>
+  <%~ include('/partials/warnings-list', { warnings: p.warnings, h: it.h, links: false, emptyText: 'Ningún aviso.' }) %>
+</section>
+
+<section class="card">
+  <h2>Resultado previsto</h2>
+  <% if (p.outcome === 'will_apply') { %>
+    <p class="outcome ok" data-outcome="will_apply">Se aplicará.</p>
+  <% } else if (p.outcome === 'blocked_critical') { %>
+    <p class="outcome blocked" data-outcome="blocked_critical">Se rechazará: el negocio está activo y se quedaría con avisos críticos (sin salida a una persona). Corrige el fichero o pasa antes el negocio a preparación.</p>
+  <% } else { %>
+    <p class="outcome blocked" data-outcome="blocked_web_chat">Se rechazará: el chat web está activado y el fichero no trae <%= p.webChatMissing === 'origins' ? 'webs permitidas' : 'el enlace a la política de privacidad' %>. Desactiva antes el chat web o corrige el fichero.</p>
+  <% } %>
+  <div class="actions">
+    <form method="post" action="/admin/config/import/<%= it.id %>/apply" class="inline" hx-boost="false">
+      <%~ include('/partials/csrf', { token: it.layout.csrf }) %>
+      <input type="hidden" name="base" value="<%= p.baseFingerprint %>">
+      <input type="hidden" name="include_alerts" value="<%= p.includeAlerts ? '1' : '0' %>">
+      <button type="submit"<% if (blocked) { %> disabled<% } %>>Confirmar la importación</button>
+    </form>
+    <form method="post" action="/admin/config/import/<%= it.id %>/cancel" class="inline" hx-boost="false">
+      <%~ include('/partials/csrf', { token: it.layout.csrf }) %>
+      <button type="submit" class="secondary">Cancelar</button>
+    </form>
+  </div>
+</section>
+</div>

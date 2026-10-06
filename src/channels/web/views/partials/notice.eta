@@ -1,0 +1,7 @@
+      <p class="privacy">
+        Estás hablando con el asistente automático de <%= it.businessName %>. Tus mensajes se usan
+        para responderte y se borran a los 30 días.
+        <% if (it.privacyUrl) { %>
+          <a href="<%= it.privacyUrl %>" target="_blank" rel="noopener noreferrer">Política de privacidad</a>
+        <% } %>
+      </p>

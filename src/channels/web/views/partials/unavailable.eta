@@ -1,0 +1,4 @@
+      <div class="unavailable">
+        <p class="message"><%= it.message %></p>
+        <% if (it.contact) { %><p class="contact"><%= it.contact %></p><% } %>
+      </div>

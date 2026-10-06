@@ -1,0 +1,23 @@
+node_modules/
+dist/
+build/
+coverage/
+*.log
+.env
+.env.*
+!.env.example
+*.tmp
+*.swp
+.DS_Store
+Thumbs.db
+.idea/
+
+# Copias de seguridad locales (feature 006)
+*.cbak
+*.cbak.partial
+backups/
+
+# Certificados y claves privadas (013): nunca en el repositorio
+*.pem
+*.key
+*.p12

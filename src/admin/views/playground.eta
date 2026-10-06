@@ -1,0 +1,38 @@
+<% layout('/layout') %>
+<%~ include('/partials/general-error', { errors: it.errors, general: it.general, blocking: it.blocking, h: it.h }) %>
+<p class="hint">Conversación de prueba con el bot, con la información registrada y la misma cadena que atiende a los clientes. No cuenta para el uso del chat web.</p>
+
+<% if (!it.botPresent) { %>
+  <p class="notice" role="alert">Falta la clave del modelo de lenguaje (ANTHROPIC_API_KEY) en la configuración de la instancia.</p>
+<% } %>
+<% if (it.layout.spend && it.layout.spend.kind === 'reached') { %>
+  <p class="notice" role="status">Los clientes finales están recibiendo solo el contacto del negocio porque se ha alcanzado el tope de gasto. Lo que pruebes aquí sigue usando el modelo y suma al gasto.</p>
+<% } %>
+<% if (it.contactOnly) { %>
+  <p class="notice" role="status" data-contact-only><%= it.contactOnly %> Lo que pruebes aquí sigue usando el modelo.</p>
+<% } %>
+<% if (it.state.business.status !== 'active') { %>
+  <p class="notice" role="status">El negocio está en preparación: los clientes reales no reciben respuesta hasta que lo actives. Aquí puedes probarlo igualmente.</p>
+<% } %>
+
+<section class="card">
+  <div class="actions">
+    <h2>Conversación</h2>
+    <form method="post" action="/admin/playground/reset">
+      <%~ include('/partials/csrf', { token: it.layout.csrf }) %>
+      <button type="submit" class="secondary">Nueva conversación</button>
+    </form>
+  </div>
+  <%~ include('/partials/playground-thread', { messages: it.messages, poll: it.poll, wrap: true, h: it.h }) %>
+</section>
+
+<% if (it.handoffNotice) { %>
+  <div class="notice actions" role="status" id="playground-handoff">
+    <span><%= it.handoffNotice %></span>
+    <form method="post" action="/admin/playground/handoff/end">
+      <%~ include('/partials/csrf', { token: it.layout.csrf }) %>
+      <button type="submit" class="secondary">Terminar derivación</button>
+    </form>
+  </div>
+<% } %>
+<%~ include('/partials/playground-form', { csrf: it.layout.csrf, disabled: !it.botPresent, error: it.h.err(it.errors, 'text'), oob: false }) %>

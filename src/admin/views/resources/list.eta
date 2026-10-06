@@ -1,0 +1,26 @@
+<% layout('/layout') %>
+<% const names = {}; it.state.services.forEach(function (s) { names[s.id] = s.name; }); %>
+<%~ include('/partials/general-error', { errors: it.errors, general: it.general, blocking: it.blocking, h: it.h }) %>
+<p class="hint">Personas, puestos o salas que atienden citas. Sin recursos, el negocio funciona con una agenda única.</p>
+<p><a href="/admin/resources/new">Añadir recurso</a></p>
+<% if (it.state.resources.length === 0) { %>
+  <p class="meta">No hay recursos registrados: agenda única.</p>
+<% } else { %>
+<table>
+  <thead><tr><th>Recurso</th><th>Servicios que presta</th><th>Estado</th><th></th></tr></thead>
+  <tbody>
+  <% it.state.resources.forEach(function (r) {
+       const own = it.warnings.filter(function (w) { return w.target.kind === 'resource' && w.target.id === r.id; }); %>
+    <tr class="<%= r.active ? '' : 'inactive' %>">
+      <td>
+        <a href="/admin/resources/<%= r.id %>"><%= r.name %></a>
+        <% if (own.length > 0) { %><%~ include('/partials/warnings-list', { warnings: own, h: it.h, links: false }) %><% } %>
+      </td>
+      <td><%= r.serviceIds.map(function (id) { return names[id]; }).filter(Boolean).join(', ') || '—' %></td>
+      <td><%= r.active ? 'Activo' : 'Inactivo' %></td>
+      <td><%~ include('/partials/delete-button', { action: '/admin/resources/' + r.id + '/delete', csrf: it.layout.csrf, confirm: '¿Eliminar «' + r.name + '» con su horario y ausencias?' }) %></td>
+    </tr>
+  <% }) %>
+  </tbody>
+</table>
+<% } %>

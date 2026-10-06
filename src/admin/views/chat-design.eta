@@ -1,0 +1,148 @@
+<% layout('/layout') %>
+<% const v = it.values; const e = it.errors; const d = it.defaults; %>
+<% if (it.unsupported.length > 0) { %>
+  <div class="notice" role="status">
+    <% it.unsupported.forEach(function (message) { %><p><%= message %></p><% }) %>
+  </div>
+<% } %>
+<%~ include('/partials/general-error', { errors: it.summary, general: it.general, blocking: it.blocking, h: it.h }) %>
+<p class="hint">Colores, forma, textos e imágenes del chat de tu web. Se aplican en la siguiente carga del chat, sin tocar el fragmento que pegaste. El aviso de asistente automático y el enlace de privacidad se muestran siempre.</p>
+
+<div class="chat-design">
+<form id="chat-design-form" class="stack card" method="post" action="/admin/chat-design"
+      enctype="multipart/form-data" hx-boost="false">
+  <%~ include('/partials/csrf', { token: it.layout.csrf }) %>
+
+  <% /* Contraste en vivo (FR-020): solo viajan los cinco colores y el token, nunca las imágenes. */ %>
+  <fieldset class="design-colors" hx-post="/admin/chat-design/check" hx-trigger="input delay:300ms"
+            hx-params="primary_color,on_primary_color,background_color,text_color,bot_bubble_color,_csrf"
+            hx-encoding="application/x-www-form-urlencoded" hx-swap="none">
+    <legend>Colores</legend>
+    <p class="hint">El texto tiene que leerse bien: cada pareja de colores necesita un contraste de 4,5:1 como mínimo. Si no llega, no se puede guardar.</p>
+    <% [
+      ['primary_color', 'Color principal', 'Botón flotante, mensajes del cliente, botón Enviar y enlaces'],
+      ['on_primary_color', 'Texto sobre el principal', 'Icono del botón, texto de los mensajes del cliente y de Enviar'],
+      ['background_color', 'Fondo del chat', ''],
+      ['text_color', 'Texto del chat', ''],
+      ['bot_bubble_color', 'Fondo de los mensajes del bot', ''],
+    ].forEach(function (c) { %>
+      <div class="color-field">
+        <label for="<%= c[0] %>"><%= c[1] %></label>
+        <span class="color-pair">
+          <input type="color" value="<%= /^#[0-9a-fA-F]{6}$/.test(it.h.str(v[c[0]])) ? it.h.str(v[c[0]]).toLowerCase() : '#000000' %>"
+                 data-color-for="<%= c[0] %>" aria-label="<%= c[1] %> (selector)" tabindex="-1">
+          <input id="<%= c[0] %>" name="<%= c[0] %>" type="text" value="<%= it.h.str(v[c[0]]) %>"
+                 maxlength="7" pattern="#[0-9a-fA-F]{6}" spellcheck="false" autocomplete="off"
+                 class="color-text<%= it.h.err(e, c[0]) ? ' has-error' : '' %>">
+        </span>
+        <% if (c[2]) { %><span class="hint"><%= c[2] %></span><% } %>
+        <span id="contrast-<%= c[0] %>" class="contrast-issues"></span>
+        <%~ include('/partials/field-error', { message: it.h.err(e, c[0]) }) %>
+      </div>
+    <% }) %>
+  </fieldset>
+
+  <fieldset>
+    <legend>Forma</legend>
+    <% [['square', 'Recta'], ['soft', 'Suave'], ['round', 'Redondeada']].forEach(function (o) { %>
+      <label class="inline"><input type="radio" name="shape" value="<%= o[0] %>"<% if (v.shape === o[0]) { %> checked<% } %>> <%= o[1] %></label>
+    <% }) %>
+    <%~ include('/partials/field-error', { message: it.h.err(e, 'shape') }) %>
+  </fieldset>
+
+  <fieldset>
+    <legend>Posición en la web</legend>
+    <% [['right', 'Abajo a la derecha'], ['left', 'Abajo a la izquierda']].forEach(function (o) { %>
+      <label class="inline"><input type="radio" name="position" value="<%= o[0] %>"<% if (v.position === o[0]) { %> checked<% } %>> <%= o[1] %></label>
+    <% }) %>
+    <%~ include('/partials/field-error', { message: it.h.err(e, 'position') }) %>
+  </fieldset>
+
+  <fieldset>
+    <legend>Tamaño del chat abierto</legend>
+    <% [['small', 'Pequeño'], ['medium', 'Mediano'], ['large', 'Grande']].forEach(function (o) { %>
+      <label class="inline"><input type="radio" name="size" value="<%= o[0] %>"<% if (v.size === o[0]) { %> checked<% } %>> <%= o[1] %></label>
+    <% }) %>
+    <span class="hint">En pantallas pequeñas el chat nunca sale de la pantalla.</span>
+    <%~ include('/partials/field-error', { message: it.h.err(e, 'size') }) %>
+  </fieldset>
+
+  <fieldset>
+    <legend>Textos</legend>
+    <p class="hint">Estos textos son responsabilidad tuya: se muestran tal cual y el asistente no los usa para responder. No pongas en ellos horarios, precios ni otros datos del negocio.</p>
+    <div>
+      <label for="chat_name">Nombre del chat</label>
+      <input id="chat_name" name="chat_name" type="text" maxlength="40" value="<%= it.h.str(v.chat_name) %>"
+             placeholder="<%= d.chat_name %>" data-default="<%= d.chat_name %>">
+      <span class="hint">Vacío: «<%= d.chat_name %>».</span>
+      <%~ include('/partials/field-error', { message: it.h.err(e, 'chat_name') }) %>
+    </div>
+    <div>
+      <label for="welcome_text">Mensaje de bienvenida</label>
+      <textarea id="welcome_text" name="welcome_text" rows="3" maxlength="280"><%= it.h.str(v.welcome_text) %></textarea>
+      <span class="hint">Aparece al abrir el chat, antes de la conversación. Vacío: sin bienvenida.</span>
+      <%~ include('/partials/field-error', { message: it.h.err(e, 'welcome_text') }) %>
+    </div>
+    <div>
+      <label for="placeholder">Texto de ayuda del campo de escritura</label>
+      <input id="placeholder" name="placeholder" type="text" maxlength="80" value="<%= it.h.str(v.placeholder) %>"
+             placeholder="<%= d.placeholder %>" data-default="<%= d.placeholder %>">
+      <%~ include('/partials/field-error', { message: it.h.err(e, 'placeholder') }) %>
+    </div>
+    <div>
+      <label for="send_label">Texto del botón Enviar</label>
+      <input id="send_label" name="send_label" type="text" maxlength="20" value="<%= it.h.str(v.send_label) %>"
+             placeholder="<%= d.send_label %>" data-default="<%= d.send_label %>">
+      <%~ include('/partials/field-error', { message: it.h.err(e, 'send_label') }) %>
+    </div>
+  </fieldset>
+
+  <fieldset>
+    <legend>Imágenes</legend>
+    <p class="hint">PNG, JPEG o WebP de hasta 256 KB y entre 16 y 1024 px de lado. Se guardan sin los datos internos de la foto (ubicación, cámara, fecha).</p>
+    <% ['logo', 'avatar', 'icon'].forEach(function (slot) { const img = it.images[slot]; const meta = it.imageLabels[slot]; %>
+      <div class="design-image">
+        <label for="<%= slot %>"><%= meta.label %></label>
+        <% if (img) { %>
+          <img src="<%= img.url %>" alt="<%= meta.label %> guardado" width="48" height="48">
+        <% } %>
+        <input id="<%= slot %>" name="<%= slot %>" type="file" accept="image/png,image/jpeg,image/webp" data-image-slot="<%= slot %>" data-saved="<%= img ? img.url : '' %>">
+        <span class="hint"><%= meta.hint %></span>
+        <span class="field-warning" data-image-warning="<%= slot %>" role="status"></span>
+        <% if (img) { %>
+          <label class="inline"><input type="checkbox" name="<%= slot %>_remove" value="1"<% if (v[slot + '_remove']) { %> checked<% } %>> Quitar</label>
+        <% } %>
+        <%~ include('/partials/field-error', { message: it.h.err(e, slot) }) %>
+        <% if (it.reselect.indexOf(slot) >= 0) { %><span class="hint">Vuelve a elegir la imagen: no se ha guardado nada.</span><% } %>
+      </div>
+    <% }) %>
+  </fieldset>
+
+  <div class="actions">
+    <button type="submit">Guardar</button>
+  </div>
+</form>
+
+<section class="card design-preview" aria-label="Vista previa">
+  <h2>Vista previa · conversación de ejemplo</h2>
+  <p class="hint">Así se verá el chat en tu web. Los cambios se ven aquí antes de guardar; los clientes no ven nada hasta que guardas.</p>
+  <div class="preview-frames">
+    <iframe class="chat-preview" data-view="closed" src="/admin/chat-design/preview?view=closed"
+            title="Vista previa del botón del chat" width="72" height="72"></iframe>
+    <iframe class="chat-preview" data-view="open" src="/admin/chat-design/preview?view=open"
+            title="Vista previa del chat abierto" width="380" height="560"></iframe>
+  </div>
+</section>
+</div>
+
+<section class="card">
+  <h2>Aspecto original</h2>
+  <% if (it.saved) { %>
+    <p class="hint">Borra los colores, los textos y las imágenes del diseño; el chat vuelve a verse como al principio.</p>
+    <% /* Con JavaScript, confirmación en el navegador; sin él, la página de confirmación (FR-016). */ %>
+    <a class="button danger" href="/admin/chat-design/reset" hx-post="/admin/chat-design/reset"
+       hx-confirm="¿Restaurar el aspecto original? Se borrarán los colores, los textos y las imágenes del diseño.">Restaurar el aspecto original</a>
+  <% } else { %>
+    <p class="meta">El chat usa el aspecto original.</p>
+  <% } %>
+</section>

@@ -1,0 +1,53 @@
+<% layout('/layout') %>
+<% const faqs = it.state.faqs; const tz = it.state.business.timezone;
+   const ids = faqs.map(function (f) { return f.id; }); %>
+<%~ include('/partials/general-error', { errors: it.errors, general: it.general, blocking: it.blocking, h: it.h }) %>
+<p class="hint">Si una respuesta contradice los datos registrados (horario, precios…), el bot usa siempre los datos registrados.</p>
+
+<% faqs.forEach(function (f, i) {
+     const editing = it.errorsFor === f.id;
+     const v = editing ? it.values : { question: f.question, answer: f.answer };
+     const e = editing ? it.errors : {}; %>
+<form class="stack card" method="post" action="/admin/faqs/<%= f.id %>">
+  <%~ include('/partials/csrf', { token: it.layout.csrf }) %>
+  <label class="<%= e.question ? 'has-error' : '' %>">Pregunta
+    <input type="text" name="question" value="<%= it.h.str(v.question) %>" maxlength="500" required>
+    <%~ include('/partials/field-error', { message: e.question }) %>
+  </label>
+  <label class="<%= e.answer ? 'has-error' : '' %>">Respuesta
+    <textarea name="answer" maxlength="4000" required><%= it.h.str(v.answer) %></textarea>
+    <%~ include('/partials/field-error', { message: e.answer }) %>
+  </label>
+  <div class="actions">
+    <button type="submit">Guardar</button>
+    <span class="meta">Última modificación: <%= it.h.dateTime(f.updatedAt, tz) %></span>
+  </div>
+</form>
+<div class="actions">
+  <% [[i - 1, '↑ Subir'], [i + 1, '↓ Bajar']].forEach(function (move) {
+       const j = move[0]; if (j < 0 || j >= ids.length) return;
+       const order = ids.slice(); order[i] = ids[j]; order[j] = ids[i]; %>
+    <form class="inline" method="post" action="/admin/faqs/reorder">
+      <%~ include('/partials/csrf', { token: it.layout.csrf }) %>
+      <% order.forEach(function (id) { %><input type="hidden" name="ids" value="<%= id %>"><% }) %>
+      <button type="submit" class="secondary small"><%= move[1] %></button>
+    </form>
+  <% }) %>
+  <%~ include('/partials/delete-button', { action: '/admin/faqs/' + f.id + '/delete', csrf: it.layout.csrf }) %>
+</div>
+<% }) %>
+
+<h2>Añadir pregunta</h2>
+<% const nv = it.errorsFor === 'new' ? it.values : {}; const ne = it.errorsFor === 'new' ? it.errors : {}; %>
+<form class="stack card" method="post" action="/admin/faqs">
+  <%~ include('/partials/csrf', { token: it.layout.csrf }) %>
+  <label class="<%= ne.question ? 'has-error' : '' %>">Pregunta
+    <input type="text" name="question" value="<%= it.h.str(nv.question) %>" maxlength="500" required>
+    <%~ include('/partials/field-error', { message: ne.question }) %>
+  </label>
+  <label class="<%= ne.answer ? 'has-error' : '' %>">Respuesta
+    <textarea name="answer" maxlength="4000" required><%= it.h.str(nv.answer) %></textarea>
+    <%~ include('/partials/field-error', { message: ne.answer }) %>
+  </label>
+  <div class="actions"><button type="submit">Añadir</button></div>
+</form>

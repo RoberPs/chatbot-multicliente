@@ -1,0 +1,35 @@
+<% const v = it.values || {}; const e = it.errors || {}; %>
+<form class="stack card" method="post" action="<%= it.action %>">
+  <%~ include('/partials/csrf', { token: it.csrf }) %>
+  <div class="row">
+    <label class="<%= e.start_date ? 'has-error' : '' %>">Desde
+      <input type="date" name="start_date" value="<%= v.start_date || '' %>" required>
+      <%~ include('/partials/field-error', { message: e.start_date }) %>
+    </label>
+    <label class="<%= e.end_date ? 'has-error' : '' %>">Hasta (incluido)
+      <input type="date" name="end_date" value="<%= v.end_date || '' %>" required>
+      <%~ include('/partials/field-error', { message: e.end_date }) %>
+    </label>
+  </div>
+  <div class="row">
+    <label class="<%= e.start_time ? 'has-error' : '' %>">Hora de inicio
+      <input type="time" name="start_time" value="<%= v.start_time || '' %>">
+      <%~ include('/partials/field-error', { message: e.start_time }) %>
+    </label>
+    <label class="<%= e.end_time ? 'has-error' : '' %>">Hora de fin
+      <input type="time" name="end_time" value="<%= v.end_time || '' %>">
+      <%~ include('/partials/field-error', { message: e.end_time }) %>
+    </label>
+  </div>
+  <p class="hint">Sin horas se aplica a los días completos; con horas, a esa franja en cada día del periodo.</p>
+  <% if (it.withReason) { %>
+  <label class="<%= e.reason ? 'has-error' : '' %>">Motivo (opcional)
+    <input type="text" name="reason" value="<%= v.reason || '' %>" maxlength="200">
+    <%~ include('/partials/field-error', { message: e.reason }) %>
+  </label>
+  <% } %>
+  <div class="actions">
+    <button type="submit"><%= it.submitLabel %></button>
+    <% if (it.cancelUrl) { %><a href="<%= it.cancelUrl %>">Cancelar</a><% } %>
+  </div>
+</form>

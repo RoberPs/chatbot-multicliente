@@ -1,0 +1,366 @@
+/** Bot completo con dobles (modelo, canal, reloj) para los tests de integración. */
+import { eq } from 'drizzle-orm';
+import type { FastifyInstance } from 'fastify';
+import {
+  createActivityLog,
+  type ActivityLog,
+  type LoggerLike,
+} from '../../src/conversation/activity-log.js';
+import {
+  buildChannelPolicies,
+  type Channel,
+  type ChannelPolicies,
+} from '../../src/conversation/channels.js';
+import { createIntake, type Intake, type IntakeOutcome } from '../../src/conversation/intake.js';
+import type { ChatModel } from '../../src/conversation/ports.js';
+import { createProcessor, type Processor } from '../../src/conversation/processor.js';
+import { createTranscriber, type Transcriber } from '../../src/conversation/transcription.js';
+import {
+  conversationSettings,
+  type ConversationSettings,
+} from '../../src/conversation/settings.js';
+import type { Db } from '../../src/db/client.js';
+import { message, webChatSettings } from '../../src/db/schema.js';
+import { activateBusiness } from '../../src/knowledge/services/business-status.js';
+import { createKnowledgeReader } from '../../src/knowledge/snapshot.js';
+import type { KnowledgeReader } from '../../src/knowledge/types.js';
+import { createHandoffService, type HandoffService } from '../../src/handoff/service.js';
+import {
+  createBusinessRouter,
+  withBusinessRouter,
+} from '../../src/channels/whatsapp/business-router.js';
+import { createSimulatedRoute } from '../../src/handoff/simulated-route.js';
+import { createTokenCipher } from '../../src/handoff/tokens.js';
+import type { WebChatSettings } from '../../src/webchat/settings.js';
+import { createQuotaWatch } from '../../src/webchat/usage.js';
+import { createUsageMeter, type UsageMeter } from '../../src/usage/meter.js';
+import type { ProtectionConfig } from '../../src/usage/protection.js';
+import { hairSalon } from '../fixtures/hair-salon.js';
+import { loadFixture } from '../fixtures/load.js';
+import type { BusinessFixture } from '../fixtures/types.js';
+import { buildTestApp, TEST_EMERGENCY_PHONE } from './app.js';
+import { resetDb, setHandoffAlerts, type TestDatabase } from './db.js';
+import {
+  FakeAlertRoute,
+  FakeAlertRoutesProvider,
+  FakeChannelSender,
+  FakeChatModel,
+  FakeSummarizer,
+  ManualClock,
+  RecordingActivityLog,
+  type FakeMediaFetcher,
+  type FakeSpeechToText,
+} from './fakes.js';
+import { CUSTOMER_WA, postWebhook, testWhatsApp, textMessage, webhookPayload } from './whatsapp.js';
+
+export const EMERGENCY_PHONE = TEST_EMERGENCY_PHONE;
+
+type Widen<T> = T extends number ? number : T;
+
+/** Modelo con el que se registra el consumo en los tests (010). */
+export const TEST_LLM_MODEL = 'modelo-de-prueba';
+
+/** Visitante web de prueba: hash de una sesión (64 hex). */
+export const WEB_USER = 'ab'.repeat(32);
+/** Conversación de prueba del operador. */
+export const PLAYGROUND_USER = '0f8fad5b-d9cb-469f-a165-70867728950e';
+/** Cliente por defecto de cada canal. */
+export const DEFAULT_USERS: Record<Channel, string> = {
+  whatsapp: '+34600111222',
+  web: WEB_USER,
+  playground: PLAYGROUND_USER,
+};
+
+/** Saludo de la primera respuesta de cada conversación con el fixture por defecto. */
+export const GREETING =
+  '¡Hola! Soy el asistente automático de Peluquería Tijeras. Puedo informarte sobre horario, ' +
+  'ubicación, servicios, precios y dudas frecuentes.';
+
+/** Texto de una primera respuesta: saludo y cuerpo. */
+export const greeted = (body: string): string => `${GREETING}\n\n${body}`;
+
+export interface TestBot {
+  app: FastifyInstance;
+  clock: ManualClock;
+  model: FakeChatModel;
+  sender: FakeChannelSender;
+  log: RecordingActivityLog;
+  intake: Intake;
+  processor: Processor;
+  policies: ChannelPolicies;
+  /** Vías de aviso falsas (005): siempre existen; se usan si su destino está configurado. */
+  alertRoutes: { whatsapp: FakeAlertRoute; email: FakeAlertRoute };
+  summarizer: FakeSummarizer;
+  handoff: HandoffService;
+  /** Solo con los audios activados. */
+  transcriber: Transcriber | null;
+  /** Envía un mensaje de cualquier tipo (tests/helpers/whatsapp.ts) con la hora del reloj. */
+  sendMessage(msg: { timestamp: string }): Promise<number>;
+  /** Envía un texto por el webhook con la hora del reloj manual. */
+  send(text: string, opts?: { id?: string; from?: string }): Promise<number>;
+  /**
+   * Envía un texto directamente a la recepción por cualquier canal, como lo haría su adaptador
+   * (hora del reloj manual como `sentAt`).
+   */
+  sendVia(
+    channel: Channel,
+    text: string,
+    opts?: { id?: string; user?: string },
+  ): Promise<IntakeOutcome>;
+  /** Cambia la configuración del chat web en la BD. */
+  setWebChat(values: Partial<WebChatSettings>): Promise<void>;
+  /** Avanza el reloj (por defecto la espera de agrupado) y procesa lo que esté listo. */
+  settle(ms?: number): Promise<void>;
+  /** Nuevo procesador sobre la misma BD (reinicio del proceso). */
+  newProcessor(): Processor;
+  messages(): Promise<Array<typeof message.$inferSelect>>;
+  close(): Promise<void>;
+}
+
+export interface TestBotOptions {
+  fixture?: BusinessFixture | null;
+  activate?: boolean;
+  /** Instante inicial del reloj. Por defecto jueves 24/09/2026 10:00 en Madrid. */
+  start?: string;
+  reader?: KnowledgeReader;
+  chatModel?: ChatModel;
+  /** Ajustes del procesador distintos de los de producción (plazos cortos, otros límites). */
+  settings?: { [K in keyof ConversationSettings]?: Widen<ConversationSettings[K]> };
+  /** Activa los audios (AUDIO_TRANSCRIPTION=on) con estos dobles. */
+  audio?: { stt: FakeSpeechToText; media: FakeMediaFetcher };
+  /** Además de guardarlos en `log`, escribe los eventos con el registro real en este logger. */
+  logger?: LoggerLike;
+  /** Con WhatsApp configurado (por defecto sí). */
+  whatsapp?: boolean;
+  /** Configuración del chat web (por defecto la de la migración: desactivado). */
+  webChat?: Partial<WebChatSettings>;
+  /** Destinos de los avisos de derivación a guardar en `handoff_alerts` (005). */
+  handoffAlerts?: { whatsapp?: string | null; email?: string | null };
+  /** Vías de aviso falsas (005); por defecto, una por vía que siempre entrega. */
+  alertRoutes?: { whatsapp?: FakeAlertRoute; email?: FakeAlertRoute };
+  /** Resumidor falso del motivo de la derivación (005). */
+  summarizer?: FakeSummarizer;
+  /** Plazos de la derivación (por defecto 15 s por vía y 8 s el resumen). */
+  handoffTimeouts?: { routeMs?: number; summaryMs?: number };
+  /** Medidor del consumo (010); por defecto el real sobre la BD de prueba. */
+  usageMeter?: UsageMeter;
+  /** Como en producción (012): tope obligatorio y precios exigidos. Por defecto, no. */
+  production?: boolean;
+  /** Pool de las lecturas públicas del chat (012); por defecto, el de la BD de prueba. */
+  publicDb?: Db;
+}
+
+/** Modelo de transcripción de los tests con audios (012). */
+export const TEST_STT_MODEL = 'whisper-1';
+
+export const TEST_SESSION_SECRET = 'secreto-de-sesion-de-prueba-con-32-caracteres';
+
+export async function createTestBot(t: TestDatabase, opts: TestBotOptions = {}): Promise<TestBot> {
+  await resetDb(t.db);
+  const fixture = opts.fixture === undefined ? hairSalon : opts.fixture;
+  if (fixture) await loadFixture(t.deps, fixture);
+  if (opts.activate ?? true) await activateBusiness(t.db);
+
+  if (opts.handoffAlerts) await setHandoffAlerts(t.db, opts.handoffAlerts);
+
+  const clock = new ManualClock(opts.start ?? '2026-09-24T08:00:00Z');
+  const model = new FakeChatModel(clock);
+  const sender = new FakeChannelSender();
+  const log = new RecordingActivityLog();
+  const real = opts.logger ? createActivityLog(opts.logger, TEST_SESSION_SECRET) : null;
+  const activityLog: ActivityLog = real
+    ? {
+        pseudonym: (channel, key) => real.pseudonym(channel, key),
+        log(event, context) {
+          log.log(event, context);
+          real.log(event, context);
+        },
+      }
+    : log;
+  const reader = opts.reader ?? createKnowledgeReader(t.db);
+  // Los literales de `conversationSettings` (`as const`) se aceptan con cualquier número.
+  const settings = { ...conversationSettings, ...opts.settings } as ConversationSettings;
+  const audioTranscription = opts.audio !== undefined;
+  const withWhatsApp = opts.whatsapp ?? true;
+  const policies = buildChannelPolicies({ whatsappSender: withWhatsApp ? sender : null });
+  const quotaWatch = createQuotaWatch(activityLog);
+  const setWebChat = async (values: Partial<WebChatSettings>) => {
+    await t.db.update(webChatSettings).set(values);
+  };
+  if (opts.webChat) await setWebChat(opts.webChat);
+  const alertRoutes = {
+    whatsapp: opts.alertRoutes?.whatsapp ?? new FakeAlertRoute('whatsapp'),
+    email: opts.alertRoutes?.email ?? new FakeAlertRoute('email'),
+  };
+  const summarizer = opts.summarizer ?? new FakeSummarizer();
+  const usage = {
+    meter: opts.usageMeter ?? createUsageMeter({ db: t.db, activityLog }),
+    model: TEST_LLM_MODEL,
+  };
+  const protection: ProtectionConfig = {
+    production: opts.production ?? false,
+    llmModel: TEST_LLM_MODEL,
+    sttModel: audioTranscription ? TEST_STT_MODEL : null,
+  };
+  const handoff = createHandoffService({
+    db: t.db,
+    clock,
+    reader,
+    activityLog,
+    routes: new FakeAlertRoutesProvider(alertRoutes, createSimulatedRoute(clock)),
+    summarizer,
+    cipher: createTokenCipher(TEST_SESSION_SECRET),
+    phoneRegion: 'ES',
+    policies,
+    usage,
+    ...(opts.handoffTimeouts?.routeMs === undefined
+      ? {}
+      : { routeTimeoutMs: opts.handoffTimeouts.routeMs }),
+    ...(opts.handoffTimeouts?.summaryMs === undefined
+      ? {}
+      : { summaryBudgetMs: opts.handoffTimeouts.summaryMs }),
+  });
+  const makeProcessor = () =>
+    createProcessor({
+      db: t.db,
+      reader,
+      chatModel: opts.chatModel ?? model,
+      policies,
+      clock,
+      activityLog,
+      emergencyContactPhone: EMERGENCY_PHONE,
+      settings,
+      audioTranscription,
+      quotaWatch,
+      handoff,
+      usage,
+      protection,
+    });
+  const processor = makeProcessor();
+  const wake = (id: string) => {
+    processor.wake(id);
+  };
+  const transcriber = opts.audio
+    ? createTranscriber({
+        db: t.db,
+        media: opts.audio.media,
+        stt: opts.audio.stt,
+        activityLog,
+        wake,
+        settings,
+        protection: { config: protection, reader, clock, meter: usage.meter },
+      })
+    : null;
+  const intake = createIntake({
+    db: t.db,
+    reader,
+    clock,
+    activityLog,
+    policies,
+    settings,
+    quotaWatch,
+    protection,
+    wake,
+    notifyRateLimit: (id) => {
+      void processor.sendRateLimitNotice(id);
+    },
+    transcriber: transcriber ?? undefined,
+  });
+  // Como en bot.ts: el webhook pasa antes por el enrutador del negocio (005, R10).
+  const webhookIntake = withWhatsApp
+    ? withBusinessRouter(
+        intake,
+        createBusinessRouter({ db: t.db, handoff, sender, activityLog, clock }),
+      )
+    : intake;
+  const app = await buildTestApp(
+    t.db,
+    undefined,
+    {
+      whatsapp: withWhatsApp ? testWhatsApp : null,
+      audioTranscription,
+      activityLog,
+      intake: webhookIntake,
+      reader,
+      emergencyContactPhone: EMERGENCY_PHONE,
+      clock,
+      handoff,
+    },
+    // El panel usa el mismo modelo con el que se registra el consumo (010).
+    { LLM_MODEL: TEST_LLM_MODEL },
+    undefined,
+    { protection, ...(opts.publicDb ? { publicDb: opts.publicDb } : {}) },
+  );
+  let sequence = 0;
+
+  return {
+    app,
+    clock,
+    model,
+    sender,
+    log,
+    intake,
+    processor,
+    policies,
+    alertRoutes,
+    summarizer,
+    handoff,
+    transcriber,
+    async sendMessage(msg) {
+      const at = String(Math.floor(clock.now().getTime() / 1000));
+      const res = await postWebhook(app, webhookPayload({ messages: [{ ...msg, timestamp: at }] }));
+      return res.statusCode;
+    },
+    async send(text, sendOpts = {}) {
+      const res = await postWebhook(
+        app,
+        webhookPayload({
+          messages: [
+            textMessage(text, {
+              id: sendOpts.id,
+              from: sendOpts.from ?? CUSTOMER_WA,
+              timestamp: clock.now(),
+            }),
+          ],
+        }),
+      );
+      return res.statusCode;
+    },
+    async sendVia(channel, text, sendOpts = {}) {
+      sequence += 1;
+      const [outcome] = await intake.handle([
+        {
+          channel,
+          channelUserId: sendOpts.user ?? DEFAULT_USERS[channel],
+          channelMessageId: sendOpts.id ?? `${channel}:test:${sequence}`,
+          sentAt: clock.now(),
+          kind: 'text',
+          text,
+          caption: null,
+          mediaId: null,
+          otherType: null,
+          isGroup: false,
+          profileName: null,
+          buttonPayload: null,
+        },
+      ]);
+      if (!outcome) throw new Error('La recepción no devolvió resultado');
+      return outcome;
+    },
+    setWebChat,
+    async settle(ms = 3000) {
+      clock.advance(ms);
+      await processor.runOnce();
+    },
+    newProcessor: makeProcessor,
+    messages: () => t.db.select().from(message).orderBy(message.receivedAt, message.sentAt),
+    async close() {
+      await transcriber?.stop();
+      await processor.stop();
+      await app.close();
+    },
+  };
+}
+
+export const inboundOf = async (t: TestDatabase) =>
+  t.db.select().from(message).where(eq(message.direction, 'inbound'));

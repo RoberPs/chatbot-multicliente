@@ -1,0 +1,14 @@
+<% /* Aviso del tope de gasto (010, R12): uno como mucho, el más grave; fuera de los avisos de la configuración. */ %>
+<% const s = it.spend; %>
+<% if (s) { %>
+<p class="notice spend-banner<%= s.kind === 'warning' ? '' : ' critical' %>" role="<%= s.kind === 'warning' ? 'status' : 'alert' %>" data-spend-banner="<%= s.kind %>">
+  <% if (s.kind === 'reached') { %>
+    Tope de gasto alcanzado (<%= s.percent %> %): el bot responde solo con el contacto del negocio en WhatsApp y en el chat web.
+  <% } else if (s.kind === 'no_price') { %>
+    El modelo «<%= s.model %>» no tiene precio: su consumo no cuenta para el tope.
+  <% } else { %>
+    Gasto del mes al <%= s.percent %> % del tope.
+  <% } %>
+  <a href="/admin/usage">Consumo</a>
+</p>
+<% } %>

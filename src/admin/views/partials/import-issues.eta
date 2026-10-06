@@ -1,0 +1,29 @@
+<% /* Errores de un fichero rechazado, agrupados por sección (008, FR-008). Como mucho 50, en el
+   orden del fichero, y una línea con los que faltan (012, FR-029). */ %>
+<% if (it.issues && it.issues.length > 0) { %>
+<% const SHOWN_MAX = 50;
+   const shown = it.issues.slice(0, SHOWN_MAX);
+   const more = it.issues.length - shown.length; %>
+<section class="card import-issues" role="alert">
+  <h2><%= it.issues.length === 1 ? 'El fichero no se puede importar' : 'El fichero no se puede importar: ' + it.issues.length + ' errores' %></h2>
+  <p class="hint">No se ha cambiado nada. Corrige el fichero (o la configuración en el panel de origen y vuelve a exportarla) e inténtalo de nuevo.</p>
+  <% const groups = []; const byLabel = new Map(); shown.forEach(function (issue) {
+       let group = byLabel.get(issue.sectionLabel);
+       if (!group) { group = { label: issue.sectionLabel, issues: [] }; byLabel.set(issue.sectionLabel, group); groups.push(group); }
+       group.issues.push(issue);
+     }); %>
+  <% groups.forEach(function (group) { %>
+  <h3><%= group.label %></h3>
+  <ul class="issues">
+    <% group.issues.forEach(function (issue) { %>
+    <li data-section="<%= issue.section %>">
+      <% if (issue.item) { %><strong><%= issue.item %></strong><% } %>
+      <% if (issue.field) { %><code><%= issue.field %></code><% } %>
+      <span><%= issue.message %></span>
+    </li>
+    <% }) %>
+  </ul>
+  <% }) %>
+  <% if (more > 0) { %><p class="meta" data-more-issues="<%= more %>">Y <%= more %> <%= more === 1 ? 'error más' : 'errores más' %>. Corrige estos y vuelve a importar.</p><% } %>
+</section>
+<% } %>

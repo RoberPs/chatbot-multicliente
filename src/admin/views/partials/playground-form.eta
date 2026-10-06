@@ -1,0 +1,15 @@
+<% /* Caja de texto de la conversación de prueba. Con `oob`, htmx la sustituye tras enviar
+      para dejarla vacía (sin JavaScript propio). */ %>
+<form id="playground-form" class="stack card"<% if (it.oob) { %> hx-swap-oob="true"<% } %>
+      method="post" action="/admin/playground/messages"
+      hx-post="/admin/playground/messages" hx-target="#playground-thread" hx-swap="outerHTML">
+  <%~ include('/partials/csrf', { token: it.csrf }) %>
+  <label for="playground-text">Mensaje para el bot</label>
+  <textarea id="playground-text" name="text" rows="3" maxlength="1000" required
+            placeholder="Escribe como lo haría un cliente"<% if (it.disabled) { %> disabled<% } %>></textarea>
+  <%~ include('/partials/field-error', { message: it.error }) %>
+  <div class="actions">
+    <button type="submit"<% if (it.disabled) { %> disabled<% } %>>Enviar</button>
+    <span class="meta">Máximo 1 000 caracteres.</span>
+  </div>
+</form>

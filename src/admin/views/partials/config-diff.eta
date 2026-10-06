@@ -1,0 +1,30 @@
+<% /* Cambios por sección de una importación (008, FR-011 y FR-020). */ %>
+<% if (it.sections.length === 0) { %>
+<p class="meta"><%= it.emptyText || 'La configuración del fichero es igual a la actual.' %></p>
+<% } else { %>
+<div class="config-diff">
+  <% it.sections.forEach(function (s) { %>
+  <h3 data-section="<%= s.section %>"><%= s.sectionLabel %></h3>
+  <ul>
+    <% s.added.forEach(function (item) { %>
+    <li class="added" data-kind="added"><%= it.verbs.added %>: <strong><%= item.label %></strong></li>
+    <% }) %>
+    <% s.modified.forEach(function (item) { %>
+    <li data-kind="modified"><%= it.verbs.modified %>: <strong><%= item.label %></strong>
+      <ul>
+        <% item.fields.forEach(function (f) { %>
+        <li class="change" data-field="<%= f.field %>"><%= f.fieldLabel %>: <%= f.before %> → <%= f.after %></li>
+        <% }) %>
+      </ul>
+    </li>
+    <% }) %>
+    <% s.removed.forEach(function (item) { %>
+    <li class="removed" data-kind="removed"><%= it.verbs.removed %>: <strong><%= item.label %></strong></li>
+    <% }) %>
+    <% if (s.reordered) { %>
+    <li class="change" data-kind="reordered">Orden cambiado</li>
+    <% } %>
+  </ul>
+  <% }) %>
+</div>
+<% } %>

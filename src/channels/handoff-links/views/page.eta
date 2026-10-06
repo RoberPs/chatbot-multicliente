@@ -1,0 +1,21 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="robots" content="noindex, nofollow">
+  <title>Derivación del asistente</title>
+  <link rel="stylesheet" href="/handoff/assets/handoff.css">
+</head>
+<body>
+  <main>
+    <h1>Derivación del asistente</h1>
+    <p><%= it.message %></p>
+    <% if (it.form) { %>
+      <form method="post" action="<%= it.form.action %>">
+        <button type="submit"><%= it.form.label %></button>
+      </form>
+    <% } %>
+  </main>
+</body>
+</html>
