@@ -1107,3 +1107,32 @@ Referencias reales:
 |---|---|---|---|
 | 2026-10-05 | De feature | 011, `59d8c30..HEAD` | Sin hallazgos críticos ni altos. 1 media: la ruta pública de imágenes del diseño lee y revalida la imagen antes de comprobar el hash, sin límite de peticiones. 4 bajas: límite de 8 MB en el guardado del diseño, caracteres Unicode de dirección en los textos, bloques PNG desconocidos y SOF duplicados en JPEG, error completo en el log. Fuera de alcance: AES-GCM sin longitud de etiqueta fijada (`src/handoff/tokens.ts`, copias), clave fija de test detectada por gitleaks, `.gitignore` sin `*.pem` ni `*.key` |
 | 2026-10-05 | Completa | Todo el repositorio, infraestructura, dependencias e historial de git (8 agentes, sección 11.5) | **No apta todavía para producción.** Sin vulnerabilidades críticas ni de toma de control o fuga de datos: XSS, SQL, comandos, CSRF, sesiones, firma del webhook, cifrado y secretos, correctos. Bloqueantes de abuso y disponibilidad (comprobados en el código): tope de gasto desactivado por defecto y sin exigir; los reenvíos de una derivación no cuentan para ningún tope (avisos y plantillas de pago sin límite, con texto del atacante); rutas públicas del chat sin límite de peticiones; el límite global del login deja fuera al operador; llamadas a Meta sin plazo; Whisper fuera del tope de gasto. Además: importación con coste cuadrático, enlaces que el verificador no ve, errores completos y `hub.verify_token` en los logs, y requisitos de despliegue sin documentar (TLS hacia PostgreSQL, puerto 3000, `TRUST_PROXY`, healthcheck, BD de verificación). El aviso de semgrep sobre AES-GCM resultó no explotable. Dependencias de producción sin CVE conocidas |
+
+---
+
+## 12. Contenedores Docker del entorno local
+
+Qué contenedores aparecen en Docker Desktop mientras se trabaja en este proyecto y para qué sirve cada uno.
+
+| Contenedor | Imagen | Función | ¿Lo define el repo? |
+|---|---|---|---|
+| `chatbotasesor-db-1` | `postgres:16` | BD de la instancia local (`docker compose up -d db`, puerto 127.0.0.1:55442) | Sí, `docker-compose.yml` |
+| `chatbotasesor-mailpit` | `axllent/mailpit` | SMTP falso de desarrollo: captura los correos (SMTP 1025, web http://localhost:8025) | No, se crea a mano |
+| Postgres temporal de los tests | `postgres:16` | Lo levanta Testcontainers en `pnpm test:integration`, con nombre aleatorio, y lo borra al terminar | Lo crea el test |
+| `ryuk` | `testcontainers/ryuk` | Auxiliar de Testcontainers: limpia los contenedores temporales si el test se cuelga | Lo crea el test |
+| BD temporal de `db:verify` | `postgres` | Restaura una copia en una BD aparte para comprobarla (`pnpm db:verify`) | Lo crea el script |
+
+Los contenedores de otros proyectos (`supabase_*_nexushr`, `citasclinica-db-1`, `salon_db*`,
+`supabase_db_esencialsada`) no pertenecen a este repo y se pueden parar sin afectarlo.
+
+---
+
+## 13. Comandos útiles de Docker
+
+```bash
+docker ps -a --format "table {{.Names}}\t{{.Image}}\t{{.Status}}"   # qué hay y en qué estado
+docker stats --no-stream                                            # CPU y memoria por contenedor
+docker stop $(docker ps -q --filter "name=nexushr")                 # parar un proyecto entero por nombre
+docker logs -f --tail 50 chatbotasesor-db-1                         # seguir el log de un contenedor
+docker container prune                                              # borrar los contenedores parados
+```
