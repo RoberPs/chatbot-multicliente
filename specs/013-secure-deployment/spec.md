@@ -41,6 +41,14 @@ pruebas) las reglas nuevas no bloquean, para no entorpecer el trabajo en local.
 **Host local** es `localhost`, una dirección de bucle local (`127.0.0.0/8`, `::1`) o un socket
 local. Cualquier otro host es **remoto**, también los de una red privada.
 
+## Clarifications
+
+### Session 2026-10-06
+
+- Q: ¿Cómo sabe `db:verify` la antigüedad de una base temporal para decidir si está huérfana? → A: La marca de tiempo de creación va en el nombre (`verify_<UTC yyyymmddhhmmss>_<aleatorio>`); las del formato antiguo `verify_<16 hex>` son huérfanas si no tienen conexiones abiertas.
+- Q: Con un certificado de autoridad privada, ¿cómo recibe la instancia esa autoridad para `verify-full`? → A: Con `sslrootcert=<ruta>` en la propia URL, apuntando a un fichero montado en solo lectura; sin él se usan las autoridades públicas; `instance:check` no exige `sslrootcert`.
+- Q: ¿Debe `instance:db` negarse siempre a conectar con un servidor remoto sin `verify-full`, también para instancias de pruebas? → A: Sí, siempre y sin opción de escape; la alternativa es `--print-sql`.
+
 ## User Scenarios & Testing *(mandatory)*
 
 ### User Story 1 - El entorno de producción no pasa la comprobación si el despliegue no es seguro (Priority: P1)
@@ -199,10 +207,16 @@ sin preguntar nada.
   (escenario 2.5).
 - Dos instancias comparten servidor de verificación y verifican a la vez: ninguna borra la base
   temporal de la otra.
+- Base temporal del formato anterior (`verify_<16 hex>`) que dejó una versión previa del núcleo:
+  como no lleva marca de tiempo, se borra si no tiene conexiones abiertas. Una verificación en curso
+  de una instancia aún no actualizada siempre tiene conexiones, así que no se toca.
+- Nombre con marca de tiempo que no se puede interpretar (fecha imposible): no sigue exactamente el
+  patrón y no se toca (FR-011).
 - La comprobación de salud consulta `/health`, que tiene límite de peticiones por dirección: el
   periodo de la comprobación queda muy por debajo de ese límite.
-- `/health` responde degradado por una causa que no impide atender (si la hubiera): la plataforma
-  la marca como enferma; la receta dice que la plataforma no reinicia por sí sola y qué mirar.
+- `/health` responde `not_ready` (arrancando o cerrando) o `degraded` (base de datos sin respuesta,
+  vacía o con un esquema distinto del esperado): cuenta como fallo; la receta dice que la
+  plataforma no reinicia por sí sola y qué mirar en cada caso.
 - La imagen no trae utilidades de red (curl, wget): la comprobación de salud no puede depender de
   ellas.
 
@@ -220,7 +234,8 @@ sin preguntar nada.
 - **FR-003**: En el perfil de producción, `instance:check` MUST dar error, uno por variable, cuando
   `DATABASE_URL`, `BACKUP_VERIFY_URL` o `INSTANCE_DB_ADMIN_URL` (las dos últimas solo si están en
   el fichero) apuntan a un host remoto y la URL no exige TLS con verificación completa del
-  certificado y del nombre del servidor (`sslmode=verify-full`).
+  certificado y del nombre del servidor (`sslmode=verify-full`). La regla no exige
+  `sslrootcert` (sin él valen las autoridades públicas).
 - **FR-004**: Una conexión a un host local MUST NOT dar error por falta de TLS. Se mantiene la
   advertencia actual de base de datos en localhost en producción.
 - **FR-005**: En el perfil de pruebas, las reglas de FR-001 y FR-003 MUST informarse como
@@ -230,11 +245,16 @@ sin preguntar nada.
   URL (usuario, contraseña, host).
 - **FR-007**: `pnpm instance:db` MUST aplicar la regla de FR-003 a la URL de administración que
   recibe: con host remoto sin TLS verificado se niega a conectar y lo explica (con
-  `--print-sql` no conecta y no aplica).
+  `--print-sql` no conecta y no aplica). La negativa no depende del perfil de la instancia
+  (también en pruebas) y no tiene opción para saltársela; el mensaje propone `--print-sql` como
+  alternativa.
 - **FR-008**: La instancia MUST ser capaz de conectarse a una base de datos remota con
   `sslmode=verify-full` en todas sus conexiones (aplicación, copias, restauración y verificación),
   verificando el certificado del servidor; si el certificado no es válido para ese nombre, la
-  conexión falla con un mensaje sin datos.
+  conexión falla con un mensaje sin datos. La autoridad de confianza se indica en la propia URL
+  con `sslrootcert=<ruta de un fichero>`; sin ese parámetro se usan las autoridades públicas. Si
+  el fichero indicado no existe o no se puede leer, la conexión falla con un mensaje que nombra la
+  variable, sin la ruta ni otras partes de la URL.
 
 **Verificación de copias (`db:verify`)**
 
@@ -243,7 +263,9 @@ sin preguntar nada.
 - **FR-010**: Antes de verificar, `db:verify` MUST buscar en el servidor de verificación bases
   temporales de verificación huérfanas y borrarlas. Es huérfana la que sigue el patrón de nombre de
   las bases temporales de verificación, no tiene conexiones abiertas y tiene una antigüedad mayor
-  que el plazo máximo de una verificación.
+  que el plazo máximo de una verificación. La antigüedad se lee del nombre: la base temporal se
+  llama `verify_<yyyymmddhhmmss en UTC>_<aleatorio>`. Las bases del formato anterior
+  (`verify_<16 hex>`, sin marca de tiempo) se consideran huérfanas si no tienen conexiones abiertas.
 - **FR-011**: La limpieza MUST NOT tocar nunca una base cuyo nombre no siga exactamente ese patrón,
   ni una base temporal de una verificación en curso (con conexiones o dentro del plazo).
 - **FR-012**: El informe de `db:verify` (texto y JSON) MUST decir cuántas bases huérfanas se han
@@ -277,8 +299,9 @@ sin preguntar nada.
   - proxy inverso que **sustituye** (no añade) la cabecera de dirección de origen, y `TRUST_PROXY`
     con el número de saltos real;
   - puerto 3000 publicado solo en `127.0.0.1` o en una red interna, nunca en todas las interfaces;
-  - TLS hacia PostgreSQL con `sslmode=verify-full` y cómo dar a la instancia el certificado de la
-    autoridad si no es público;
+  - TLS hacia PostgreSQL con `sslmode=verify-full` y, si la autoridad no es pública, su
+    certificado montado en el contenedor en solo lectura e indicado con `sslrootcert=<ruta>` en
+    cada URL de base de datos;
   - fichero de entorno pasado con `--env-file`, con permisos 0600 y dueño el operador;
   - contenedor con sistema de ficheros de solo lectura (con los directorios temporales que
     necesite), sin capacidades (`--cap-drop=ALL`) y con `no-new-privileges`;
@@ -303,7 +326,8 @@ sin preguntar nada.
   código estable, variable, severidad según el perfil (error en producción, advertencia en
   pruebas) y acción que la corrige.
 - **Base temporal de verificación**: base de datos que crea `db:verify` en el servidor de
-  verificación para restaurar una copia; tiene nombre con patrón fijo, no admite conexiones de
+  verificación para restaurar una copia; tiene nombre con patrón fijo que incluye su momento de
+  creación en UTC (`verify_<yyyymmddhhmmss>_<aleatorio>`), no admite conexiones de
   otros usuarios y se borra al terminar o, si queda huérfana, en una verificación posterior.
 - **Receta de producción**: lista ordenada de requisitos del despliegue que el código no comprueba,
   cada uno con su comprobación.
