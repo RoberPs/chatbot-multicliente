@@ -132,15 +132,36 @@ servidores externos. Nada externo se ejecuta sin tu confirmación.
 - [x] `deploy/docker-compose.prod.yml` y `deploy/Caddyfile`, validados con `docker compose config`
   y `caddy validate`.
 
-### Fase 1 · Cuentas (Tú, con mi guía)
-- [ ] Bitwarden con 2FA con app; carpeta «chatbot».
-- [ ] Hetzner (cuenta nueva; puede pedir verificación de identidad), 2FA.
-- [ ] GitHub: repo privado del chatbot y GHCR; token de lectura de paquetes.
-- [ ] Brevo: cuenta y verificación del dominio.
-- [ ] Anthropic: límite de gasto mensual en la clave.
-- [ ] Clave SSH con passphrase (`ssh-keygen -t ed25519`).
+### Fase 1 · Cuentas (Tú, con mi guía) — **casi hecha el 2026-10-07**
+- [x] Bitwarden con 2FA con app; carpeta «chatbot». Criterio: los códigos TOTP viven en la app del
+  móvil, **no** en el campo «clave de autenticador» de la bóveda (si no, el segundo factor deja de
+  serlo); cada secreto va en un **campo personalizado oculto** con el nombre exacto de su variable.
+- [x] Hetzner (cuenta nueva), 2FA. La verificación pedía tarjeta o documento: se hizo con **tarjeta
+  y 25 € de saldo**, que no es una tasa sino prepago que se consume con las facturas (solo se
+  reembolsa cerrando la cuenta entera; la recarga no lleva factura). Proyecto `chatbot` creado.
+- [ ] GitHub: repo privado del chatbot y GHCR; token de lectura de paquetes. **Pendiente.** Este
+  repositorio todavía **no tiene remoto**: hace falta antes de la fase 6, porque la receta clona el
+  núcleo en el servidor desde la etiqueta.
+- [ ] Brevo: cuenta y verificación del dominio. **Pendiente**; conviene lanzarlo pronto porque los
+  registros SPF, DKIM y DMARC tardan en propagar.
+- [x] Anthropic: límite de gasto mensual en la clave.
+- [x] Clave SSH con passphrase (`ssh-keygen -t ed25519 -f ~/.ssh/chatbot_vps`). Comprobado que la
+  privada está cifrada y que la huella registrada en Hetzner es la suya
+  (`SHA256:D2HjePv+fltmoO2IvouUL5uh/5mH5codvP9ZWuABwZ8`). La privada no sale del PC; en Bitwarden
+  solo la passphrase. Ya subida a Hetzner como `chatbot-vps`, lista para crear el servidor.
 
 ### Fase 2 · Servidor (Tú ejecutas, yo doy los comandos)
+
+> **Aquí se retoma.** Valores ya decididos para el formulario de Hetzner: ubicación **Falkenstein o
+> Nuremberg** (UE, ~30-40 ms desde España); imagen **Ubuntu 24.04**; tipo **CX22** u otro **x86** de
+> 2 vCPU y 4 GB — **nunca CAX (ARM)**, porque la imagen se construye en un PC x86 y no arrancaría;
+> **IPv4 + IPv6** (la IPv4 la necesita el registro `A` de Cloudflare); clave **`chatbot-vps`**
+> marcada, que es lo que evita que Hetzner genere contraseña de root. Sin copias de Hetzner (ya hay
+> copias propias cifradas), sin volúmenes, sin *cloud config* y **sin cortafuegos todavía**.
+>
+> **Dato pendiente para el cortafuegos**: si la IP pública del usuario es fija, dinámica o se
+> desconoce. De eso depende la regla del puerto 22; hay salida para los tres casos.
+
 - [ ] Crear el VPS (Ubuntu 24.04) con la clave pública SSH.
 - [ ] Usuario `operador` sin root; desactivar contraseña y login de root por SSH.
 - [ ] Firewall de Hetzner: 22 (solo tu IP si es fija), 80 y 443; el 443 solo desde las IP de
@@ -212,9 +233,24 @@ servidores externos. Nada externo se ejecuta sin tu confirmación.
   de operación) según [CLAUDE.md](../CLAUDE.md). Avisar al usuario antes de tocar el README.
 
 ## 6. Qué tienes que traer a la próxima sesión
-- Las cuentas de la fase 1 creadas, o ganas de crearlas con la guía.
-- Tu IP pública fija, si la tienes (para limitar el SSH).
-- Tu teléfono y correo reales (para la fase 7).
+
+Actualizado el 2026-10-07, al cerrar la fase 1:
+
+- **Si tu IP pública es fija, dinámica o no lo sabes** (para la regla del puerto 22). Lo bloquea
+  todo lo demás de la fase 2, así que es lo primero.
+- Las cuentas que faltan de la fase 1: **GitHub** (repo privado y GHCR; este repositorio aún no
+  tiene remoto) y **Brevo** (cuenta y verificación del dominio).
+- Tu teléfono y correo reales (para la fase 7; no hacen falta antes).
+
+Decisiones abiertas, ninguna bloqueante:
+
+- Si el núcleo debe **registrar el modelo que atiende de verdad** (el campo `model` de cada
+  respuesta, que hoy se descarta): spec pequeña antes de desplegar, comprobación a mano en la
+  fase 9, o propuesta en la cola de `operacion-multicliente.md` §9.2.
+- Si se lanza `pnpm test:eval` ahora que el modelo cambió: `LLM_EFFORT=medium` se calibró contra
+  Sonnet 5, y en Sonnet 5.5 los niveles están recalibrados y el valor por defecto es `high`.
+- Añadir un `.gitleaks.toml` que permita los 33 falsos positivos revisados, para que un hallazgo
+  nuevo destaque en vez de perderse entre ellos.
 
 ## 7. Riesgos y puntos a vigilar
 - **IP real del cliente**: si Caddy añade en lugar de sustituir la cabecera, cualquiera se salta el
