@@ -268,7 +268,7 @@ export async function createSectorRunner(
   const reader = createKnowledgeReader(t.db);
   const chatModel = createAnthropicChatModel({
     apiKey: process.env.ANTHROPIC_API_KEY,
-    model: process.env.LLM_MODEL?.trim() || 'claude-sonnet-5',
+    model: process.env.LLM_MODEL?.trim() || 'claude-sonnet-5-5',
     effort: (process.env.LLM_EFFORT?.trim() || 'medium') as Effort,
   });
   const contactLine = `Para hablar con una persona de ${String(sector.fixture.business.name)}`;

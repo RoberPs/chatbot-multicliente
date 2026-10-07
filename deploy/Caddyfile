@@ -1,0 +1,54 @@
+# Proxy inverso de produccion (receta de docs/operacion-multicliente.md, paso 7).
+#
+# Los dominios y el correo de avisos de Let's Encrypt se pasan por entorno, para que este
+# fichero no lleve nombres de cliente. Se definen en /srv/chatbot/caddy.env:
+#
+#   ACME_CORREO=avisos@tu-dominio
+#   INSTANCIA_1_DOMINIO=sub1.tu-dominio
+#   INSTANCIA_2_DOMINIO=sub2.tu-dominio
+#
+# Los subdominios son de UN SOLO NIVEL: el certificado gratuito de Cloudflare no cubre dos.
+
+{
+	email {$ACME_CORREO}
+	# Un certificado propio de Let's Encrypt en el VPS, que es lo que exige el modo
+	# «Full (strict)» de Cloudflare. El desafio HTTP-01 atraviesa el proxy de Cloudflare.
+}
+
+# Fragmento comun a las dos instancias. El argumento es el nombre del servicio de Docker.
+(instancia) {
+	# LA LINEA CRITICA (receta, paso 7 y seccion 7 del plan de despliegue).
+	#
+	# `header_up` SUSTITUYE la cabecera; no la añade. Caddy, por omision, AÑADE la direccion
+	# del cliente a la X-Forwarded-For que llegue, asi que sin esta linea cualquiera podria
+	# falsear su direccion y saltarse el limite de intentos del login y los de abuso.
+	#
+	# Detras del proxy de Cloudflare, la direccion real del visitante viene en
+	# CF-Connecting-IP: la direccion del par TCP es de Cloudflare, no del visitante.
+	# Por eso TRUST_PROXY=1 en el entorno de la instancia: un unico salto de proxy.
+	#
+	# Esto obliga a que el 443 del VPS solo acepte conexiones de las direcciones de
+	# Cloudflare (cortafuegos de Hetzner, fase 2): si alguien llega directo al servidor,
+	# manda su propia CF-Connecting-IP y vuelve el mismo problema.
+	reverse_proxy {args[0]}:3000 {
+		header_up X-Forwarded-For {http.request.header.CF-Connecting-IP}
+		header_up X-Forwarded-Proto https
+		header_up Host {host}
+	}
+
+	encode zstd gzip
+
+	# La instancia ya fija sus propias cabeceras de seguridad; aqui solo se quita la que
+	# delata el servidor.
+	header {
+		-Server
+	}
+}
+
+{$INSTANCIA_1_DOMINIO} {
+	import instancia instancia-1
+}
+
+{$INSTANCIA_2_DOMINIO} {
+	import instancia instancia-2
+}

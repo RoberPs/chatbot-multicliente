@@ -112,7 +112,7 @@ const envSchema = z.object({
   WHATSAPP_GRAPH_VERSION: optionalText,
   EMERGENCY_CONTACT_PHONE: optionalText,
   ANTHROPIC_API_KEY: optionalText,
-  LLM_MODEL: optionalText.transform((v) => v ?? 'claude-sonnet-5'),
+  LLM_MODEL: optionalText.transform((v) => v ?? 'claude-sonnet-5-5'),
   LLM_EFFORT: optionalText.pipe(
     z
       .enum(['low', 'medium', 'high'], { error: 'LLM_EFFORT debe ser low, medium o high' })

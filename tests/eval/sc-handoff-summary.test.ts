@@ -20,7 +20,7 @@ const manual: string[] = [];
 describe.skipIf(!hasApiKey)('SC-003 (005): resumen del motivo de la derivación', () => {
   const summarizer = createAnthropicSummarizer({
     apiKey: process.env.ANTHROPIC_API_KEY,
-    model: process.env.LLM_MODEL?.trim() || 'claude-sonnet-5',
+    model: process.env.LLM_MODEL?.trim() || 'claude-sonnet-5-5',
   });
 
   afterAll(() => {
