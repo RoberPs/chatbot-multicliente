@@ -32,6 +32,22 @@ FROM ${NODE_IMAGE}
 ARG CORE_VERSION
 LABEL org.opencontainers.image.version=$CORE_VERSION
 ENV NODE_ENV=production
+# Correccion de vulnerabilidades del sistema base (receta, paso 11). El digest de
+# ARG NODE_IMAGE es ya el ultimo publicado de node:22-slim, asi que subirlo no arregla nada:
+# la base al dia arrastra perl-base y libpcre2 sin parchear (3 criticas y 5 altas que Trivy
+# marca como corregibles). Se instalan las versiones corregidas con su numero exacto, para que
+# la construccion siga siendo reproducible. Cuando Debian publique una revision posterior y
+# retire estas, la construccion fallara AQUI: hay que subir los numeros, reconstruir y volver a
+# pasar Trivy. Es un fallo ruidoso a proposito; preferible a una imagen sin parchear.
+#
+# Se borra tambien npm: esta etapa solo ejecuta `node` (el arranque y la sonda de salud), nunca
+# npm ni npx. Son otras 10 altas menos y una herramienta menos para quien entre al contenedor.
+RUN apt-get update \
+  && apt-get install -y --no-install-recommends \
+     perl-base=5.36.0-7+deb12u4 \
+     libpcre2-8-0=10.42-1+deb12u2 \
+  && rm -rf /var/lib/apt/lists/* \
+  && rm -rf /usr/local/lib/node_modules/npm /usr/local/bin/npm /usr/local/bin/npx
 WORKDIR /app
 COPY --from=build /app/package.json ./
 COPY --from=build /app/node_modules ./node_modules

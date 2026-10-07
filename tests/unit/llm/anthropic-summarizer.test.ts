@@ -17,7 +17,7 @@ function message(overrides: Partial<Anthropic.Message> & { text?: string } = {})
     id: 'msg_1',
     type: 'message',
     role: 'assistant',
-    model: 'claude-sonnet-5',
+    model: 'claude-sonnet-5-5',
     stop_reason: 'end_turn',
     content: [{ type: 'text', text, citations: null }],
     usage,
@@ -31,7 +31,7 @@ function summarizerWith(result: Anthropic.Message | Error) {
     return result;
   });
   const summarizer = createAnthropicSummarizer({
-    model: 'claude-sonnet-5',
+    model: 'claude-sonnet-5-5',
     client: { messages: { create } } as unknown as Pick<Anthropic, 'messages'>,
   });
   return { summarizer, create };

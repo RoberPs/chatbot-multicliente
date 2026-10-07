@@ -370,7 +370,7 @@ Contrato de las órdenes: [specs/007-instance-provisioning/contracts/instance-co
 | `EMERGENCY_CONTACT_PHONE` | Con `ANTHROPIC_API_KEY` | Teléfono E.164 que se da si no se puede leer la información del negocio (disculpa del bot y chat web "no disponible") |
 | `ANTHROPIC_API_KEY` | Para tener bot | Clave de la API de Anthropic. Con ella ya hay bot: "Probar el bot" y chat web, aunque no haya WhatsApp. También la usan `pnpm bot:chat` y `pnpm test:eval` |
 | `PUBLIC_BASE_URL` | No | URL pública de la instancia (`https`, sin ruta; `http` solo con `localhost` o `127.0.0.1`). Se usa para escribir el fragmento del chat web y para comprobar el origen de las peticiones del chat |
-| `LLM_MODEL` | No (`claude-sonnet-5`) | Modelo que redacta las respuestas |
+| `LLM_MODEL` | No (`claude-sonnet-5-5`) | Modelo que redacta las respuestas |
 | `LLM_EFFORT` | No (`medium`) | Esfuerzo del modelo: `low`, `medium` o `high` |
 | `AUDIO_TRANSCRIPTION` | No (`off`) | Interruptor de audios. Con `off` un audio recibe el aviso de "solo texto" y no se descarga |
 | `STT_API_KEY` | Con audios `on` | Clave del servicio de transcripción (API de OpenAI) |

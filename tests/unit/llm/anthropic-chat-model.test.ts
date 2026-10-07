@@ -31,7 +31,7 @@ function message(overrides: Partial<Anthropic.Message> & { text?: string } = {})
     id: 'msg_1',
     type: 'message',
     role: 'assistant',
-    model: 'claude-sonnet-5',
+    model: 'claude-sonnet-5-5',
     stop_reason: 'end_turn',
     content: [{ type: 'text', text, citations: null }],
     ...rest,
@@ -44,7 +44,7 @@ function modelWith(result: Anthropic.Message | Error) {
     return result;
   });
   const model = createAnthropicChatModel({
-    model: 'claude-sonnet-5',
+    model: 'claude-sonnet-5-5',
     effort: 'medium',
     client: { messages: { create } } as unknown as Pick<Anthropic, 'messages'>,
   });
@@ -66,7 +66,7 @@ describe('ChatModel de Anthropic', () => {
       Anthropic.MessageCreateParamsNonStreaming,
       { signal: AbortSignal; timeout: number; maxRetries: number },
     ];
-    expect(params.model).toBe('claude-sonnet-5');
+    expect(params.model).toBe('claude-sonnet-5-5');
     expect(params.max_tokens).toBe(4000);
     expect(params.thinking).toEqual({ type: 'adaptive' });
     expect(params.output_config).toEqual({

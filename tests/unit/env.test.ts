@@ -87,7 +87,7 @@ describe('variables de la instancia', () => {
         graphVersion: 'v23.0',
       });
       expect(env.emergencyContactPhone).toBe('+34600111222');
-      expect(env.LLM_MODEL).toBe('claude-sonnet-5');
+      expect(env.LLM_MODEL).toBe('claude-sonnet-5-5');
       expect(env.LLM_EFFORT).toBe('medium');
       expect(env.audioTranscription).toBe(false);
       expect(env.STT_MODEL).toBe('whisper-1');
