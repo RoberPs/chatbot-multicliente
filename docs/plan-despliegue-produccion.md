@@ -471,18 +471,80 @@ clave es la contraseña. El bloqueo por IP sigue **desactivado**, que es lo corr
   desde el principio. Por eso las comprobaciones viven ahora en un subcomando propio,
   `comprobar <id>`, que solo lee y se puede repetir: `crear` no se puede relanzar.
 
-### Fase 5 · Red y HTTPS (Yo preparo, tú aplicas)
-- [ ] Registros `A` en Cloudflare para `viajes` y `restaurante` hacia la IP del VPS, con proxy.
-- [ ] Borrar el registro `A` heredado de `n8n`. **Resuelto el 2026-10-08**: ni el servidor ni
-  la cuenta vieja de Hetzner existen ya, así que no hay nada que rescatar y el registro queda
-  apuntando a una IP que Hetzner puede reasignar a otro cliente (se comprobó: sin respuesta en
-  ningún puerto y Cloudflare devolviendo 522). Borrarlo es lo único que queda y cierra ese
-  riesgo de apropiación del subdominio.
-- [ ] Cloudflare: SSL **Full (strict)**.
-- [ ] Caddy con certificado propio de Let's Encrypt, que **sustituye** `X-Forwarded-For` por
+### Fase 5 · Red y HTTPS (Yo preparo, tú aplicas) — **HECHA el 2026-10-08**
+
+> **Corrección de orden, descubierta al empezar.** La fase 5 **no se puede cerrar sin arrancar
+> las instancias**: la prueba del paso 7 va contra el `/health` de la instancia, y además
+> `docker compose up -d caddy` arrastra `instancia-1` e `instancia-2` por su `depends_on`, que
+> exigen la imagen bajada. Así que esta fase absorbió los dos primeros puntos de la fase 6
+> (bajar la imagen de GHCR y arrancar los contenedores). Todo ello en
+> [deploy/fase5-red-https.sh](../deploy/fase5-red-https.sh), con tres subcomandos repetibles:
+> `imagen`, `arrancar` y `comprobar`.
+
+- [x] Registros `A` en Cloudflare para `viajes` y `restaurante` hacia `91.99.107.86`, con proxy.
+  Sin `AAAA` a propósito (una sola vía que verificar). Comprobado que resuelven a direcciones de
+  Cloudflare (`188.114.96.x`), no a la del VPS: si saliera la del VPS, la nube estaría gris y el
+  cortafuegos bloquearía todo.
+- [x] Borrado el registro `A` heredado de `n8n`. Ni el servidor ni la cuenta vieja de Hetzner
+  existen ya, así que apuntaba a una IP que Hetzner puede reasignar a otro cliente.
+- [x] Cloudflare: SSL **Full (strict)**, puesto **al final**, no al principio (ver más abajo).
+- [x] Caddy con certificado propio de Let's Encrypt, que **sustituye** `X-Forwarded-For` por
   `CF-Connecting-IP`.
-- [ ] Prueba de la receta, paso 7: 31 peticiones con `X-Forwarded-For` falso dan `429` en la última;
-  otra máquina sigue recibiendo `200`.
+- [x] Prueba de la receta, paso 7, superada: 30 peticiones en `200` y la **31 en `429`**, y el
+  móvil con datos (otra dirección) en `{"status":"ok"}` dentro del mismo minuto. Automatizada en
+  [deploy/fase5-prueba-xff.sh](../deploy/fase5-prueba-xff.sh), que se ejecuta **en el PC**.
+
+**Lo que salió mal, para no repetirlo:**
+
+- **Compose interpola los `$` que hay DENTRO de los `env_file`.** Es el fallo gordo de la fase.
+  Un hash Argon2id es `$argon2id$v=19$m=65536,...$sal$digest`, y Compose trató cada `$…` como una
+  variable suya, avisando con `WARN[0000] The "argon2id" variable is not set` y sustituyéndola por
+  cadena vacía. A la instancia le llegó el hash destrozado, Zod lo rechazó
+  (`src/config/env.ts:46`, que exige el prefijo `$argon2id$`) y los dos contenedores se quedaron
+  **`unhealthy`** reintentando. Se corrige con `format: raw` en los `env_file`
+  (Compose ≥ 2.30), aplicado a los **cinco** del compose, porque cualquier contraseña futura
+  puede llevar un `$`.
+  - **Los avisos `WARN` son el síntoma y además filtran el secreto**: imprimen los trozos del
+    hash como nombres de variable. Si aparecen, hay un valor con `$` sin proteger.
+  - **Contrapartida de `raw`: tampoco quita las comillas.** `src/provisioning/env-file.ts:40`
+    entrecomilla los valores con espacios, así que habría que dejarlos sin comillas. Comprobado
+    que aquí no afectaba: `instance:new` normaliza el teléfono a E.164 compacto y el único valor
+    con `$` en los dos entornos era `OPERATOR_PASSWORD_HASH`.
+  - Las bases de datos no se tocaron: la validación del entorno ocurre **antes** de las
+    migraciones.
+- **La zona estaba en «SSL/TLS automático», que había elegido «Full (strict)» por su cuenta.**
+  Puesto así, Cloudflare exige un certificado válido en el origen antes de que Caddy pueda
+  sacarlo: devuelve 526 y bloquea el propio desafío. El orden correcto es **Full** → Caddy saca
+  el certificado → **Full (strict) a mano**. No se vuelve al modo automático: podría volver a
+  cambiar el cifrado solo, en mitad de una renovación.
+- **«Always Use HTTPS» queda apagada de forma permanente.** Redirige el desafío HTTP-01 en el
+  borde y no llega al origen. No es solo cosa de hoy: la renovación de dentro de 60 días pasa por
+  el mismo desafío. Caddy ya redirige 80→443 por su cuenta, así que no se pierde nada.
+- **TLS-ALPN-01 no puede funcionar detrás del proxy**: ese desafío se resuelve en el saludo TLS y
+  con la nube naranja el 443 lo termina Cloudflare. Caddy lo intenta primero y acaba cayendo al
+  HTTP-01, pero tras minutos de errores que parecen un fallo real. Desactivado explícitamente con
+  `cert_issuer acme { disable_tlsalpn_challenge }`, con el `email` repetido dentro: al nombrar un
+  emisor explícito se deja de usar la plantilla por omisión.
+- **El token de GHCR se quemó por pegarlo dentro del texto del `read`.** La orden era
+  `read -rsp 'Token: ' GHCR_TOKEN`, y el token se escribió **dentro de las comillas de la
+  etiqueta**, con lo que acabó en la línea de órdenes, en pantalla, en el historial y en el chat.
+  Se revocó, se creó otro con solo `read:packages` y se limpió el historial con
+  `history -c && history -w`. El prompt de `read -s` no muestra nada mientras se teclea, y eso es
+  justo lo que lleva a «arreglarlo» metiendo el valor en la orden.
+- **El nombre de la imagen va en variable, no con `docker tag`.** El compose usa
+  `${CHATBOT_IMAGEN:-chatbot}:${CHATBOT_VERSION}`; reetiquetar deja un estado que solo vive en
+  ese disco y se pierde con un `docker image prune`. Las dos variables van en un **fichero `.env`
+  junto al compose**, no exportadas: todas las órdenes de Docker van con `sudo`, y **`sudo` limpia
+  el entorno del llamante**, así que un `export` se pierde y el compose aborta por su `:?`.
+- **521 y 522 de Cloudflare no son lo mismo**, y la diferencia es útil antes de arrancar Caddy:
+  **521** es que el origen rechazó la conexión (llega el paquete, no hay nada escuchando) y
+  **522** que no respondió (lo que daría un cortafuegos descartando en silencio). Ver 521 confirmó
+  que los rangos de Cloudflare entran bien por el cortafuegos de Hetzner.
+- **La IP dinámica del administrador cambió** de `83.39.35.164` a `83.39.36.113` entre la fase 2 y
+  la 5, dentro del mismo `83.36.0.0/14`. Es el escenario por el que se eligió el rango del
+  operador en vez de una IP suelta.
+- El script comprueba el **digest** de la imagen bajada contra el auditado en la fase 0
+  (`sha256:f52e81af…`), no solo la etiqueta: una etiqueta se puede mover, un digest no.
 
 ### Fase 6 · Arranque (Los dos)
 - [x] Subir la imagen a GHCR: hecho el 2026-10-07.
@@ -490,13 +552,16 @@ clave es la contraseña. El bloqueo por IP sigue **desactivado**, que es lo corr
   `sha256:f52e81af15a8ff3c327fb2555f5f986534e6fc9a303ca3b3a5597374cbb7cc56`. Queda confirmar a mano
   que el paquete figura como **privado**: la sesión de `gh` no tiene `read:packages` y la API
   responde 403.
-- [ ] Bajarla en el VPS con el token `chatbot-ghcr-pull`. **Ojo**: el compose referencia
-  `chatbot:${CHATBOT_VERSION}` y en GHCR se llama `ghcr.io/roberps/chatbot-multicliente:0.1.0`. O se
-  reetiqueta tras bajarla (`docker tag`), o el compose pasa a tomar también el nombre de la imagen
-  por variable. Se decide al llegar aquí.
-- [ ] Un contenedor por instancia con los parámetros endurecidos de la receta, paso 5.
-- [ ] Comprobaciones de los pasos 5, 6 y 9: contenedor endurecido, puerto solo local y `healthy`.
-- [ ] Entrar en `/admin` de cada instancia con la cookie `Secure`.
+- [x] Bajarla en el VPS con el token `chatbot-ghcr-pull`. **Adelantado a la fase 5**, que no podía
+  arrancar sin ella. Resuelto el nombre con una variable, `CHATBOT_IMAGEN`, en vez de `docker tag`
+  (ver fase 5).
+- [x] Un contenedor por instancia con los parámetros endurecidos de la receta, paso 5.
+  **Adelantado a la fase 5.**
+- [x] Comprobaciones de los pasos 5, 6 y 9: contenedor endurecido, puerto solo local y `healthy`.
+  **Adelantadas a la fase 5**, dentro de `fase5-red-https.sh`.
+- [ ] Entrar en `/admin` de cada instancia con la cookie `Secure`. El **login se ve ya** desde
+  fuera (comprobado el 2026-10-08 desde el móvil con datos, con HTTPS de punta a punta); falta
+  entrar con la contraseña de Bitwarden.
 - [ ] Brevo: añadir la IPv4 del VPS en «Seguridad → IPs autorizadas», comprobar que un correo de
   prueba llega y **después** activar el bloqueo por IP de las claves SMTP (ver §2.5).
 
@@ -547,9 +612,9 @@ clave es la contraseña. El bloqueo por IP sigue **desactivado**, que es lo corr
 
 ## 6. Qué tienes que traer a la próxima sesión
 
-Actualizado el 2026-10-08, al cerrar la fase 4. **No queda nada pendiente para la fase 5**: las dos
-instancias están dadas de alta, con sus bases creadas y aisladas, sus entornos en el VPS y las dos
-en APTO. La segunda clave de Anthropic ya está creada y guardada.
+Actualizado el 2026-10-08, al cerrar la fase 5. Lo que queda de la fase 6 es poco: entrar en
+`/admin` de las dos instancias con su contraseña de Bitwarden, y lo de Brevo (IP autorizada, correo
+de prueba y, solo después, el bloqueo por IP de las claves SMTP).
 
 Para más adelante:
 

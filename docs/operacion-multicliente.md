@@ -348,6 +348,28 @@ es el usuario de la máquina que despliega y `cliente-x` el `id` de la instancia
    Usa la **misma imagen etiquetada** que el resto (`chatbot:X.Y.Z`, nunca `latest`). Al arrancar
    aplica las migraciones y crea el negocio vacío en "En preparación".
 
+   **Si en vez de `docker run` despliegas con Docker Compose**, el `env_file` necesita
+   `format: raw` (Compose ≥ 2.30):
+
+   ```yaml
+   env_file:
+     - path: /srv/chatbot/cliente-x.env
+       format: raw
+   ```
+
+   `docker run --env-file` pasa los valores tal cual, pero **Compose interpola los `$` que
+   encuentra dentro del fichero** y los sustituye por cadena vacía. Le pasa siempre a
+   `OPERATOR_PASSWORD_HASH`, que es `$argon2id$v=19$m=65536,…$sal$digest`: la instancia lo recibe
+   destrozado, el esquema lo rechaza (`src/config/env.ts`, que exige el prefijo `$argon2id$`) y el
+   contenedor se queda **`unhealthy`** reintentando. El síntoma previo son avisos
+   `WARN[0000] The "argon2id" variable is not set` al levantar, que además **imprimen trozos del
+   hash** en la terminal. Ponlo en **todos** los `env_file` del proyecto: cualquier contraseña
+   futura puede llevar un `$`.
+
+   A cambio, `format: raw` **tampoco quita las comillas**, así que los valores del fichero deben
+   ir sin ellas. `instance:new` ya escribe así todo salvo los valores con espacios
+   (`src/provisioning/env-file.ts`), que habría que desentrecomillar.
+
    Comprobación:
 
    ```bash

@@ -13,6 +13,18 @@
 	email {$ACME_CORREO}
 	# Un certificado propio de Let's Encrypt en el VPS, que es lo que exige el modo
 	# «Full (strict)» de Cloudflare. El desafio HTTP-01 atraviesa el proxy de Cloudflare.
+	#
+	# TLS-ALPN-01 NO PUEDE FUNCIONAR detras del proxy de Cloudflare: ese desafio se resuelve
+	# en el saludo TLS, y con la nube naranja el TLS del 443 lo termina Cloudflare, no Caddy.
+	# Caddy lo intenta primero por omision, falla y acaba cayendo al HTTP-01; sin esta linea
+	# el certificado sale igual, pero tras varios minutos de errores que parecen un fallo real.
+	# Queda solo el HTTP-01, que por el puerto 80 si atraviesa el proxy.
+	# El `email` se repite dentro a proposito: al nombrar un emisor explicito se deja de usar
+	# la plantilla por omision, y sin correo Let's Encrypt no avisa de una renovacion fallida.
+	cert_issuer acme {
+		email {$ACME_CORREO}
+		disable_tlsalpn_challenge
+	}
 }
 
 # Fragmento comun a las dos instancias. El argumento es el nombre del servicio de Docker.

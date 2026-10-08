@@ -5,7 +5,13 @@
 #   docker compose -f deploy/docker-compose.prod.yml up -d
 #
 # La imagen NO se construye aqui: se construye aparte, siempre etiquetada con su version
-# (chatbot:X.Y.Z, nunca `latest`) y se referencia con la variable CHATBOT_VERSION.
+# (chatbot:X.Y.Z, nunca `latest`) y se referencia con las variables CHATBOT_IMAGEN (el nombre,
+# `chatbot` en local y `ghcr.io/<usuario>/<paquete>` en produccion) y CHATBOT_VERSION.
+#
+# Las dos se leen del fichero `.env` que vive JUNTO A ESTE FICHERO (compose lo carga solo, por
+# ser el directorio del proyecto). Tiene que ser un fichero y no variables exportadas: las
+# ordenes de Docker van con `sudo`, y `sudo` limpia el entorno del llamante, asi que un
+# `export CHATBOT_VERSION=...` se pierde y el compose aborta por el `:?` de abajo.
 #
 # Los ficheros de entorno viven FUERA del repositorio, con dueño `operador` y modo 0600
 # (receta, paso 2). Este fichero no contiene ningun secreto.
@@ -13,7 +19,7 @@
 name: chatbot
 
 x-instancia-comun: &instancia-comun
-  image: chatbot:${CHATBOT_VERSION:?define CHATBOT_VERSION, p. ej. 0.1.0}
+  image: ${CHATBOT_IMAGEN:-chatbot}:${CHATBOT_VERSION:?define CHATBOT_VERSION, p. ej. 0.1.0}
   restart: unless-stopped
   # Contenedor endurecido (receta, paso 5): raiz de solo lectura, /tmp en memoria, sin
   # capacidades y sin escalada de privilegios.
@@ -52,7 +58,16 @@ services:
     environment:
       POSTGRES_INITDB_ARGS: '--auth-local=scram-sha-256 --auth-host=scram-sha-256'
     env_file:
-      - /srv/chatbot/db.env          # POSTGRES_PASSWORD (superusuario), 0600
+      # `format: raw` (Compose >= 2.30): SIN el, Compose interpola los `$...` del VALOR como si
+      # fueran variables suyas y los sustituye por cadena vacia. Lo rompe todo en el hash
+      # Argon2id de OPERATOR_PASSWORD_HASH, que es `$argon2id$v=19$m=...$sal$digest`: llega a la
+      # instancia destrozado, Zod lo rechaza (src/config/env.ts:46) y el contenedor queda
+      # unhealthy. Se pone en los cinco env_file, no solo en los de instancia, porque cualquier
+      # contraseña futura puede llevar un `$`.
+      #
+      # A cambio, `raw` tampoco quita las comillas: los valores van SIN comillas en el fichero.
+      - path: /srv/chatbot/db.env    # POSTGRES_PASSWORD (superusuario), 0600
+        format: raw
     volumes:
       - db-datos:/var/lib/postgresql/data
       - pg-socket:/var/run/postgresql
@@ -73,7 +88,8 @@ services:
     environment:
       POSTGRES_INITDB_ARGS: '--auth-local=scram-sha-256 --auth-host=scram-sha-256'
     env_file:
-      - /srv/chatbot/db-verificacion.env
+      - path: /srv/chatbot/db-verificacion.env
+        format: raw
     volumes:
       - db-verificacion-datos:/var/lib/postgresql/data
       - pg-socket-verificacion:/var/run/postgresql
@@ -89,7 +105,8 @@ services:
     <<: *instancia-comun
     container_name: instancia-1
     env_file:
-      - /srv/chatbot/instancia-1.env
+      - path: /srv/chatbot/instancia-1.env
+        format: raw
     volumes:
       # Los sockets NO se montan en solo lectura: conectar a un socket Unix exige permiso de
       # escritura sobre su inodo.
@@ -104,7 +121,8 @@ services:
     <<: *instancia-comun
     container_name: instancia-2
     env_file:
-      - /srv/chatbot/instancia-2.env
+      - path: /srv/chatbot/instancia-2.env
+        format: raw
     volumes:
       - pg-socket:/var/run/postgresql
       - pg-socket-verificacion:/var/run/postgresql-verificacion
@@ -125,7 +143,8 @@ services:
       - '80:80'
       - '443:443'
     env_file:
-      - /srv/chatbot/caddy.env       # ACME_CORREO, INSTANCIA_1_DOMINIO, INSTANCIA_2_DOMINIO
+      - path: /srv/chatbot/caddy.env # ACME_CORREO, INSTANCIA_1_DOMINIO, INSTANCIA_2_DOMINIO
+        format: raw
     volumes:
       - ./Caddyfile:/etc/caddy/Caddyfile:ro
       - caddy-datos:/data            # certificados de Let's Encrypt: no perderlos entre reinicios
