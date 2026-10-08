@@ -65,11 +65,15 @@ venderlo:
   todas las claves de la cuenta; lo que cambia por clave es la contraseña.
 - **Una clave SMTP por instancia** (`chatbot-viajes`, `chatbot-restaurante`), para poder revocar la
   de un cliente sin dejar al otro sin avisos. El valor completo solo se ve al crearla.
-- **Cuidado con el `@` del usuario**: `SMTP_URL` se lee con `new URL(...)` y la contraseña se pasa
-  por `decodeURIComponent` (`src/config/secret-rules.ts:110`). El login lleva `@`, así que va como
-  `%40`, o la URL se parte mal:
-  `smtp://XXXXXXXXX%40smtp-brevo.com:CLAVE@smtp-relay.brevo.com:587`. Si la clave trae `@`, `:`, `/`
-  o `%`, también se codifican.
+- **El `@` del usuario**: `SMTP_URL` se lee con `new URL(...)` y la contraseña se pasa por
+  `decodeURIComponent` (`src/config/secret-rules.ts:110`). La forma canónica es
+  `smtp://XXXXXXXXX%40smtp-brevo.com:CLAVE@smtp-relay.brevo.com:587`. **Corregido el 2026-10-08**:
+  escribir el `@` del login sin codificar **no rompe nada** (`new URL` parte el userinfo por el
+  último `@` y el usuario por el primer `:`), así que esto no es causa de un fallo de
+  autenticación. Lo que sí hay que codificar es un `@`, `:`, `/` o `%` dentro de la **clave**.
+- **La clave son 90 caracteres y empieza por `xsmtpsib-`**, sin más símbolos que los guiones. En el
+  panel aparece junto al servidor y es fácil copiar las dos cosas: si lo guardado acaba en
+  `@smtp-relay.brevo.com`, sobra esa parte (ver fase 6).
 - **Bloqueo por IP de las claves SMTP**: Brevo lo ofrece y conviene activarlo, pero **en la fase 6**,
   no antes. Primero el VPS arrancado, su IPv4 en «Seguridad → IPs autorizadas» y un correo de prueba
   que llegue; solo entonces «Activar para claves SMTP». Activarlo sin IP listada corta el envío.
@@ -546,7 +550,7 @@ clave es la contraseña. El bloqueo por IP sigue **desactivado**, que es lo corr
 - El script comprueba el **digest** de la imagen bajada contra el auditado en la fase 0
   (`sha256:f52e81af…`), no solo la etiqueta: una etiqueta se puede mover, un digest no.
 
-### Fase 6 · Arranque (Los dos)
+### Fase 6 · Arranque (Los dos) — **HECHA el 2026-10-08**
 - [x] Subir la imagen a GHCR: hecho el 2026-10-07.
   `ghcr.io/roberps/chatbot-multicliente:0.1.0`, digest
   `sha256:f52e81af15a8ff3c327fb2555f5f986534e6fc9a303ca3b3a5597374cbb7cc56`. Queda confirmar a mano
@@ -559,11 +563,58 @@ clave es la contraseña. El bloqueo por IP sigue **desactivado**, que es lo corr
   **Adelantado a la fase 5.**
 - [x] Comprobaciones de los pasos 5, 6 y 9: contenedor endurecido, puerto solo local y `healthy`.
   **Adelantadas a la fase 5**, dentro de `fase5-red-https.sh`.
-- [ ] Entrar en `/admin` de cada instancia con la cookie `Secure`. El **login se ve ya** desde
-  fuera (comprobado el 2026-10-08 desde el móvil con datos, con HTTPS de punta a punta); falta
-  entrar con la contraseña de Bitwarden.
-- [ ] Brevo: añadir la IPv4 del VPS en «Seguridad → IPs autorizadas», comprobar que un correo de
-  prueba llega y **después** activar el bloqueo por IP de las claves SMTP (ver §2.5).
+- [x] Entrar en `/admin` de cada instancia con la cookie `Secure`. Hecho el 2026-10-08 en las dos,
+  con la contraseña de Bitwarden. El login ya se veía desde fuera con HTTPS de punta a punta.
+  Recordatorio para la próxima vez: el login admite **5 intentos por minuto y por IP**
+  (`src/admin/auth/routes.ts:24`), así que un `429` al teclear varias veces no es un fallo de
+  configuración; y reiniciar un contenedor invalida las sesiones abiertas, porque la época de
+  sesión se regenera en cada arranque (`src/admin/auth/plugin.ts`).
+- [x] Brevo: IPv4 del VPS en «Seguridad → IPs autorizadas», correo de prueba recibido desde las
+  **dos** instancias y, después, bloqueo por IP de las claves SMTP activado y vuelto a probar.
+  Hecho el 2026-10-08 con [deploy/fase6-correo.sh](../deploy/fase6-correo.sh), que tiene tres
+  subcomandos repetibles: `ip` (IPv4 de salida del contenedor), `probar` (envío real por la vía
+  de avisos) y `forma` (describe la forma de `SMTP_URL` **sin mostrar el valor**).
+  - La prueba va **desde dentro del contenedor**, no con `swaks` desde el anfitrión: la IP que
+    Brevo compara es la del proceso que envía, y el anfitrión tiene IPv6 (`smtp-relay.brevo.com`
+    publica AAAA), así que una prueba desde el host podría salir por una dirección que en
+    producción no se usa nunca. Comprobado que el contenedor sale por la IPv4 del VPS.
+
+**Lo que salió mal en la fase 6, para no repetirlo:**
+
+- **La clave SMTP se copió con el servidor pegado detrás.** En Brevo, el valor de la clave y el
+  host `smtp-relay.brevo.com` están juntos en la misma pantalla y se arrastran de una vez. Lo
+  guardado en Bitwarden era `xsmtpsib-…@smtp-relay.brevo.com`, así que la `SMTP_URL` acababa con
+  el host dos veces y la contraseña que viajaba llevaba basura. La clave real son **90
+  caracteres**: `xsmtpsib-` + hexadecimal + `-` + un bloque corto, **sin ningún símbolo** salvo
+  los guiones. Si dentro de lo que crees que es la clave hay un `@`, un `:` o un `/`, te has
+  pasado de corte.
+- **Un `535 Authentication failed` no distingue entre credencial mala y bloqueo por IP.** El
+  bloqueo estaba activado desde el principio (contra lo que dice §2.5), así que el primer fallo
+  admitía las dos explicaciones. Se desenreda **desactivando el bloqueo para claves SMTP**: si
+  entonces envía, era la IP; si sigue en 535, es la credencial. La pestaña «Direcciones IP no
+  autorizadas» marcaba **0** pese a estar rechazando, así que no sirve para descartar.
+- **El aviso del `%40` de §2.5 es inofensivo, no es causa de nada.** Comprobado contra el propio
+  parser el 2026-10-08: `new URL` parte el userinfo por el **último** `@` y el usuario por el
+  **primer** `:`, de modo que `882a5d001@smtp-brevo.com` se lee igual con `%40` que sin él.
+  Codificarlo no estorba, pero buscar ahí la causa de un 535 es perder el rato.
+- **Editar el `.env` no basta: hay que recrear el contenedor.** Docker lee el `env_file` al
+  crearlo, no en caliente. El indicador está en la salida del `up -d`: `Running` significa que
+  Compose no vio cambios (el contenido del `env_file` entra en su hash de configuración) y
+  `Started`/`Recreated` que sí. Dos rondas de diagnóstico se fueron en leer huellas idénticas
+  sin caer en que el fichero no se había tocado.
+- **`nano` sin `-w` invita a romper la línea.** Ajusta visualmente las URL largas y parecen
+  varias líneas; al «limpiar» lo sobrante se fue el `smtp://…@` entero en una instancia y
+  quedó `smtp:` pegado a la clave en la otra. Con `sudo nano -w` la línea se desplaza en
+  horizontal y se ve que es una sola.
+- **Una `SMTP_URL` inválida deja el contenedor en `Restarting`, no en `unhealthy`.** El proceso
+  arranca, Zod lo rechaza (`src/config/env.ts:151`) y la política de reinicio lo relanza. El
+  mensaje nombra la variable y **no** el valor, así que esos registros se pueden leer sin
+  filtrar secretos. Como en la fase 5, la validación ocurre antes que las migraciones: las bases
+  de datos no corren ningún riesgo.
+- **Un error mío en el script de reparación.** Un `for … else` en Python ejecuta el `else`
+  cuando el bucle termina **sin** `break`, que era justo el caso bueno; el `continue` de ese
+  `else` se saltaba la escritura. Imprimía el resultado correcto y no guardaba nada. Se arregló
+  con un indicador explícito.
 
 ### Fase 7 · Datos ficticios (Yo preparo, tú revisas)
 - [ ] Teléfono y correo reales de contacto y de avisos (los das aquí, no antes).
@@ -612,15 +663,13 @@ clave es la contraseña. El bloqueo por IP sigue **desactivado**, que es lo corr
 
 ## 6. Qué tienes que traer a la próxima sesión
 
-Actualizado el 2026-10-08, al cerrar la fase 5. Lo que queda de la fase 6 es poco: entrar en
-`/admin` de las dos instancias con su contraseña de Bitwarden, y lo de Brevo (IP autorizada, correo
-de prueba y, solo después, el bloqueo por IP de las claves SMTP).
+Actualizado el 2026-10-08, al cerrar la fase 6. Lo siguiente es la **fase 7**, que empieza con
+datos que solo tienes tú:
 
-Para más adelante:
-
-- Tu teléfono y correo reales (fase 7).
-- Las **dos claves SMTP de Brevo** (`chatbot-viajes` y `chatbot-restaurante`) ya están creadas,
-  activas y guardadas en Bitwarden (ver fase 4).
+- Tu teléfono y correo reales de contacto y de avisos.
+- Las **dos claves SMTP de Brevo** quedan funcionando y probadas de punta a punta. **Corrige lo
+  guardado en Bitwarden**: el valor incluía el servidor pegado a la clave, que es lo que costó
+  toda la fase 6. Solo el token `xsmtpsib-…` de 90 caracteres, y el host aparte.
 
 ### Proveedor del modelo configurable (Gemini), decidido el 2026-10-08
 
