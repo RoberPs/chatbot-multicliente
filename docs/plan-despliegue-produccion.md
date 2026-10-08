@@ -25,7 +25,7 @@ venderlo:
 | Instancia 1 | Agencia de viajes, datos ficticios a partir de la homepage de `globalviajes2` |
 | Instancia 2 | Restaurante, datos ficticios a partir de `ProjectoRestaurante` (carta, etc.) |
 | Prueba del chat del restaurante | Página `test-restaurante.html` en el mismo proyecto de Pages, con su origen permitido en la instancia 2 |
-| Servidor | VPS nuevo en una cuenta nueva de Hetzner, solo para el chatbot (el de n8n se abandona) |
+| Servidor | VPS nuevo en una cuenta nueva de Hetzner, solo para el chatbot |
 | Tamaño | El más pequeño de 2 vCPU y 4 GB (CX22 o su equivalente actual en el catálogo) |
 | Sistema | Ubuntu 24.04 |
 | Base de datos | PostgreSQL 16 en el mismo VPS (Hetzner no ofrece PostgreSQL gestionado): una BD y un usuario por instancia |
@@ -81,7 +81,6 @@ venderlo:
 | `automatizacionro.work` (y `www`) | Cloudflare Pages: front de `globalviajes2` con el chat de la instancia 1 |
 | `viajes.automatizacionro.work` | VPS: instancia 1 (agencia). Panel en `/admin`, chat en `/chat` |
 | `restaurante.automatizacionro.work` | VPS: instancia 2 (restaurante). Panel en `/admin` |
-| `n8n.automatizacionro.work` | Registro `A` heredado de `91.99.98.230`. **Se elimina** (fase 5, con tu OK) |
 
 ```
 Navegador ─► Cloudflare (proxy, TLS) ─► Caddy (VPS, :443) ─► 127.0.0.1:PORT ─► contenedor de la instancia
@@ -474,7 +473,11 @@ clave es la contraseña. El bloqueo por IP sigue **desactivado**, que es lo corr
 
 ### Fase 5 · Red y HTTPS (Yo preparo, tú aplicas)
 - [ ] Registros `A` en Cloudflare para `viajes` y `restaurante` hacia la IP del VPS, con proxy.
-- [ ] **Con tu OK**: borrar el registro `n8n` y el servidor viejo, si ya no lo usas.
+- [ ] Borrar el registro `A` heredado de `n8n`. **Resuelto el 2026-10-08**: ni el servidor ni
+  la cuenta vieja de Hetzner existen ya, así que no hay nada que rescatar y el registro queda
+  apuntando a una IP que Hetzner puede reasignar a otro cliente (se comprobó: sin respuesta en
+  ningún puerto y Cloudflare devolviendo 522). Borrarlo es lo único que queda y cierra ese
+  riesgo de apropiación del subdominio.
 - [ ] Cloudflare: SSL **Full (strict)**.
 - [ ] Caddy con certificado propio de Let's Encrypt, que **sustituye** `X-Forwarded-For` por
   `CF-Connecting-IP`.
@@ -551,8 +554,6 @@ en APTO. La segunda clave de Anthropic ya está creada y guardada.
 Para más adelante:
 
 - Tu teléfono y correo reales (fase 7).
-- Tu visto bueno para **borrar el registro `n8n`** y el servidor viejo (fase 5): sigue apuntando al
-  proxy de Cloudflare y hay que confirmar que no queda nada que rescatar ahí.
 - Las **dos claves SMTP de Brevo** (`chatbot-viajes` y `chatbot-restaurante`) ya están creadas,
   activas y guardadas en Bitwarden (ver fase 4).
 
@@ -598,7 +599,6 @@ Decisiones abiertas, ninguna bloqueante:
 - **Gasto de Anthropic**: una clave compartida por 2 instancias; poner un límite mensual.
 - **Docker no reinicia un contenedor `unhealthy`**: mirar por qué antes de reiniciar (receta, paso 10).
 - **Brevo gratuito**: 300 correos al día para todas las instancias que compartan la cuenta.
-- **Servidor de n8n**: se pierde cuando borres la cuenta vieja; si hay algo que conservar, sácalo antes.
 - **Origen del chat**: si el origen no está en la lista del panel, el widget no funciona (CORS).
 - **Migraciones publicadas**: no se editan nunca; cualquier cambio de esquema es una migración nueva.
 
