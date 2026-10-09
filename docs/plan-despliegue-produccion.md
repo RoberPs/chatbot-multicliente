@@ -1027,7 +1027,8 @@ tener presente:
   guardado en Bitwarden**: el valor incluía el servidor pegado a la clave, que es lo que costó
   toda la fase 6. Solo el token `xsmtpsib-…` de 90 caracteres, y el host aparte.
 - Siguen **los commits de `main` sin subir**, por decisión: se sube todo al terminar las fases.
-  Con el cierre de la fase 9 son 7: las fases 7 y 8 tampoco se habían anotado en su momento.
+  Incluyen las anotaciones de las fases 7, 8 y 9 y el script de pruebas; el recuento exacto lo da
+  `git log origin/main..HEAD --oneline`.
 
 ### Proveedor del modelo configurable (Gemini), decidido el 2026-10-08
 
