@@ -76,7 +76,14 @@ describe('/health con la BD real', () => {
     });
   });
 
-  it('BD parada (conexión rechazada) → 503 degraded en ≤ 3 s, applied null (SC-004)', async () => {
+  /**
+   * 016 (FR-003): la BD que **no contesta** ya no es `degraded` (503) sino `db_unavailable` con
+   * **200**. El proceso vive y sirve; con 503, la sonda del contenedor daría la instancia por
+   * enferma y la política de reinicio la relanzaría en mitad del corte, que es el bucle de
+   * reinicios que la 016 elimina. `degraded` queda para la BD que **sí** contesta con un
+   * esquema que no es el esperado, que es lo que de verdad necesita al operador.
+   */
+  it('BD parada (conexión rechazada) → 200 db_unavailable en ≤ 3 s, applied null (SC-004)', async () => {
     const t = await database();
     const closed = createServer();
     await new Promise<void>((r) => closed.listen(0, '127.0.0.1', r));
@@ -90,12 +97,12 @@ describe('/health con la BD real', () => {
     const started = Date.now();
     const res = await getHealth(app, fresh());
     expect(Date.now() - started).toBeLessThanOrEqual(3000);
-    expect(res.statusCode).toBe(503);
-    expect(res.json()).toMatchObject({ status: 'degraded', schema: { applied: null } });
+    expect(res.statusCode).toBe(200);
+    expect(res.json()).toMatchObject({ status: 'db_unavailable', schema: { applied: null } });
     expect(res.body).not.toMatch(/ECONNREFUSED|127\.0\.0\.1/);
   });
 
-  it('BD colgada (acepta y no contesta) → 503 degraded en ≤ 3 s', async () => {
+  it('BD colgada (acepta y no contesta) → 200 db_unavailable en ≤ 3 s', async () => {
     const t = await database();
     const sockets: Socket[] = [];
     const blackHole = createServer((socket) => sockets.push(socket));
@@ -106,8 +113,8 @@ describe('/health con la BD real', () => {
     const started = Date.now();
     const res = await getHealth(app, fresh());
     expect(Date.now() - started).toBeLessThanOrEqual(3000);
-    expect(res.statusCode).toBe(503);
-    expect(res.json()).toMatchObject({ status: 'degraded', schema: { applied: null } });
+    expect(res.statusCode).toBe(200);
+    expect(res.json()).toMatchObject({ status: 'db_unavailable', schema: { applied: null } });
     for (const s of sockets) s.destroy();
   });
 
@@ -245,7 +252,8 @@ describe('solo lectura y sin competir con el bot (FR-006)', () => {
       expect(answeredAt - started).toBeLessThan(1500);
 
       const health = await healthDone;
-      expect(health.status).toBe(503);
+      // 016 (FR-003): el sondeo bloqueado da `db_unavailable` con 200, no 503.
+      expect(health.status).toBe(200);
       expect(answeredAt).toBeLessThan(health.at);
     } finally {
       await locker.query('rollback').catch(() => undefined);

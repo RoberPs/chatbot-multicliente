@@ -156,7 +156,18 @@ describe('restaurar el aspecto original (US6)', () => {
     new URL('../../fixtures/web-chat/frame-004.html', import.meta.url),
     'utf8',
   );
-  const normalize = (html: string) => html.replace(/>\s+</g, '><').replace(/\s+/g, ' ').trim();
+  /**
+   * Normaliza el espacio en blanco y quita `data-contact`: desde la 016 (FR-013) el contacto
+   * viaja en la página para que la interfaz pueda ofrecerlo aunque el servidor no conteste, y es
+   * **el único** añadido de la 016 al HTML del frame. Se quita aquí para que la comparación con
+   * el HTML de la 004 siga valiendo byte a byte en todo lo demás.
+   */
+  const normalize = (html: string) =>
+    html
+      .replace(/ data-contact="[^"]*"/g, '')
+      .replace(/>\s+</g, '><')
+      .replace(/\s+/g, ' ')
+      .trim();
 
   it('borra la fila y las imágenes en cascada; las URL dan 404 y el frame vuelve a ser el de la 004', async () => {
     bot = await createTestBot(t, {
