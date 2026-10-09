@@ -174,11 +174,16 @@ export type BotEvent =
   | { event: 'db_outage_recovered'; durationMs: number; failures: number }
   /** Aviso degradado con contacto enviado a un cliente final durante el corte (FR-002). */
   | { event: 'db_degraded_reply_sent'; channel: Channel }
-  /** No había nada que enviar, o este cliente ya fue avisado en este corte. */
+  /**
+   * Había que avisar a este cliente y no se pudo. Como mucho **uno por cliente y corte**: el
+   * aviso se reserva antes de comprobar nada, así que los reintentos de la plataforma no
+   * escriben nada (FR-014). Un canal sin remitente no genera anotación: es una decisión de
+   * diseño del canal, no un suceso.
+   */
   | {
       event: 'db_degraded_reply_skipped';
       channel: Channel;
-      reason: 'no_contact' | 'no_sender' | 'already_notified' | 'send_failed';
+      reason: 'no_contact' | 'send_failed';
     }
   | HandoffEvent;
 

@@ -233,10 +233,10 @@ describe('corte real de la base de datos (FR-010)', () => {
     expect(outbound[0]?.body).toContain('911');
 
     const sent = events('db_degraded_reply_sent');
-    const skipped = events('db_degraded_reply_skipped');
     expect(sent.filter((e) => e.via === 'whatsapp')).toHaveLength(1);
-    // Los tres intentos siguientes quedan como omitidos por «ya avisado» (cadencia de FR-002).
-    expect(skipped.filter((e) => e.reason === 'already_notified')).toHaveLength(3);
+    // Y los tres reintentos no dejan ninguna anotación: el registro no crece con las peticiones
+    // (FR-014). Cuatro entradas del webhook, una sola línea.
+    expect(events('db_degraded_reply_skipped')).toEqual([]);
   });
 
   it('la sesión del panel abierta antes del corte sigue valiendo', async () => {

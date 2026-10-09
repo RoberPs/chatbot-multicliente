@@ -54,7 +54,15 @@ function setup({
     emergencyContactPhone,
     senders: sender ? { whatsapp: { sendText } } : {},
   });
-  return { intake, sendText, events, watcher, inner };
+  return {
+    intake,
+    sendText,
+    events,
+    watcher,
+    inner,
+    /** Solo las anotaciones del aviso degradado: el vigilante usa el mismo registro. */
+    replyEvents: () => events.filter((e) => e.event.startsWith('db_degraded_reply_')),
+  };
 }
 
 describe('withDegradedReply', () => {
@@ -78,7 +86,12 @@ describe('withDegradedReply', () => {
     t.watcher.close();
   });
 
-  it('avisa una sola vez por cliente y corte, aunque insista o Meta reintente', async () => {
+  /**
+   * FR-014: el registro no puede crecer con el número de peticiones. Durante un corte largo la
+   * plataforma reintenta la entrega muchas veces, así que los reintentos **no escriben nada**:
+   * el aviso se reserva antes de comprobar cualquier otra cosa.
+   */
+  it('avisa una sola vez por cliente y corte, y los reintentos no registran nada', async () => {
     const t = setup();
     for (let i = 0; i < 5; i++) {
       await expect(
@@ -86,9 +99,21 @@ describe('withDegradedReply', () => {
       ).rejects.toThrow();
     }
     expect(t.sendText).toHaveBeenCalledTimes(1);
-    const skipped = t.events.filter((e) => e.event === 'db_degraded_reply_skipped');
-    expect(skipped).toHaveLength(4);
-    expect(skipped[0]).toMatchObject({ reason: 'already_notified' });
+    // Una sola anotación: la del envío. Cinco peticiones, una línea.
+    expect(t.replyEvents()).toHaveLength(1);
+    expect(t.replyEvents()[0]).toMatchObject({
+      event: 'db_degraded_reply_sent',
+      channel: 'whatsapp',
+    });
+    t.watcher.close();
+  });
+
+  it('cien reintentos siguen dejando una sola anotación (FR-014)', async () => {
+    const t = setup();
+    for (let i = 0; i < 100; i++) {
+      await expect(t.intake.handle([event()])).rejects.toThrow();
+    }
+    expect(t.replyEvents()).toHaveLength(1);
     t.watcher.close();
   });
 
@@ -113,26 +138,28 @@ describe('withDegradedReply', () => {
     t.watcher.close();
   });
 
-  it('sin teléfono de emergencia no envía nada y lo registra', async () => {
+  it('sin teléfono de emergencia no envía nada y lo registra una sola vez', async () => {
     const t = setup({ emergencyContactPhone: null });
-    await expect(t.intake.handle([event()])).rejects.toThrow();
+    for (let i = 0; i < 4; i++) {
+      await expect(t.intake.handle([event()])).rejects.toThrow();
+    }
     expect(t.sendText).not.toHaveBeenCalled();
-    expect(t.events).toContainEqual({
-      event: 'db_degraded_reply_skipped',
-      channel: 'whatsapp',
-      reason: 'no_contact',
-    });
+    // Una sola anotación para cuatro peticiones (FR-014).
+    expect(t.replyEvents()).toEqual([
+      { event: 'db_degraded_reply_skipped', channel: 'whatsapp', reason: 'no_contact' },
+    ]);
     t.watcher.close();
   });
 
-  it('sin remitente del canal no envía nada y lo registra', async () => {
+  /**
+   * Un canal sin remitente es una decisión de diseño —el chat web y el playground recogen su
+   * respuesta en la propia petición del cliente—, no un suceso: no se registra nada, porque si
+   * no cada petición dejaría una línea (FR-014).
+   */
+  it('sin remitente del canal no envía nada y no registra nada', async () => {
     const t = setup({ sender: false });
     await expect(t.intake.handle([event()])).rejects.toThrow();
-    expect(t.events).toContainEqual({
-      event: 'db_degraded_reply_skipped',
-      channel: 'whatsapp',
-      reason: 'no_sender',
-    });
+    expect(t.replyEvents()).toEqual([]);
     t.watcher.close();
   });
 
@@ -167,7 +194,7 @@ describe('withDegradedReply', () => {
     const t = setup();
     t.sendText.mockRejectedValueOnce(new Error('Meta no responde'));
     await expect(t.intake.handle([event()])).rejects.toMatchObject({ code: 'ECONNREFUSED' });
-    expect(t.events).toContainEqual({
+    expect(t.replyEvents()).toContainEqual({
       event: 'db_degraded_reply_skipped',
       channel: 'whatsapp',
       reason: 'send_failed',

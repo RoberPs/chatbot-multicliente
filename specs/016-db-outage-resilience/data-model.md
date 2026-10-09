@@ -53,7 +53,15 @@ down --sondeo "select 1" con éxito-->             up
 | `db_outage_ongoing` | `elapsedMs`, `failures` | cada 5 min de corte |
 | `db_outage_recovered` | `durationMs`, `failures` | una vez al volver la base |
 | `db_degraded_reply_sent` | `channel`, `customer` (seudónimo) | aviso degradado enviado (R5) |
-| `db_degraded_reply_skipped` | `channel`, `reason` (`no_contact` \| `no_sender` \| `already_notified`) | no había nada que enviar |
+| `db_degraded_reply_skipped` | `channel`, `reason` (`no_contact` \| `send_failed`) | había que avisar y no se pudo |
+
+**Corregido durante la implementación** (FR-014): los motivos `no_sender` y `already_notified`
+**no se registran**. El aviso se reserva antes de comprobar cualquier otra cosa, así que todo lo
+que venga después ocurre como mucho una vez por cliente y corte; y un canal sin remitente —el
+chat web y el playground, cuyas respuestas recoge la propia petición del cliente— es una decisión
+de diseño, no un suceso. Si se registraran, cada reintento de la plataforma durante un corte
+largo escribiría una anotación y el volumen del registro crecería con el número de peticiones,
+que es justo lo que FR-014 prohíbe y SC-008 comprueba.
 
 ---
 

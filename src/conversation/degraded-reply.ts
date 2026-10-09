@@ -70,25 +70,35 @@ export function withDegradedReply(intake: Intake, deps: DegradedReplyDeps): Inta
   };
 }
 
+/**
+ * El orden de las comprobaciones importa, y es lo que mantiene acotado el registro (FR-014).
+ *
+ * Durante un corte largo, la plataforma reintenta la entrega del mismo mensaje muchas veces. Si
+ * cada reintento pudiera escribir una anotación, el volumen del registro crecería con el número
+ * de peticiones, que es exactamente lo que FR-014 prohíbe y lo que SC-008 comprueba. Así que:
+ *
+ * 1. sin remitente, nada que hacer y **nada que registrar**: es una decisión de diseño del canal
+ *    —el chat web y el playground no tienen remitente porque sus respuestas las recoge la propia
+ *    petición del cliente—, no un suceso;
+ * 2. **se reserva el aviso antes de cualquier otra cosa**, así que todo lo que venga después
+ *    ocurre como mucho una vez por cliente y corte, salga bien o mal;
+ * 3. solo entonces se mira si hay contacto y se intenta enviar.
+ *
+ * El resultado es que el registro queda acotado por el número de clientes distintos del corte,
+ * nunca por el de peticiones ni por su duración.
+ */
 async function notify(event: InboundEvent, deps: DegradedReplyDeps): Promise<void> {
   const { channel, channelUserId } = event;
-  const skip = (reason: 'no_contact' | 'no_sender' | 'already_notified' | 'send_failed') => {
+  const skip = (reason: 'no_contact' | 'send_failed') => {
     deps.activityLog.log({ event: 'db_degraded_reply_skipped', channel, reason });
   };
 
   const sender = deps.senders[channel];
-  // El chat web y el playground no tienen remitente a propósito: no es un descuido.
-  if (!sender) {
-    skip('no_sender');
-    return;
-  }
+  if (!sender) return;
+  // Reserva el aviso: `false` si este cliente ya lo recibió en este corte (FR-002).
+  if (!deps.watcher.markNotified(`${channel}:${channelUserId}`)) return;
   if (deps.emergencyContactPhone === null) {
     skip('no_contact');
-    return;
-  }
-  // Reserva el aviso: `false` si este cliente ya lo recibió en este corte (FR-002).
-  if (!deps.watcher.markNotified(`${channel}:${channelUserId}`)) {
-    skip('already_notified');
     return;
   }
 

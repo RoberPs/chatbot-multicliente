@@ -82,7 +82,14 @@ export async function startOwnPostgres(): Promise<OwnPostgres> {
     return exitCode === 0;
   };
 
-  /** Espera a que el servidor llegue al estado pedido, sondeando cada 200 ms. */
+  /**
+   * Confirma que el servidor llegó al estado pedido.
+   *
+   * `pg_ctl -w` ya espera por su cuenta, así que esto normalmente acierta en el primer intento y
+   * no hay que sondear. Se sondea **cada segundo**, no más rápido: cada comprobación es un
+   * `docker exec`, que en Windows cuesta bastante, y sondear en bucle apretado le quitaba CPU a
+   * los demás proyectos de la suite, que corren en paralelo con este.
+   */
   const waitUntil = async (up: boolean, timeoutMs = 60_000): Promise<void> => {
     const deadline = Date.now() + timeoutMs;
     for (;;) {
@@ -90,7 +97,7 @@ export async function startOwnPostgres(): Promise<OwnPostgres> {
       if (Date.now() > deadline) {
         throw new Error(`PostgreSQL no llegó a estar ${up ? 'arriba' : 'abajo'} en ${timeoutMs} ms`);
       }
-      await new Promise((r) => setTimeout(r, 200));
+      await new Promise((r) => setTimeout(r, 1000));
     }
   };
 
