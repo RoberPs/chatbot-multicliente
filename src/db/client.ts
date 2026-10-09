@@ -120,20 +120,62 @@ const UNAVAILABLE_CODES = new Set([
 ]);
 
 /**
- * «La base de datos no contesta», mirando el error y sus `cause` hasta 5 niveles, como
- * `isPoolBusy`, porque Drizzle envuelve los errores de `pg`.
+ * Textos fijos de `pg` para los que **no da ningún código**, así que por código no se pueden
+ * reconocer. Son la forma en la que aparece una conexión que ya estaba abierta y se ha muerto:
+ * la primera, al reutilizar del pool una conexión ociosa que el servidor ya cerró; la segunda,
+ * al usar un cliente que arrastra un fallo de conexión.
+ *
+ * Esta feature se propuso clasificar **solo por código**, y lo cumple en todo lo que tiene
+ * código. Estas dos son la excepción inevitable, por el mismo motivo que las dos que ya existían
+ * en el núcleo (`isPoolBusy` aquí y `PG_NO_SSL` en `src/config/database-url.ts`): `pg` no da
+ * código. Los textos son constantes de `pg`, no llevan nada de la dirección ni de las
+ * credenciales (FR-012), y lo descubrió la prueba del corte real: es exactamente como llega el
+ * fallo en producción.
+ */
+const UNAVAILABLE_MESSAGES = [
+  'Connection terminated unexpectedly',
+  'Client has encountered a connection error and is not queryable',
+];
+
+/**
+ * «La base de datos no contesta», mirando el error, sus `cause` y los `errors` de un
+ * `AggregateError` hasta 5 niveles, porque Drizzle envuelve los errores de `pg`.
  *
  * No distingue causas: para esta corrección basta saber que no hay servicio. Quien lo use decide
  * qué hacer —no morir, avisar al vigilante, responder con contacto—, y nunca muestra el error.
  */
 export function isDbUnavailable(error: unknown): boolean {
   if (isPoolBusy(error)) return true;
-  for (let e: unknown = error, depth = 0; e instanceof Error && depth < 5; depth++) {
-    const code = (e as { code?: unknown }).code;
+  return chain(error).some((e) => {
+    const code = (e as { code?: unknown } | null)?.code;
     if (typeof code === 'string' && UNAVAILABLE_CODES.has(code)) return true;
-    e = e.cause;
-  }
-  return false;
+    // Solo cuando `pg` no da código: si lo da, manda el código.
+    return (
+      code === undefined &&
+      e instanceof Error &&
+      UNAVAILABLE_MESSAGES.some((m) => e.message.includes(m))
+    );
+  });
+}
+
+/**
+ * El error y sus causas: `cause` y, **además**, los `errors` de un `AggregateError`.
+ *
+ * Los dos hacen falta. `cause` es como envuelve Drizzle los errores de `pg`; los `errors` son
+ * como llega el fallo real de `pool.connect()` cuando el servidor no está, porque Node intenta
+ * IPv4 e IPv6 y agrupa los dos `ECONNREFUSED` en un `AggregateError` cuyo propio `code` no dice
+ * nada. Mirar solo `cause` dejaba fuera justamente el caso de producción: lo descubrió la prueba
+ * del corte real (FR-010), no las unitarias. Es el mismo recorrido que ya hacía `chain()` en
+ * `src/config/database-url.ts` para los errores de TLS.
+ */
+function chain(error: unknown, depth = 0): unknown[] {
+  if (depth > 4 || error === null || typeof error !== 'object') return [error];
+  const e = error as { cause?: unknown; errors?: unknown };
+  const nested = [
+    ...(e.cause === undefined ? [] : [e.cause]),
+    ...(Array.isArray(e.errors) ? (e.errors as unknown[]) : []),
+  ];
+  return [error, ...nested.flatMap((n) => chain(n, depth + 1))];
 }
 
 export async function closeDb(db: Db): Promise<void> {

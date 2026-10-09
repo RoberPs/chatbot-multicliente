@@ -8,15 +8,24 @@
  *
  * Por qué se para **por dentro** con `pg_ctl` y no con `container.stop()`: Docker publica el
  * puerto del contenedor en un puerto libre del equipo, y al volver a arrancar el contenedor ese
- * puerto cambia. Con `pg_ctl` el contenedor sigue vivo, el puerto publicado no se mueve y la
- * instancia bajo prueba conserva su `DATABASE_URL` durante todo el corte: es lo que permite
- * comprobar también la recuperación sin reiniciar nada (FR-004).
+ * puerto cambia. Con `pg_ctl` el puerto publicado no se mueve y la instancia bajo prueba
+ * conserva su `DATABASE_URL` durante todo el corte: es lo que permite comprobar también la
+ * recuperación sin reiniciar nada (FR-004).
+ *
+ * Y por qué se cambia el proceso principal del contenedor: en la imagen oficial, PostgreSQL
+ * **es** el proceso principal, así que pararlo mata el contenedor y con él el puerto publicado.
+ * Aquí el proceso principal es un `sleep` que no se va a morir nunca, y PostgreSQL arranca a su
+ * lado con el mismo script de la imagen (`docker-entrypoint.sh`, que hace el `initdb` y crea el
+ * usuario y la base de la primera vez). Así el contenedor sobrevive a que su PostgreSQL se
+ * pare, que es justamente lo que esta prueba necesita reproducir.
  */
-import { PostgreSqlContainer, type StartedPostgreSqlContainer } from '@testcontainers/postgresql';
+import { GenericContainer, Wait, type StartedTestContainer } from 'testcontainers';
 
 /** `PGDATA` de la imagen oficial; `pg_ctl` solo funciona como el usuario `postgres`. */
 const PGDATA = '/var/lib/postgresql/data';
 const AS_POSTGRES = { user: 'postgres' } as const;
+const USER = 'postgres';
+const PASSWORD = 'postgres';
 
 export interface OwnPostgres {
   /** URL de administración (base `postgres`), con el puerto publicado, estable todo el test. */
@@ -34,7 +43,7 @@ export interface OwnPostgres {
 }
 
 async function run(
-  container: StartedPostgreSqlContainer,
+  container: StartedTestContainer,
   command: string[],
   { allowFailure = false } = {},
 ): Promise<{ exitCode: number; output: string }> {
@@ -48,8 +57,25 @@ async function run(
 
 /** Levanta el contenedor propio. Pensado para un `beforeAll`, con `stop()` en el `afterAll`. */
 export async function startOwnPostgres(): Promise<OwnPostgres> {
-  const container = await new PostgreSqlContainer('postgres:16').start();
-  const adminUrl = container.getConnectionUri();
+  const container = await new GenericContainer('postgres:16')
+    .withEnvironment({
+      POSTGRES_USER: USER,
+      POSTGRES_PASSWORD: PASSWORD,
+      POSTGRES_DB: 'postgres',
+    })
+    .withExposedPorts(5432)
+    // `sleep infinity` es el proceso principal; PostgreSQL arranca a su lado y puede pararse
+    // sin que el contenedor —ni el puerto publicado— se vayan con él.
+    .withEntrypoint(['/bin/bash', '-c'])
+    .withCommand(['docker-entrypoint.sh postgres & sleep infinity'])
+    // El `initdb` de la primera vez tarda: se espera a que el puerto escuche de verdad.
+    .withWaitStrategy(Wait.forListeningPorts())
+    .withStartupTimeout(120_000)
+    .start();
+
+  const host = container.getHost();
+  const port = container.getMappedPort(5432);
+  const adminUrl = `postgres://${USER}:${PASSWORD}@${host}:${String(port)}/postgres`;
 
   const isUp = async (): Promise<boolean> => {
     const { exitCode } = await run(container, ['pg_isready', '-q'], { allowFailure: true });
@@ -57,7 +83,7 @@ export async function startOwnPostgres(): Promise<OwnPostgres> {
   };
 
   /** Espera a que el servidor llegue al estado pedido, sondeando cada 200 ms. */
-  const waitUntil = async (up: boolean, timeoutMs = 30_000): Promise<void> => {
+  const waitUntil = async (up: boolean, timeoutMs = 60_000): Promise<void> => {
     const deadline = Date.now() + timeoutMs;
     for (;;) {
       if ((await isUp()) === up) return;
@@ -68,13 +94,13 @@ export async function startOwnPostgres(): Promise<OwnPostgres> {
     }
   };
 
+  // La primera vez, `pg_isready` puede responder antes de que el script termine de crear el
+  // usuario y la base: se espera a que esté todo listo antes de devolver el control.
+  await waitUntil(true);
+
   return {
     adminUrl,
-    url: (database) => {
-      const u = new URL(adminUrl);
-      u.pathname = `/${database}`;
-      return u.toString();
-    },
+    url: (database) => `postgres://${USER}:${PASSWORD}@${host}:${String(port)}/${database}`,
     // `-m fast`: corta las conexiones abiertas en lugar de esperar a que se cierren, que es lo
     // que hace un servidor que desaparece de verdad.
     stopServer: async () => {

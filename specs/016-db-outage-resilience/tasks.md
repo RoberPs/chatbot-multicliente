@@ -35,9 +35,17 @@ reconstrucción de direcciones— va en la fase 2, que las bloquea.
   **no sube** y no hay actualizador nuevo (R10).
 - **Sin variables de entorno nuevas ni cambios de configuración**: las dos instancias desplegadas
   no tocan sus ficheros.
-- Los errores de `pg` y de Node se clasifican **por código**, nunca por su texto. Las dos únicas
-  comparaciones de texto que existen hoy (`isPoolBusy` y `PG_NO_SSL`) se mantienen; no se añade
-  ninguna.
+- Los errores de `pg` y de Node se clasifican **por código** siempre que lo tengan. Las dos
+  comparaciones de texto que ya existían (`isPoolBusy` y `PG_NO_SSL`) se mantienen.
+  **Corregido durante la implementación**: hubo que añadir una tercera excepción, por el mismo
+  motivo que las dos anteriores —`pg` no da código—. Al reutilizar del pool una conexión ociosa
+  que el servidor ya cerró, `pg` lanza un `Error` plano con el texto
+  `Connection terminated unexpectedly` y **sin `code`**, que es exactamente como llega el fallo
+  en producción; se añade también
+  `Client has encountered a connection error and is not queryable`. Los dos son constantes de
+  `pg` y no llevan nada de la dirección ni de las credenciales (FR-012). Lo destapó la prueba del
+  corte real (T010), no las unitarias: es la segunda vez en esta feature que la prueba de verdad
+  encuentra lo que la simulada no.
 - Ningún mensaje, informe, registro ni salida de prueba muestra una dirección de base de datos ni
   parte de ella (usuario, contraseña, host, base), ni una ruta de socket (FR-012).
 - El **arranque sin base de datos sigue terminando el proceso**: todo lo de aquí cambia el

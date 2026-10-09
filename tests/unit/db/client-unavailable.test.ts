@@ -58,6 +58,48 @@ describe('isDbUnavailable', () => {
     expect(isDbUnavailable(wrap(coded('ECONNREFUSED'), 9))).toBe(false);
   });
 
+  /**
+   * Así llega el fallo de verdad cuando el servidor no está: Node intenta IPv4 e IPv6 y agrupa
+   * los dos `ECONNREFUSED` en un `AggregateError` cuyo propio `code` no dice nada. Mirar solo
+   * `cause` dejaba fuera el caso de producción, y lo destapó la prueba del corte real, no estas.
+   */
+  it('atraviesa los errors de un AggregateError', () => {
+    const aggregate = new AggregateError(
+      [coded('ECONNREFUSED', 'connect ECONNREFUSED 127.0.0.1:5432'), coded('ECONNREFUSED')],
+      'no se pudo conectar',
+    );
+    expect(isDbUnavailable(aggregate)).toBe(true);
+    // Y también envuelto por Drizzle, que es como llega al dominio.
+    expect(isDbUnavailable(new Error('fallo de consulta', { cause: aggregate }))).toBe(true);
+  });
+
+  it('un AggregateError cuyos errores no son de disponibilidad no cuenta', () => {
+    expect(isDbUnavailable(new AggregateError([coded('42601'), new Error('x')], 'varios'))).toBe(
+      false,
+    );
+  });
+
+  /**
+   * Los dos textos para los que `pg` no da código. Es como llega el fallo en producción cuando
+   * se reutiliza una conexión ociosa que el servidor ya cerró, y por eso hace falta mirarlos:
+   * lo destapó la prueba del corte real, no estas.
+   */
+  it.each([
+    'Connection terminated unexpectedly',
+    'Client has encountered a connection error and is not queryable',
+  ])('reconoce el texto sin código de pg: %s', (message) => {
+    expect(isDbUnavailable(new Error(message))).toBe(true);
+    // Y envuelto por Drizzle, que es como llega al dominio.
+    expect(
+      isDbUnavailable(new Error('Failed query: select 1', { cause: new Error(message) })),
+    ).toBe(true);
+  });
+
+  it('con código, manda el código: un texto parecido con código de sintaxis no cuenta', () => {
+    const e = Object.assign(new Error('Connection terminated unexpectedly'), { code: '42601' });
+    expect(isDbUnavailable(e)).toBe(false);
+  });
+
   const available: Array<[string, unknown]> = [
     ['error de sintaxis SQL', coded('42601')],
     ['violación de unicidad', coded('23505')],
