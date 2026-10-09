@@ -1,6 +1,6 @@
 {
   "name": "chatbotasesor",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "private": true,
   "description": "Núcleo del chatbot de WhatsApp para pequeños negocios: base de conocimiento y panel del operador",
   "type": "module",

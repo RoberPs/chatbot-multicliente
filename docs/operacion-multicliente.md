@@ -684,8 +684,20 @@ resultado esperado y cuándo **parar**. Contrato completo:
 
 Herramientas que usa:
 
-- **`GET /health`** en cada instancia. Sin credencial responde solo el estado (`200 {"status":"ok"}`,
-  o `503` con `degraded` / `not_ready`): sirve a un monitor o balanceador. Con
+- **`GET /health`** en cada instancia. Sin credencial responde solo el estado: `200` con `ok` y,
+  desde la 016, `200` con **`db_unavailable`**; `503` con `degraded` / `not_ready`. Sirve a un
+  monitor o balanceador.
+
+  **`db_unavailable` responde 200 a propósito** (016): la base de datos no contesta, pero el
+  proceso vive y sirve. Si diera 503, la sonda de la imagen marcaría la instancia como enferma,
+  la política de reinicio la relanzaría, el arranque intentaría migrar contra una base que sigue
+  sin estar y la instancia entraría en un bucle de reinicios con el proxy devolviendo 502: es
+  exactamente lo que pasaba antes de la 016. Durante un corte, `schema.applied` y `spendCap`
+  llegan en `null`; `coreVersion` y `schema.expected` siguen valiendo, porque se leen del núcleo
+  y no de la base de datos. **Qué hacer**: mirar el servidor PostgreSQL, no la instancia; cuando
+  la base vuelva, la instancia se recupera sola en menos de 30 s, sin reiniciar nada ni perder
+  las sesiones del panel. `degraded` (503) sigue queriendo decir que la base **sí** contesta pero
+  su esquema está vacío, es desconocido o no es el esperado: eso sí necesita al operador. Con
   `Authorization: Bearer <HEALTH_SECRET>` añade `instanceId`, `coreVersion`, el esquema aplicado y
   esperado y, desde la 010, `spendCap` (estado del tope de gasto: `none`, `normal`, `warning`,
   `reached`, o `null` si no se pudo leer; no cambia el estado). Nunca muestra datos del negocio,
@@ -970,7 +982,9 @@ Anota en el inventario la fecha, el fichero y el resultado de `db:verify --json`
 | `schema_newer` | La copia es de un núcleo más reciente: restaura con esa versión de la imagen o posterior |
 | `corrupted` | El fichero está dañado o incompleto: usa otra copia y revisa cómo se transfirió |
 | `instance_running` | Para la instancia antes de restaurar |
-| `verify_db_unavailable` | `BACKUP_VERIFY_URL` necesita un servidor accesible y un usuario con `CREATEDB` |
+| `verify_url_invalid` | (016) `BACKUP_VERIFY_URL` no se puede interpretar: revisa su formato en el fichero de entorno |
+| `verify_db_unavailable` | (016, estrechado) No se pudo **conectar** con el servidor de verificación: comprueba que está en marcha y accesible desde la instancia |
+| `verify_db_create_failed` | (016) Se conectó pero no se pudo **crear** la base temporal: `BACKUP_VERIFY_URL` necesita un usuario con `CREATEDB` |
 | `db_ca_unreadable` | No se puede leer el fichero de `sslrootcert` de la URL: móntalo (solo lectura) y revisa la ruta y sus permisos (salida 2 en `db:restore` y `db:verify`) |
 | `db_tls_untrusted` | El certificado del servidor no vale para el nombre de la URL o no lo firma una autoridad de confianza: revisa el nombre y `sslrootcert` |
 | `db_tls_unsupported` | La URL pide TLS y el servidor no lo acepta: activa TLS en PostgreSQL |
@@ -1003,6 +1017,8 @@ Estado tomado del [README](../README.md) a 2026-10-06.
 | 012 | Protección frente a abuso y saturación | Completada (2026-10-06) | **Era la propuesta P8**: tope de gasto obligatorio en producción que falla cerrado, transcripción dentro del tope y tope diario de WhatsApp ([sección 4.1](#41-consumo-precios-y-tope-en-el-panel-010)); límites de derivación con reenvíos agrupados ([sección 4.2](#42-límites-de-derivación-012)); límites por dirección (/64) en las rutas públicas y pool de BD acotado; login con retardo en lugar de bloqueo; plazos en las llamadas salientes y reintentos de lotes; importación acotada; una sola regla de enlaces; registros sin datos y arranque que rechaza secretos débiles ([sección 5.0](#50-antes-de-la-primera-vez-una-vez-por-instancia)) |
 | 013 | Requisitos de despliegue seguro | Completada (2026-10-06) | **Era la propuesta P9**: `instance:check` da NO APTO en producción con `TRUST_PROXY` vacío y `https` y con URL de base de datos remotas sin `sslmode=verify-full`; `instance:db` se niega a conectar sin TLS verificado (`--sslrootcert`); TLS verificado en todas las conexiones con mensajes sin datos; `db:verify` con bases temporales cerradas a otros usuarios y limpieza de huérfanas; imagen con `HEALTHCHECK`, base fijada por digest y pnpm con hash; receta de producción con comprobaciones ([sección 2.5](#25-despliegue), [2.3](#23-crear-la-base-de-datos-pnpm-instancedb), [2.4](#24-completar-y-validar-pnpm-instancecheck), [5](#5-actualizar-el-núcleo) y [8](#8-copias-de-seguridad-guía-de-validación)) |
 
+| 016 | Resistencia a los cortes de la base de datos y verificación de copias por socket | Completada (2026-10-09) | No venía de ninguna propuesta de esta sección: es una **corrección** de dos fallos del núcleo que destapó la fase 9 del despliegue. Una instancia ya arrancada sobrevive a un corte de su base de datos sin reiniciarse y sigue respondiendo al cliente final con el teléfono de emergencia por los dos canales; `/health` gana el estado `db_unavailable` con **200**, que no es motivo de reinicio ([sección 5](#5-actualizar-el-núcleo)); `db:verify` funciona con las direcciones **sin nombre de servidor** del despliegue real y sus motivos de fallo distinguen dirección, conexión y creación ([sección 8](#8-copias-de-seguridad-guía-de-validación)); el chat web nunca se queda indicando espera; y dos comprobaciones del operador que la forma de dirección de producción silenciaba —calidad de la contraseña de la base de datos y prohibición del usuario `postgres`— vuelven a aplicarse ([sección 2.4](#24-completar-y-validar-pnpm-instancecheck)) |
+
 Todas están completadas. Quedan aplazadas la evaluación de audios de la 002 (T083), que se hace
 antes de activar los audios en una instancia, el ensayo de la guía de publicación de la 009 con
 una persona que no haya participado (SC-006). La receta de producción de la 013 (§2.5) no la ha
@@ -1021,6 +1037,10 @@ definitivos los asigna `/speckit-specify`; si no se cuela otra feature, serán 0
 
 Al terminar una spec, actualiza esta sección y la 9.1 (estado, feature que cubre cada propuesta y
 orden de las pendientes).
+
+La feature 016 no cambia este orden: es una corrección de dos fallos del núcleo descubiertos en la
+fase 9 del despliegue, no una de estas propuestas, así que **ninguna pasa a hecha por ella**. Las
+pendientes siguen siendo P7 y P5, en ese orden.
 
 | Orden | Id | Propuesta | Prioridad | Depende de | Cuándo |
 |---|---|---|---|---|---|

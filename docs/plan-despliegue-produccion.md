@@ -986,7 +986,7 @@ como está en producción (dos clústeres por socket Unix y una caída de verdad
 - [ ] Probar una restauración completa en una BD temporal con la copia de la Storage Box.
 
 ### Fase 11 · Specs de núcleo y ciclo de actualización (Yo)
-- [ ] **Primero, la spec de corrección de los dos fallos de la fase 9** (**núcleo**), decidida el
+- [x] **Primero, la spec de corrección de los dos fallos de la fase 9** (**núcleo**), decidida el
   2026-10-09. Se adelanta al modo oscuro porque uno de los dos deja la instancia en bucle de
   reinicio ante cualquier corte de la base de datos y el otro deja las copias sin poder
   comprobarse. Alcance: `pool.on('error')` en `src/db/client.ts`, `withDatabase` con URL de
@@ -994,6 +994,20 @@ como está en producción (dos clústeres por socket Unix y una caída de verdad
   nueva a GHCR y actualización de las dos instancias, que es además el ensayo real del ciclo de
   actualización que esta fase quería hacer con el modo oscuro. Al terminar, se repiten las dos
   casillas que quedaron bloqueadas en la fase 9.
+  - **Hecha: feature 016, implementada el 2026-10-09** (`016-db-outage-resilience`). El alcance
+    creció respecto a lo previsto, porque la auditoría de la propia spec destapó que los dos
+    fallos eran casos particulares de dos descuidos sistemáticos: hubo que poner el oyente de
+    `error` en los **ocho** puntos que abren conexiones (dos no lo tenían y uno lo tenía después
+    de conectar, con una ventana sin él) y pasar al intérprete tolerante de direcciones **todos**
+    los puntos que las leen, lo que además devolvió dos comprobaciones de seguridad del operador
+    que la forma de dirección de producción silenciaba sin avisar. Añadido también el estado
+    `db_unavailable` de `/health` con **200**, para que ninguna política de reinicio tenga motivo
+    durante un corte, y el fin del «escribiendo…» eterno del chat web.
+  - **Pendiente de hacer en el VPS**: desplegar la 0.1.1 y repetir las dos casillas (T051 y T052
+    de la spec). Hasta que eso se haga, la forma de dirección por **socket Unix literal** solo
+    está comprobada por la vía de la autoridad vacía: su prueba se salta en Windows y no hay
+    integración continua en Linux, así que este despliegue es su única verificación real
+    (FR-006, SC-004 de la 016).
 - [ ] `/speckit-specify`: modo oscuro del panel (**núcleo**, afecta a todos los clientes).
 - [ ] Después, la spec del **proveedor del modelo configurable** (ver §6), que es la que lleva la
   instancia 2 a Gemini. Va detrás del modo oscuro a propósito: el modo oscuro es un cambio pequeño

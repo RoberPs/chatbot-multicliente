@@ -17,6 +17,7 @@ Estados: especificada → planificada → en implementación → completada (o a
 | 011 | Diseño del chat web | Núcleo | Completada | `011-chat-design` | [spec](specs/011-chat-design/spec.md) · [plan](specs/011-chat-design/plan.md) · [tareas](specs/011-chat-design/tasks.md) | 2026-10-05  |
 | 012 | Protección frente a abuso y saturación | Núcleo | Completada | `012-abuse-protection` | [spec](specs/012-abuse-protection/spec.md) · [plan](specs/012-abuse-protection/plan.md) · [tareas](specs/012-abuse-protection/tasks.md) | 2026-10-06  |
 | 013 | Requisitos de despliegue seguro | Núcleo (operación) | Completada | `013-secure-deployment` | [spec](specs/013-secure-deployment/spec.md) · [plan](specs/013-secure-deployment/plan.md) · [tareas](specs/013-secure-deployment/tasks.md) | 2026-10-06  |
+| 016 | Resistencia a los cortes de la base de datos y verificación de copias por socket | Núcleo (corrección) | Completada | `016-db-outage-resilience` | [spec](specs/016-db-outage-resilience/spec.md) · [plan](specs/016-db-outage-resilience/plan.md) · [tareas](specs/016-db-outage-resilience/tasks.md) | 2026-10-09  |
 
 ---
 
@@ -56,6 +57,12 @@ Cada instancia **declara su versión** (feature 009): `GET /health` responde su 
 secreto de salud, la versión del núcleo y del esquema; el panel la muestra al pie de cada pantalla;
 `pnpm instance:versions` la consulta en todo el parque, y la guía de operación describe la
 publicación por tandas con comprobación y vuelta atrás.
+
+Una instancia ya arrancada **sobrevive a un corte de su base de datos** (feature 016): no se
+reinicia, sigue respondiendo al cliente final con el teléfono de emergencia por el chat web y por
+WhatsApp, informa de su estado con `db_unavailable` y **200** —que no es motivo de reinicio— y se
+recupera sola cuando la base vuelve, sin intervención y sin perder las sesiones del panel. El
+registro deja una anotación al empezar el corte y otra al recuperarse, no una por petición.
 
 Cada instancia **mide el consumo del modelo** (feature 010): tokens por respuesta y por resumen de
 derivación, por canal y sin guardar textos ni datos del cliente. El panel muestra el consumo y el
