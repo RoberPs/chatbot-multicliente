@@ -616,43 +616,384 @@ clave es la contraseña. El bloqueo por IP sigue **desactivado**, que es lo corr
   `else` se saltaba la escritura. Imprimía el resultado correcto y no guardaba nada. Se arregló
   con un indicador explícito.
 
-### Fase 7 · Datos ficticios (Yo preparo, tú revisas)
-- [ ] Teléfono y correo reales de contacto y de avisos (los das aquí, no antes).
-- [ ] Importar la configuración de la agencia (desde la homepage de `globalviajes2`) y del
-  restaurante (desde la carta de `ProjectoRestaurante`), con la importación de `config-transfer`.
-- [ ] Horarios, servicios y precios inventados; los revisas en el panel y activas cada negocio.
-- [ ] Orígenes permitidos del chat web en cada instancia.
-- [ ] Ningún nombre de sector o cliente en `src/`; los datos solo en `tests/fixtures/` o en la
-  configuración de la instancia.
+### Fase 7 · Datos ficticios (Yo preparo, tú revisas) — **HECHA el 2026-10-08**
 
-### Fase 8 · Frontend (Yo preparo, tú subes)
-- [ ] **Copia** de `globalviajes2` en una carpeta nueva (los originales no se tocan).
-- [ ] Añadir `<script src="https://viajes.automatizacionro.work/chat/widget.js" defer>`.
-- [ ] Crear `test-restaurante.html` con el widget de la instancia 2.
-- [ ] Cloudflare Pages: proyecto con la copia, dominio `automatizacionro.work` (y `www`).
-- [ ] Teléfono y correo reales aparecen en la web, para comprobar los avisos.
-- [ ] Comprobar en la consola del navegador que no hay errores de CORS ni contenido mixto.
+> **Un paso que el plan no tenía: el consumo.** En producción hay **dos avisos críticos de
+> protección** desde el primer arranque, y hasta que se quitan **no se puede activar el negocio**
+> (`activateBusiness` mete los avisos de protección en el mismo saco que los de la configuración,
+> `src/knowledge/services/business-status.ts:14`) y los canales de clientes responden **solo con
+> el contacto** (`canCallModel`). Son `SPEND_CAP_REQUIRED` (el tope de gasto es obligatorio en
+> producción y viene desactivado) y `MODEL_UNPRICED` (`claude-sonnet-5-5` no tiene precio). Se
+> arreglan en `/admin/usage` de **cada** instancia, y **el orden no es opcional**:
+>
+> 1. **Moneda de coste: `USD`** (el valor por defecto). Tiene que quedar antes que los precios:
+>    cambiarla después exige vaciar la tabla de precios (`currencyLockedMessage`).
+> 2. **Precio de `claude-sonnet-5-5`** por millón de tokens: entrada `2`, salida `10`, escritura
+>    en caché `2.50`, lectura de caché `0.20`. La escritura es 1,25 × la entrada porque el núcleo
+>    usa caché efímera de 5 minutos (`src/llm/anthropic-chat-model.ts:67`, `ephemeral` sin `ttl`).
+> 3. **Tope mensual** (10 USD por instancia en esta prueba). Activarlo **sin precio del modelo
+>    falla** con `capWithoutPriceMessage` (FR-014); de ahí el orden.
+>
+> Los **límites de derivación** de la misma página no hay que tocarlos: la migración
+> `0008_abuse_protection.sql` siembra la fila con 20 derivaciones nuevas al día, 15 minutos entre
+> avisos y 60 avisos al día, y nunca producen un aviso crítico.
 
-### Fase 9 · Pruebas de punta a punta (Los dos)
-- [ ] Chat de la agencia desde la raíz y del restaurante desde la página de prueba.
+- [x] Teléfono y correo de contacto y de avisos. Decidido el 2026-10-08: **el teléfono se queda
+  con el de relleno** `+34600000000` en las dos instancias, porque `EMERGENCY_CONTACT_PHONE` no
+  recibe ningún aviso —solo se imprime en la respuesta del bot, `src/conversation/responder.ts`—
+  y lo mismo valen `business.phone` y el canal `phone` de derivación: son texto que el bot da al
+  cliente. Consecuencia útil: **la fase 7 no toca el servidor**, no hay que editar ningún `.env`
+  ni recrear contenedores, así que tampoco se invalidan las sesiones del panel.
+  - El correo sí es real y va **repartido**: `info@automatizacionro.work` en `business.email` y
+    en el canal `email` de derivación (lo público, que se verá en la web de la fase 8), y el
+    correo personal **solo** en `alertDestinations.email`, que es el único campo que entrega
+    (`src/handoff/routes-provider.ts:29`). Así el chat público no enseña una dirección personal.
+  - `info@automatizacionro.work` **no es un buzón**: hoy no recibe nada. Pendiente de la fase 8
+    si se quiere que reenvíe (Cloudflare Email Routing, gratuito, dos registros MX).
+- [x] Importada la configuración de las dos instancias con un fichero de `config-transfer` v2,
+  escrito a partir del contenido **real** de las dos webs de origen: los precios por destino de
+  `globalviajes2` y la carta entera de `ProjectoRestaurante`, con descripciones propias porque
+  las de la web son *lorem ipsum*. Los dos ficheros se validaron en local **antes** de subirlos,
+  con el propio `parseConfigFile` y con `computeWarnings` sobre el estado resultante: **ACEPTADOS
+  y sin avisos críticos**, es decir, activables sin que la escritura protegida los revierta.
+  - Agencia: 11 franjas de horario, 6 cierres, 23 servicios (12 destinos con precio «desde», 5 a
+    consultar, 4 experiencias y 2 citas reservables), 2 asesores y 11 preguntas frecuentes.
+  - Restaurante: 8 franjas, 4 cierres, 36 servicios (31 platos con su precio, 4 menús de grupo y
+    la reserva de mesa, que es la reservable), 3 recursos (sala, terraza y reservado) y 13
+    preguntas frecuentes.
+  - **El horario del restaurante cruza medianoche** («sábados y domingos de 8:00 a 1:00») y el
+    dominio no admite una franja con fin ≤ inicio (`refineWeeklySlots`). Se parte en sáb
+    08:00–23:59, dom 00:00–01:00 y 08:00–23:59, y **lun 00:00–01:00**, que es la cola de la noche
+    del domingo. Efecto visible: el lunes, día de descanso, figura abierto de 00:00 a 01:00. Es
+    correcto y lo explica una pregunta frecuente.
+- [x] Datos revisados en el panel y los **dos negocios activados**, cada uno con un solo aviso
+  normal: `HANDOFF_ALERTS_SINGLE`, «los avisos solo llegan por email», esperado con WhatsApp
+  apagado.
+- [x] Orígenes permitidos del chat web (`https://automatizacionro.work` y su `www`), que sí
+  viajan en el fichero, y **chat web activado a mano** en las dos: `enabled` está en
+  `EXCLUDED_COLUMNS` y nunca se importa.
+- [x] Ningún nombre de sector ni de cliente en `src/`. Los dos ficheros de configuración se
+  quedan **fuera del repositorio** (`~/Downloads/chatbot-fase7/`), que es lo que pide esta misma
+  casilla: los datos solo en `tests/fixtures/` o en la configuración de la instancia.
+
+**Lo que salió mal en la fase 7, para no repetirlo:**
+
+- **La casilla «Importar también los destinos de los avisos» se escapó en las dos instancias.**
+  Es la única sección que depende de ella; todo lo demás se importa igual, así que la
+  importación parece correcta. El síntoma es desconcertante: un cliente pide que le llamen, el
+  bot recoge nombre y teléfono, y **la derivación se crea y se borra en el acto**, sin dejar
+  rastro en el panel. Lo hace a propósito `src/handoff/service.ts:693-700` («ninguna vía entregó:
+  la derivación no llega a existir»), porque sin destino no hay vía (`routes-provider.ts:29`) y
+  con WhatsApp apagado el email era la única. En el registro queda `handoff_not_started` con
+  `reason: 'delivery_failed'`.
+  - **La señal estaba en el panel desde el principio**: el aviso decía `HANDOFF_ALERTS_NONE`, «no
+    hay ninguna vía para avisar al negocio», en vez del `HANDOFF_ALERTS_SINGLE` esperado. La
+    diferencia entre esos dos textos es lo que hay que mirar al terminar de importar.
+  - Se arregla **sin reimportar**: el campo «Email para avisos» de `/admin/handoffs`.
+- **El playground no sirve para probar los avisos.** Con `simulate` la lista de vías es una sola
+  vía falsa que siempre «entrega» y no manda nada (`routes-provider.ts:22`); la traza del panel
+  lo dice, «vías: simulada enviada» y «Aviso al negocio (simulado)». Además, las derivaciones del
+  playground **se excluyen a propósito** de «Derivaciones activas»
+  (`repositories/handoff.ts:239`, `ne(customer.channel, 'playground')`). Conclusión: desde el
+  playground el correo no sale ni antes ni después de configurar el destino, y su ausencia de la
+  lista no significa nada.
+- **El chat de verdad se puede probar sin front, antes de la fase 8**, abriendo en el navegador
+  `https://<instancia>/chat/frame`. Funciona porque al teclear la URL el navegador no manda
+  `Referer` y `refererAllowed` deja pasar cuando no llega (`channels/web/guards.ts:43-49`), y
+  porque los `POST` a `/chat/api` exigen `Origin` igual al de la instancia
+  (`guards.ts:78`), que se cumple siempre al servirse el frame desde ella. `frame-ancestors` solo
+  restringe la incrustación, no la navegación directa. Exige el chat web activado.
+
+### Fase 8 · Frontend (Yo preparo, tú subes) — **HECHA el 2026-10-09**
+
+> **Decidido el 2026-10-09**, al empezar la fase: se crea `politica.html` en la copia (en vez de
+> vaciar el enlace del panel), se añade el origen de `pages.dev` a los orígenes permitidos de las
+> dos instancias para poder probar antes de enganchar el dominio, la subida a Pages es **directa
+> desde el panel** (sin repositorio ni wrangler) y `info@automatizacionro.work` pasa a ser buzón
+> con Cloudflare Email Routing.
+>
+> **El front no genera ningún CORS.** Comprobado en el código: el chat vive entero dentro del
+> iframe y sus `POST` a `/chat/api` son **del mismo origen** que el frame
+> (`src/channels/web/guards.ts:78`). Lo único que cruza orígenes es la **incrustación** del
+> iframe, y eso lo gobierna `frame-ancestors` de la CSP del frame
+> (`src/channels/web/routes.ts:276`), no CORS. Consecuencia práctica: si el origen no está
+> permitido **no hay error de CORS en la consola**; no se ve nada en absoluto, porque el
+> fragmento inserta el iframe con `visibility: hidden` y solo lo muestra cuando el chat se
+> anuncia (`widget.js:52`). Buscar un error de CORS que no existe es la trampa de esta fase.
+
+- [x] **Copia** de `globalviajes2` en `~/Downloads/chatbot-fase8/front/` (fuera del repositorio,
+  como los ficheros de la fase 7). Los originales de
+  `proyectos-ro/proyectos-web-frontend/globalviajes2` no se tocan: 228 ficheros antes y después.
+- [x] `<script src="https://viajes.automatizacionro.work/chat/widget.js" defer>` antes de
+  `</body>` en las **nueve** páginas de la agencia (las 7 originales más `politica.html` y
+  `cookies.html`).
+- [x] `test-restaurante.html` con el widget de la instancia 2, **autónoma**: estilos propios, sin
+  la cabecera de la agencia y **sin** el widget de viajes, porque dos burbujas caen en la misma
+  esquina (las dos son `position: fixed; right: 16px; bottom: 16px`, `widget.js:41-43`).
+- [x] `politica.html` (con el aviso legal dentro, en `#aviso-legal`) y `cookies.html`, escritas con
+  la cabecera, el pie y el CSS reales del sitio. La primera es la que pide el `privacyUrl` de las
+  dos instancias; la segunda la enlazaba ya el aviso de cookies de `index.html` y **daba 404**.
+- [x] Teléfono y correo de la web, coherentes con lo que responde el bot: el `916784565` de la
+  cabecera de las 7 páginas y los dos teléfonos de `contacto.html` pasan a `600 000 000`, y
+  `global@viales.eu` a `info@automatizacionro.work` con su `mailto:`. Los tres enlaces legales del
+  pie, que eran `href="#"`, ya apuntan a las páginas nuevas.
+- [x] Cloudflare Pages por **subida directa**, el 2026-10-09: un ZIP con los 229 ficheros y
+  `index.html` en la raíz del archivo (Cloudflare lo descomprime; el panel admite ZIP, hasta
+  1.000 ficheros y 25 MiB por fichero, y el mayor de la copia son 1,6 MB). El nombre pedido no
+  quedó libre y el proyecto salió como **`viajes-ckv`**, o sea
+  **`https://viajes-ckv.pages.dev`**. Los proyectos de Pages **no se pueden renombrar**, pero da
+  igual: `pages.dev` es solo el alias de pruebas. Comprobadas desde fuera las 10 páginas en
+  `200`, sin contenido mixto, con el fragmento del chat correcto en cada una (el de viajes en
+  las 9 de la agencia, el del restaurante solo en su página).
+- [x] Dominios `automatizacionro.work` y `www.automatizacionro.work` enganchados en el proyecto
+  de Pages el 2026-10-09, los dos en **Active**. Comprobado desde fuera: las 10 páginas en `200`
+  por el dominio definitivo y por `www`, y el chat se deja incrustar desde los dos orígenes en
+  las dos instancias.
+  - **El registro DNS no se crea a mano.** Lo añade Pages al enganchar el dominio **desde el
+    proyecto**. La zona DNS, mientras tanto, muestra un aviso azul que pide «añade un registro
+    A, AAAA o CNAME»: hacerle caso es justo lo que rompe el enganche. El aviso desaparece solo.
+- [x] Orígenes permitidos: `https://viajes-ckv.pages.dev` añadido el 2026-10-09 en el panel de
+  las **dos** instancias, junto a los dos que ya había. Comprobado desde fuera leyendo la
+  cabecera `Content-Security-Policy` de `/chat/frame` con el `Referer` de cada origen, que es la
+  forma de verificarlo **sin navegador**: las dos devuelven los tres orígenes, y un origen ajeno
+  recibe `frame-ancestors 'none'`. El tamaño del frame distingue los dos estados: ~1,46 kB es la
+  vista de «no disponible» y ~1,73 kB la del chat activo.
+- [ ] **Aplazado por decisión del 2026-10-09**: Cloudflare Email Routing para
+  `info@automatizacionro.work`, con el SPF fusionado a mano. Consecuencias que se asumen: `info@`
+  **no recibe nada**, los remitentes de los avisos (`viajes@`, `restaurante@`) son buzones
+  inexistentes, y el dominio sigue **sin ningún MX**. Cuando se haga, el SPF tiene que quedar en
+  **un solo** registro: `v=spf1 include:spf.brevo.com include:_spf.mx.cloudflare.net mx ~all`.
+- [x] Consola del navegador: sin contenido mixto (comprobado sobre las 10 páginas ya servidas) y
+  sin errores; los dos avisos que salió a ver una vez no se repitieron.
+
+**Lo que hay que vigilar en esta fase, visto al prepararla:**
+
+- **La URL de pruebas de Pages no vale tal cual.** Los orígenes permitidos de las dos instancias
+  son solo `https://automatizacionro.work` y su `www`, así que en `*.pages.dev` el chat no
+  aparece. Se añade el alias **estable** de producción (`viajes-ckv.pages.dev`); los
+  despliegues de vista previa tienen un subdominio propio por despliegue
+  (`<hash>.viajes-ckv.pages.dev`) y esos seguirán bloqueados. Caben 10 orígenes y hay 2.
+- **El `Referer` también se comprueba.** Además de `frame-ancestors`, el servidor rechaza servir
+  el frame si el `Referer` llega y no es de una web permitida (`routes.ts:238`,
+  `refererAllowed`). Por eso el mismo origen hay que añadirlo una sola vez y sirve para las dos
+  comprobaciones.
+- **Email Routing y el SPF de Brevo chocan.** La zona tiene hoy **un** TXT de SPF,
+  `v=spf1 include:spf.brevo.com mx ~all`, y el asistente de Email Routing propone añadir el
+  suyo, `v=spf1 include:_spf.mx.cloudflare.net ~all`. **Dos registros SPF en la misma etiqueta
+  son un error de protocolo** (`permerror`), y el que se rompe es el de Brevo, que es por donde
+  salen los avisos de derivación de la fase 9. Hay que dejar **uno solo**, fusionado:
+  `v=spf1 include:spf.brevo.com include:_spf.mx.cloudflare.net mx ~all`.
+- **Email Routing sustituye los MX de la zona.** Aquí no hay conflicto porque hoy **no hay
+  ningún MX** (comprobado por DNS el 2026-10-09; el ápice solo tiene los dos TXT de Brevo, y
+  `www` no existe todavía). Si alguna vez se pone correo de verdad en el dominio, esto hay que
+  mirarlo antes.
+- **El ápice está libre para Pages.** Sin `A`, `AAAA` ni `CNAME` en `@`, no hay registro que
+  borrar: Pages añade su `CNAME` aplanado y los TXT de Brevo conviven, que son de otro tipo.
+- **`globalviajes2` traía otro chat.** `index.html` cargaba un widget de **Voiceflow**, que
+  habría puesto una segunda burbuja encima de la nuestra. Quitado de la copia.
+- **Los formularios de la web no llevan a ninguna parte.** `contacto.html`, `cuenta.html` y
+  `login.html` hacen `POST` a páginas que no existen (`formulario_contacto.html`,
+  `crearCuenta.html`, `loginSesion.html`, `recuperar_pass.html`), y en Pages un `POST` a una ruta
+  estática sin función responde **405**. Ya estaban rotos en el original y no se arreglan en esta
+  fase; el camino que se enseña es el chat. Tenerlo presente antes de enseñar la web a nadie.
+- **Pages sirve el HTML sin extensión y redirige el `.html`.** `/politica.html` responde
+  **308** hacia `/politica`, y lo mismo las demás. No rompe nada —el navegador sigue la
+  redirección y el `privacyUrl` de las instancias
+  (`https://automatizacionro.work/politica.html`) funciona—, pero conviene saberlo antes de
+  dar por rota una ruta que responde 308 en vez de 200.
+- **Un 522 en `*.pages.dev` recién creado significa «proyecto sin desplegar».** El nombre
+  resuelve en DNS en cuanto se crea el proyecto, antes de que haya nada publicado detrás, así
+  que un 522 ahí no es una caída: es que falta pulsar **Deploy site**. Mismo código que en la
+  fase 5, distinta causa.
+- **Los dos widgets no pueden solaparse, así que no hay que desactivar ninguno para probar.**
+  Cada página carga uno solo: el de la agencia en sus 9 páginas y el del restaurante únicamente
+  en `test-restaurante.html`, que por eso se hizo autónoma. Desactivar el chat de una instancia
+  para «probar la otra» no hace falta y deja esa instancia sin chat también en el dominio real.
+- **El origen hay que añadirlo en los dos paneles, no en uno.** Son dos instancias con su
+  configuración y su contraseña; es fácil hacer el cambio dos veces en el mismo panel y creer
+  que están las dos. El síntoma es un `'none'` en la instancia que faltó.
+- **`pages.dev` no tiene variante `www`.** Añadir `https://www.<proyecto>.pages.dev` por
+  analogía con el par del dominio propio no rompe nada, pero gasta uno de los 10 huecos con un
+  origen que no existe.
+- **Los avisos de derivación llegan a spam en Gmail, y no es un fallo de configuración.**
+  Comprobadas las cabeceras del correo real del restaurante el 2026-10-09: **SPF `PASS`** (IP
+  `77.32.148.26`, de Brevo), **DKIM `PASS`** alineado con `automatizacionro.work` y **DMARC
+  `PASS`**. Con los tres en verde lo que queda es **reputación**: dominio recién creado y sin
+  historial, IP compartida del plan gratuito de Brevo, dominio que no puede recibir correo (sin
+  MX) y `DMARC p=none`. Lo que de verdad lo arregla en el propio buzón es marcar **«No es
+  spam»** y añadir el remitente a contactos; después, los MX del Email Routing y, con
+  historial, subir el DMARC a `p=quarantine`.
+  - **Riesgo del producto, no de esta prueba**: para un cliente real, un aviso de derivación en
+    spam es la funcionalidad caída en silencio. El alta de un cliente debería incluir que marque
+    el primer aviso como «No es spam».
+- **«Le atiendo» no cierra nada; cierra «Terminado».** Comprobado en las dos instancias el
+  2026-10-09, y es lo que dice el código (`src/handoff/service.ts:521`): `attend` solo confirma
+  quién la coge. Solo «Terminado» saca la derivación de «Derivaciones activas» y quita la
+  franja del chat del cliente, esta última en hasta 60 s por el sondeo. Si parece que una
+  instancia se comporta distinto de la otra, lo primero que hay que mirar es qué botón se pulsó
+  en cada una.
+- **Las páginas nuevas llevan `noindex`** y un aviso visible de que el negocio es ficticio: es
+  una web de demostración en un dominio público, y no debe parecer una empresa real.
+
+### Fase 9 · Pruebas de punta a punta (Los dos) — **PASADA el 2026-10-09, con dos bloqueos**
+
+> Las pruebas que se hacen en el VPS están en [deploy/fase9-pruebas.sh](../deploy/fase9-pruebas.sh),
+> con cuatro subcomandos repetibles: `copias`, `aislamiento`, `emergencia parar|arrancar` y
+> `estado`. Las otras dos (el chat desde la web pública y `pnpm instance:versions`) se hacen desde
+> el PC. **En el VPS no hay repositorio ni pnpm**: `pnpm db:backup` allí es
+> `docker exec instancia-N node dist/src/cli/backup.js`, que son los mismos CLI compilados en la
+> imagen.
+>
+> **Resultado: cuatro casillas cerradas y dos bloqueadas por sendos fallos del núcleo** (ver «Lo
+> que salió mal», más abajo). Los dos se arreglan en la spec de corrección que sale de aquí y van
+> en la **0.1.1**; ninguno es de configuración, así que no hay nada que tocar en el VPS.
+
+- [x] Chat de la agencia desde la raíz y del restaurante desde la página de prueba.
 - [ ] Un mensaje que active el contacto de emergencia: el bot **muestra** tu número en su
-  respuesta. Corregido el 2026-10-08: `EMERGENCY_CONTACT_PHONE` no recibe ningún aviso; es el
+  respuesta. **BLOQUEADA el 2026-10-09**: la respuesta existe y es correcta, pero es
+  **inalcanzable** porque el proceso de la instancia se muere antes de poder darla (fallo 1 de
+  los de abajo). Corregido el 2026-10-08: `EMERGENCY_CONTACT_PHONE` no recibe ningún aviso; es el
   teléfono que el bot da al cliente cuando no puede leer la información del negocio, cuando el
   negocio está desactivado o cuando se supera el límite (`src/conversation/processor.ts`). Los
   avisos que sí salen son los de derivación, configurados en el panel, y con WhatsApp apagado van
   por correo.
-- [ ] Un aviso por correo llega a tu correo real vía Brevo.
+  - **Con el negocio activo no hay ningún mensaje que lo active**, y esto el plan no lo decía.
+    `unavailableContact` (`src/conversation/templates.ts:168`) da el contacto **del negocio**
+    siempre que el snapshot se lea y tenga vías; el de emergencia es solo el respaldo de cuando
+    no se puede leer. La única forma de provocarlo es parar PostgreSQL, que es lo que hace
+    `emergencia parar`. Las dos frases se distinguen sin mirar el número, que aquí es el mismo
+    en los dos sitios: «Para hablar con una persona de \<nombre\>: …» frente a «Si necesitas
+    hablar con una persona: teléfono …».
+- [x] Un aviso por correo llega a tu correo real vía Brevo. **Adelantado al 2026-10-08**, al
+  cerrar la fase 7, desde el chat web real del restaurante (`/chat/frame`). El ciclo entero
+  comprobado: un cliente pide que le llamen y da nombre y teléfono → llega el correo de aviso →
+  el enlace «Le atiendo» abre la página de confirmación con el identificador en la ruta → queda
+  «Anotado: atiende a <nombre>» → la derivación aparece en «Derivaciones activas» pendiente de
+  terminar y el chat muestra su franja superior. Se repetirá en la fase 9 desde la web pública.
 - [ ] `pnpm db:backup`, `pnpm db:verify <copia>` (`RESTAURABLE`) y `pnpm db:backups`.
-- [ ] `pnpm instance:versions` muestra la versión real de las 2 instancias.
-- [ ] Reinicio del servidor: las instancias vuelven solas (política de reinicio).
-- [ ] Una instancia no ve datos de la otra.
+  **Dos de tres el 2026-10-09**, en las dos instancias: la copia se crea, aparece en el montaje
+  del anfitrión (o sea, sobrevive al contenedor, que tiene la raíz en solo lectura) y se lista
+  bien. **`db:verify` está bloqueada** por el fallo 2 de los de abajo: la copia se crea y se
+  guarda, pero **no se puede comprobar que sirva**, que es el riesgo de verdad en producción.
+- [x] `pnpm instance:versions` muestra la versión real de las 2 instancias. Hecho el 2026-10-09:
+  las dos en `0.1.0`, esquema `0008_abuse_protection`, estado «Correcto» y tope de gasto
+  «normal», que de paso confirma el límite de la fase 7.
+  - **La primera pasada sale con salida 1 y «anotada —», y no es un fallo**: `imageVersion` no
+    se había anotado nunca en el inventario, y una fila sin coincidencia cuenta como «a revisar»
+    (`src/provisioning/versions.ts`, `review = !(ok && matches)`). Se cierra con
+    `instance:versions --annotate` (pide confirmación por teclado) y una segunda pasada, que ya
+    da **salida 0**. El `--annotate` también termina en 1: su informe es el del momento de la
+    consulta, anterior a la anotación.
+- [x] Reinicio del servidor: las instancias vuelven solas (política de reinicio). **Adelantado al
+  2026-10-08**, al cerrar la fase 6 y tras editar a mano los dos entornos. Los cinco contenedores
+  volvieron solos en dos minutos y `fase5-red-https.sh comprobar` dio todo en verde, con el
+  certificado recuperado del volumen `caddy-datos` (no se pidió uno nuevo, que gastaría cupo de
+  Let's Encrypt). Se repetirá en la fase 9 ya con datos de negocio.
+  - `chatbot-caddy-1` aparece sin `(healthy)` en `docker ps`: la imagen `caddy:2-alpine` no trae
+    `HEALTHCHECK` y el compose no le define ninguno. Su salud la mide el paso 6 del script.
+  - Al entrar, Ubuntu ofrece `do-release-upgrade` a la 26.04. **No se hace**: la 24.04 es LTS con
+    soporte hasta 2029 y es la decisión de la fase 2. El aviso sale en cada login.
+- [x] Una instancia no ve datos de la otra. Comprobado el 2026-10-09 en los tres niveles donde
+  podría verlos, con `fase9-pruebas.sh aislamiento` y ya con datos de negocio dentro:
+  - **Lo que lee el bot**: `getSnapshot()` sobre la `DATABASE_URL` de cada contenedor da negocios
+    distintos («Global Viajes» con 23 servicios y 11 FAQ; «Taste Restaurante» con 36 y 13).
+  - **El catálogo de PostgreSQL**, en las dos direcciones, y una **conexión cruzada real** con las
+    credenciales de cada instancia contra la base de la otra: rechazada con
+    `FATAL: permission denied for database`, o sea el `REVOKE CONNECT` de la fase 4 actuando
+    **antes** de abrir la base. No es que entre y no vea nada: es que no entra.
+  - **Los directorios de copias**: cada uno solo tiene ficheros con su propio `INSTANCE_ID`. El
+    aviso `shared_backup_dir` del inventario sigue siendo inofensivo por esto mismo.
+
+**Lo que salió mal en la fase 9, para no repetirlo.** Los dos son **fallos del núcleo**, no de la
+configuración ni del despliegue, y los dos tienen el mismo origen: qué hace el programa cuando la
+base de datos no está. Los destapó esta fase porque es la primera que prueba el sistema montado
+como está en producción (dos clústeres por socket Unix y una caída de verdad).
+
+- **1. Un corte de la base de datos mata el proceso de la instancia** (grave). `createDb`
+  (`src/db/client.ts:38-52`) crea los pools **sin `pool.on('error')`**. Es el único sitio del
+  código que no lo lleva: `backup/locks.ts:35`, `backup/service.ts:97` y `:835`,
+  `cli/backup-common.ts:153`, `provisioning/database.ts:201` y `health/report.ts:137` sí lo
+  ponen, y este último hasta lleva el comentario que lo explica. Al parar PostgreSQL, las
+  conexiones ociosas emiten `error` sin nadie escuchando, Node lo trata como excepción no
+  capturada y el proceso cae; `restart: unless-stopped` lo relanza, el arranque intenta las
+  migraciones, la base sigue parada y vuelve a caer. Bucle de reinicio, y Caddy devolviendo
+  **502** porque no hay nadie detrás.
+  - **Lo serio no es la caída: es que deja inalcanzable toda la resiliencia de la 012.** El 503
+    «ocupado» del pool agotado, el R-ERR con el contacto de emergencia y la disculpa al abandonar
+    un lote están bien escritos y nunca llegan a ejecutarse. De ahí que la casilla del contacto
+    de emergencia no se pueda cerrar.
+  - **Síntoma en el navegador**: el chat se queda en «escribiendo…» para siempre. No es que esté
+    pensando: `frame.js:413` pinta ese texto **antes** de enviar y solo lo quita cuando la
+    respuesta encaja en alguna de sus ramas; un 500 o un 502 no encajan en ninguna. El código
+    real está en la consola (F12), no en la burbuja.
+  - **Síntoma en el servidor**: `docker ps` con las instancias en `restarting`, y
+    `docker inspect -f '{{.RestartCount}}'` por encima de 0. Se recuperan solas al volver la
+    base, pero con el retroceso exponencial de Docker pueden tardar más de los 120 s que espera
+    el script; no es que sigan rotas.
+  - **Las sesiones de los dos paneles se pierden**, porque la época de sesión se regenera en cada
+    arranque (`src/admin/auth/plugin.ts`). Hay que volver a entrar en los dos.
+- **2. `db:verify` no funciona con una URL de socket**, o sea nunca ha funcionado en esta
+  arquitectura. `withDatabase` (`src/backup/service.ts:720`) construye la dirección de la base
+  temporal con `new URL(url)` a pelo, y **`new URL` rechaza cualquier URL de Postgres con
+  credenciales y host vacío** — la forma `postgres://usuario:clave@/base?host=/var/run/postgresql`
+  que usa todo este despliegue, incluida la `DATABASE_URL` que lleva funcionando desde la fase 4.
+  El propio núcleo ya conoce la limitación y la rodea con un host postizo en
+  `src/config/database-url.ts:33-45`; `withDatabase` se quedó fuera de esa lección.
+  - **Se manifiesta como `verify_db_unavailable`, que despista**: el mensaje dice «no se pudo
+    crear la base de datos temporal», pero la conexión y el `create database` **sí** funcionan.
+    Falla el paso siguiente, conectarse a la base recién creada, y el `finally` la borra, así que
+    no queda ni rastro. La pista que lo distingue es lo que **no** sale: si la conexión hubiera
+    fallado, `orphansLine()` habría impreso «no se ha podido comprobar el servidor».
+  - Afecta solo a `db:verify`. `db:backup`, `db:backups` y `db:restore` no pasan por ahí
+    (`restore` trabaja sobre `DATABASE_URL` sin reescribirla).
+- **Los dos se podían haber cazado antes, y conviene no contarse lo contrario.** El de
+  `withDatabase` es un test unitario de tres líneas, sin base de datos: pasarle una URL de socket.
+  El de los pools es un test de integración con Testcontainers, parando el contenedor en mitad de
+  la prueba. No se cazaron porque **los tests simulan el fallo justo donde el código lo espera**:
+  los de la 012 inyectan fallos en la capa de datos y comprueban las respuestas, nunca cortan la
+  base por debajo, y ningún test usa una URL de socket. La spec de corrección lleva los dos
+  arreglos **y sus dos tests de regresión**; si no, el siguiente despliegue los redescubre igual.
+  Conviene mirar de paso si hay más sitios que den por hecha una URL con nombre de servidor.
+- **Mis dos diagnósticos equivocados, por el mismo motivo.** Al mirar `BACKUP_VERIFY_URL` usé
+  `new URL` para describirla y concluí que el fichero estaba mal; era mi comprobación la que no
+  podía leer una URL de socket, igual que el fallo que estaba buscando. Y di por hecho que el
+  `POST` del chat devolvería el 503 con el contacto de emergencia, sin caer en que el proceso ya
+  no estaba vivo para devolverlo. Regla que queda: **antes de dar por malo un valor, comprobar
+  que la herramienta con la que lo miras admite su forma**.
+
+**Cuatro cosas que parecen fallos y no lo son** (las cuatro vistas el 2026-10-08):
+
+- **El login admite 5 intentos por minuto y por IP** (`src/admin/auth/routes.ts:24`): un `429` al
+  teclear varias veces no es un fallo de configuración.
+- **«Probar el bot» nunca se corta** (010 FR-019) y **sus avisos son simulados**. Si el chat
+  público responde solo con el contacto y el playground contesta bien, lo que falla no es el bot:
+  es el tope de gasto o el precio del modelo.
+- **Entre avisos de una misma derivación pasan 15 minutos.** Tras el primero, los mensajes
+  siguientes quedan pendientes y se agrupan (`handoff_forward_deferred`,
+  `src/handoff/service.ts:775`); no se pierden. Para probar dos avisos seguidos hay que usar una
+  **conversación nueva**, o bajar el intervalo a 5 minutos en `/admin/usage` y devolverlo a 15.
+- **«Terminado» no limpia el panel al instante, y «Le atiendo» no termina nada.** Son dos pasos a
+  propósito. Al terminar, la derivación sale de «Derivaciones activas» (`listActive` filtra por
+  `status = 'active'`), pero `/admin/handoffs` **no se refresca solo**: hay que recargar. En el
+  chat del cliente la franja sí se quita sola, en hasta **60 segundos**
+  (`channels/web/assets/frame.js`, `HANDOFF_POLL_MS`). Y lo que el cliente escribió durante la
+  derivación **queda retenido**, no se contesta en diferido: aparece en «Mensajes retenidos» para
+  que lo lea una persona (`service.ts:323-338`).
 
 ### Fase 10 · Copias fuera del servidor (Los dos)
 - [ ] Contratar una Storage Box de Hetzner (unos 4 €/mes) y copiar `BACKUP_DIR` con rsync o rclone
   por SSH, con una tarea programada.
 - [ ] Probar una restauración completa en una BD temporal con la copia de la Storage Box.
 
-### Fase 11 · Spec de modo oscuro (Yo)
+### Fase 11 · Specs de núcleo y ciclo de actualización (Yo)
+- [ ] **Primero, la spec de corrección de los dos fallos de la fase 9** (**núcleo**), decidida el
+  2026-10-09. Se adelanta al modo oscuro porque uno de los dos deja la instancia en bucle de
+  reinicio ante cualquier corte de la base de datos y el otro deja las copias sin poder
+  comprobarse. Alcance: `pool.on('error')` en `src/db/client.ts`, `withDatabase` con URL de
+  socket en `src/backup/service.ts`, y **los dos tests de regresión**. Sale la **0.1.1**, imagen
+  nueva a GHCR y actualización de las dos instancias, que es además el ensayo real del ciclo de
+  actualización que esta fase quería hacer con el modo oscuro. Al terminar, se repiten las dos
+  casillas que quedaron bloqueadas en la fase 9.
 - [ ] `/speckit-specify`: modo oscuro del panel (**núcleo**, afecta a todos los clientes).
 - [ ] Después, la spec del **proveedor del modelo configurable** (ver §6), que es la que lleva la
   instancia 2 a Gemini. Va detrás del modo oscuro a propósito: el modo oscuro es un cambio pequeño
@@ -663,13 +1004,30 @@ clave es la contraseña. El bloqueo por IP sigue **desactivado**, que es lo corr
 
 ## 6. Qué tienes que traer a la próxima sesión
 
-Actualizado el 2026-10-08, al cerrar la fase 6. Lo siguiente es la **fase 7**, que empieza con
-datos que solo tienes tú:
+Actualizado el 2026-10-09, al pasar la fase 9. Lo siguiente es la **spec de corrección** de los dos
+fallos que destapó esa fase (ver fase 11), y **no necesita ningún dato nuevo tuyo**. Lo que hay que
+tener presente:
 
-- Tu teléfono y correo reales de contacto y de avisos.
+- **La fase 9 está pasada salvo dos casillas**, las dos bloqueadas por fallos del núcleo y
+  ninguna por configuración: `db:verify` (las copias se crean y se listan, pero no se pueden
+  comprobar) y el contacto de emergencia (la respuesta es correcta pero inalcanzable). Se repiten
+  las dos sobre la 0.1.1, cuando esté la corrección.
+- **Ojo al probar el corte de la base de datos**: hoy deja las dos instancias en bucle de
+  reinicio y los dos paneles pidiendo credenciales otra vez. Se recupera solo al arrancar la
+  base, pero puede tardar más de dos minutos por el retroceso de Docker.
+- **`info@automatizacionro.work` sigue sin ser un buzón**, por la decisión de aplazar el Email
+  Routing. La web y el bot la dan como contacto y nadie lee lo que se escriba ahí. No afecta a
+  los avisos de derivación, que van al correo personal.
+- **Los avisos de derivación pueden caer en spam**, con SPF, DKIM y DMARC los tres en `PASS`
+  (ver fase 8). Antes de dar por fallida una prueba de la fase 9, **mirar la carpeta de spam**.
+- El **teléfono de las dos webs es el de relleno** `+34 600 000 000`, por la decisión de la fase
+  7. Es coherente con lo que responde el bot, pero conviene tenerlo presente antes de enseñar la
+  web a nadie.
 - Las **dos claves SMTP de Brevo** quedan funcionando y probadas de punta a punta. **Corrige lo
   guardado en Bitwarden**: el valor incluía el servidor pegado a la clave, que es lo que costó
   toda la fase 6. Solo el token `xsmtpsib-…` de 90 caracteres, y el host aparte.
+- Siguen **los commits de `main` sin subir**, por decisión: se sube todo al terminar las fases.
+  Con el cierre de la fase 9 son 6 (el script de pruebas y esta anotación del plan).
 
 ### Proveedor del modelo configurable (Gemini), decidido el 2026-10-08
 
