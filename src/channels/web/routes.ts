@@ -269,6 +269,13 @@ export async function webChatRoutes(chat: FastifyInstance): Promise<void> {
     const html = await eta.renderAsync('frame', {
       ...view,
       theme: computeTheme(design, businessName),
+      /**
+       * 016 (FR-013): el contacto viaja en la página desde que se carga, para que la interfaz
+       * pueda mostrarlo sin pedir nada más al servidor —ni siquiera cuando el servidor no
+       * contesta—. Es `lastContact`, que ya se calcula aquí: el del negocio si se pudo leer su
+       * información y el de emergencia si no, también en la rama «no disponible».
+       */
+      contact: lastContact.value,
       // La hoja del diseño solo se enlaza si hay diseño guardado (R2); sin él, el HTML de la 004.
       designHref: design.saved ? `/chat/design.css?v=${designVersion(design)}` : null,
     });

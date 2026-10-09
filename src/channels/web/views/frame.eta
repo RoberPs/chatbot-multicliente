@@ -1,5 +1,7 @@
 <!doctype html>
-<html lang="es"<% Object.entries(it.theme.htmlAttrs).forEach(function (attr) { %> <%= attr[0] %>="<%= attr[1] %>"<% }) %>>
+<% /* 016 (FR-013): el contacto viaja en la propia página, para que la interfaz pueda ofrecerlo
+      aunque el servidor no conteste. Lo escapa la plantilla, como los atributos del tema. */ %>
+<html lang="es"<% Object.entries(it.theme.htmlAttrs).forEach(function (attr) { %> <%= attr[0] %>="<%= attr[1] %>"<% }) %><% if (it.contact) { %> data-contact="<%= it.contact %>"<% } %>>
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">

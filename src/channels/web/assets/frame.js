@@ -42,14 +42,24 @@
     else img.addEventListener('error', dropBroken.bind(null, img));
   }
 
+  /**
+   * 016 (FR-013): el contacto lo trae la propia página en `<html data-contact>`, así que está
+   * disponible **antes de la primera petición** y sigue estándolo aunque el servidor no
+   * conteste. Si una respuesta del servidor trae uno más fresco, lo sustituye.
+   */
+  var pageContact =
+    (document.documentElement && document.documentElement.dataset.contact) || null;
+
   var state = {
     token: null,
     cursor: null,
-    contact: null,
+    contact: pageContact,
     maxLength: 1000,
     /** Instante en el que se empezó a esperar la respuesta actual. */
     waitingSince: null,
     pollTimer: null,
+    /** 016: ya se avisó de que no se puede responder; no se repite hasta que algo funcione. */
+    gaveUp: false,
     /** Sondeo lento mientras la conversación está derivada al negocio (005). */
     handoffTimer: null,
     handoffActive: false,
@@ -136,6 +146,25 @@
     item.textContent = text;
     list.appendChild(item);
     list.scrollTop = list.scrollHeight;
+  }
+
+  /**
+   * 016 (FR-009, SC-005): el final del «escribiendo…» cuando el fallo no se entiende.
+   *
+   * Retira la indicación de espera y ofrece el contacto **de la página**, sin depender de
+   * ninguna respuesta del servidor. Usa `addNotice` y **no** `showUnavailable`, a propósito: no
+   * esconde el formulario, así que el visitante puede volver a escribir y la conversación sigue
+   * cuando el servicio vuelva. Es la misma función que usa el abandono de `poll()` a los 45 s,
+   * para que los dos caminos acaben igual.
+   */
+  function giveUp() {
+    stopPolling();
+    setStatus('');
+    // No se repite en bucle: un solo aviso hasta que algo vuelva a funcionar.
+    if (state.gaveUp) return;
+    state.gaveUp = true;
+    addNotice('Ahora mismo no puedo responder. Vuelve a escribirme en unos minutos.');
+    if (state.contact) addNotice(state.contact);
   }
 
   function showUnavailable(un) {
@@ -291,10 +320,7 @@
 
   function poll() {
     if (state.waitingSince !== null && Date.now() - state.waitingSince > GIVE_UP_MS) {
-      stopPolling();
-      setStatus('');
-      addNotice('Ahora mismo no puedo responder. Vuelve a escribirme en unos minutos.');
-      addNotice(state.contact);
+      giveUp();
       return;
     }
     var path = state.cursor ? '/messages?after=' + encodeURIComponent(state.cursor) : '/messages';
@@ -324,6 +350,8 @@
     return request('POST', '/messages', { clientMessageId: id, text: text }).then(function (res) {
       if (res.status === 202) {
         state.limitWarned = false;
+        // El servicio responde otra vez: el próximo fallo sí vuelve a avisar.
+        state.gaveUp = false;
         startPolling();
         return loadHistory();
       }
@@ -349,7 +377,15 @@
         setStatus('El mensaje tiene que tener entre 1 y ' + state.maxLength + ' caracteres.');
         return;
       }
-      if (res.data && res.data.unavailable) showUnavailable(res.data.unavailable);
+      if (res.data && res.data.unavailable) return showUnavailable(res.data.unavailable);
+      /**
+       * **La corrección de la 016** (FR-009). Antes esto no existía: si la respuesta no encajaba
+       * en ninguno de los casos conocidos —un 500, un 502 del proxy, un cuerpo que no es JSON,
+       * una caída de red—, `send()` terminaba sin hacer nada y el chat se quedaba
+       * «escribiendo…» **para siempre**, sin mensaje y sin salida. Para el cliente final era el
+       * peor resultado posible, y choca con el Principio V de la constitución.
+       */
+      giveUp();
     });
   }
 

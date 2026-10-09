@@ -212,6 +212,49 @@ describe('widget y frame del chat web', () => {
     }
   });
 
+  /**
+   * 016 (T032, FR-013): el contacto viaja en la propia página, en `<html data-contact>`, para
+   * que la interfaz pueda ofrecerlo sin pedir nada más al servidor —ni siquiera cuando el
+   * servidor no contesta—. Antes solo llegaba dentro de una respuesta de la API, así que si la
+   * respuesta no llegaba, tampoco llegaba el contacto.
+   */
+  it('el contacto del negocio viaja en la página con el negocio legible', async () => {
+    const b = await createTestBot(t, { webChat: WEB_ON });
+    bot = b;
+    const res = await frame(b.app, { referer: `${ORIGIN}/pagina` });
+    expect(res.statusCode).toBe(200);
+    const attr = /<html[^>]*\sdata-contact="([^"]*)"/.exec(res.body);
+    expect(attr).not.toBeNull();
+    expect(attr?.[1]).toContain('Peluquería Tijeras');
+  });
+
+  it('el teléfono de emergencia viaja en la página con el negocio ilegible', async () => {
+    bot = await createTestBot(t, { webChat: WEB_ON });
+    const noBot = await buildTestApp(t.db, undefined, null);
+    try {
+      const res = await frame(noBot);
+      const attr = /<html[^>]*\sdata-contact="([^"]*)"/.exec(res.body);
+      expect(attr).not.toBeNull();
+      // El de emergencia de la instancia: lo que FR-013 exige cuando no se puede leer el negocio.
+      expect(attr?.[1]).toContain('600 99 98 88');
+    } finally {
+      await noBot.close();
+    }
+  });
+
+  it('el contacto va escapado y la página no lleva nada más de la instancia (FR-012)', async () => {
+    const b = await createTestBot(t, { webChat: WEB_ON });
+    bot = b;
+    const res = await frame(b.app, { referer: `${ORIGIN}/pagina` });
+    // Escapado por la plantilla: ningún `<` ni `"` sin escapar dentro del atributo.
+    const attr = /<html[^>]*\sdata-contact="([^"]*)"/.exec(res.body);
+    expect(attr?.[1]).not.toContain('<');
+    // Y la página no filtra nada de la configuración de la instancia.
+    for (const secret of ['postgres://', 'DATABASE_URL', 'SESSION_SECRET', 'sk-ant']) {
+      expect(res.body).not.toContain(secret);
+    }
+  });
+
   it('al desactivar, la siguiente petición ya ve "no disponible" (US2-5, sin caché)', async () => {
     const b = await createTestBot(t, { webChat: WEB_ON });
     bot = b;

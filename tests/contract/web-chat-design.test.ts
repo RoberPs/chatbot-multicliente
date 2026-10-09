@@ -45,8 +45,21 @@ const fixture = (name: string): string =>
   readFileSync(new URL(`../fixtures/web-chat/${name}`, import.meta.url), 'utf8');
 
 /** Espacio en blanco normalizado (ver la cabecera del fichero). */
+/**
+ * Normaliza el espacio en blanco y quita `data-contact`.
+ *
+ * 016 (FR-013): el contacto viaja ahora en `<html data-contact>` para que la interfaz pueda
+ * ofrecerlo aunque el servidor no conteste. Es **el único** añadido de la 016 al HTML del frame,
+ * y se quita aquí para que la garantía de no regresión de la 011 —sin diseño guardado, el frame
+ * es el HTML de la 004— siga comparando todo lo demás byte a byte contra el fixture original,
+ * que no se toca.
+ */
 const normalize = (html: string): string =>
-  html.replace(/>\s+</g, '><').replace(/\s+/g, ' ').trim();
+  html
+    .replace(/ data-contact="[^"]*"/g, '')
+    .replace(/>\s+</g, '><')
+    .replace(/\s+/g, ' ')
+    .trim();
 
 describe('diseño del chat web: frame sin diseño', () => {
   let t: TestDatabase;
@@ -71,7 +84,8 @@ describe('diseño del chat web: frame sin diseño', () => {
     expect(res.statusCode).toBe(200);
     expect(normalize(res.body)).toBe(normalize(fixture('frame-004.html')));
     expect(res.body).not.toContain('design.css');
-    expect(res.body).not.toMatch(/<html[^>]*data-/);
+    // El único atributo de datos que puede llevar sin diseño es el contacto de la 016.
+    expect(res.body.replace(/ data-contact="[^"]*"/g, '')).not.toMatch(/<html[^>]*data-/);
     expect(res.body).not.toContain('class="design-');
   });
 
@@ -111,7 +125,8 @@ describe('diseño del chat web: frame con diseño (US1)', () => {
     });
     const res = await frame(bot.app);
     expect(res.statusCode).toBe(200);
-    expect(res.body).toMatch(/<html lang="es" data-palette="custom">/);
+    // 016 (FR-013): tras los atributos del tema va `data-contact`, así que no se ancla el `>`.
+    expect(res.body).toMatch(/<html lang="es" data-palette="custom"[ >]/);
     const css = res.body.indexOf('<link rel="stylesheet" href="/chat/design.css?v=');
     expect(css).toBeGreaterThan(res.body.indexOf('/chat/assets/frame.css'));
     expect(res.body).toContain('<h1>Atención al cliente</h1>');
@@ -542,11 +557,12 @@ describe('diseño del chat web: posición y tamaño (US4)', () => {
     bot = await createTestBot(t, { webChat: WEB_ON });
     await seedChatDesign(t.db, { position: 'left', size: 'large' });
     const res = await bot.app.inject({ method: 'GET', url: '/chat/frame' });
-    expect(res.body).toMatch(/<html lang="es" data-position="left" data-size="large">/);
+    expect(res.body).toMatch(/<html lang="es" data-position="left" data-size="large"[ >]/);
 
     await seedChatDesign(t.db, { position: 'right', size: 'medium', chatName: 'Solo el nombre' });
     const original = await bot.app.inject({ method: 'GET', url: '/chat/frame' });
-    expect(original.body).toContain('<html lang="es">');
+    // Sin diseño no hay atributos del tema; el contacto de la 016 sí va (FR-013).
+    expect(original.body.replace(/ data-contact="[^"]*"/g, '')).toContain('<html lang="es">');
   });
 
   it('el panel muestra los radios de posición y tamaño y guarda sus valores', async () => {
