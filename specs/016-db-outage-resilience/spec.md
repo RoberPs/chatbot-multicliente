@@ -76,12 +76,23 @@ Es la parte que más importa de esta spec, porque es la que evita que vuelva a p
 De ahí que los dos fallos pasaran por las pruebas unitarias, de contrato y de integración y solo
 aparecieran en producción.
 
+## Clarifications
+
+### Session 2026-10-09
+
+- Q: ¿La corrección debe garantizar también que WhatsApp responda al cliente final durante el corte de la base de datos, o basta con el chat web? → A: Los dos canales: la garantía de respuesta con contacto durante el corte aplica a cualquier canal del núcleo (chat web y WhatsApp), con escenario de aceptación propio para WhatsApp.
+- Q: Durante el corte, ¿qué debe devolver la comprobación de salud para que el orquestador no reinicie la instancia y anule la corrección? → A: Responde correctamente (proceso vivo, no reiniciable) e informa del estado degradado de la base de datos en su contenido; el orquestador no reinicia.
+- Q: Cuando la interfaz del chat no recibe respuesta útil del servidor, ¿de dónde saca el teléfono de contacto que debe mostrar? → A: El contacto viaja en la página del chat al cargarla y la interfaz lo usa aunque el servidor no responda.
+- Q: ¿La prueba que corta de verdad la base de datos debe ejecutarse dentro de `pnpm test`, o en una suite aparte? → A: Dentro de las pruebas de integración (y por tanto de `pnpm test`), con su contenedor propio para no afectar a las demás pruebas.
+- Q: Durante un corte largo, ¿qué debe hacer el registro con los fallos de conexión repetidos? → A: Registrar una vez el inicio del corte y una vez su recuperación, agrupando los fallos repetidos del intervalo.
+
 ## User Scenarios & Testing *(mandatory)*
 
 ### User Story 1 - El cliente final recibe una respuesta aunque la base de datos no esté (Priority: P1)
 
-Un cliente está escribiendo al bot por el chat web. En ese momento la base de datos del negocio deja
-de estar disponible: un reinicio de mantenimiento, un corte momentáneo, un fallo del servidor.
+Un cliente está escribiendo al bot por cualquiera de los canales —el chat web o WhatsApp—. En ese
+momento la base de datos del negocio deja de estar disponible: un reinicio de mantenimiento, un
+corte momentáneo, un fallo del servidor.
 
 Hoy el cliente se queda mirando «escribiendo…» indefinidamente y nunca recibe nada. Con esta
 corrección, recibe en el acto un mensaje que le dice que ahora no se le puede atender por el chat y
@@ -106,7 +117,11 @@ y comprobando que llega respuesta con contacto, sin tocar nada más del sistema.
    vuelve, **Then** la instancia vuelve a atender con normalidad **sin que haya hecho falta
    reiniciar el proceso** y sin que el operador tenga que intervenir.
 4. **Given** una instancia durante el corte, **When** se consulta su estado de salud,
-   **Then** informa de que no está correcta, en lugar de no responder.
+   **Then** responde e informa de que su base de datos no está disponible, y ese resultado no
+   provoca que el despliegue reinicie el proceso.
+5. **Given** la misma instancia durante el corte, **When** llega un mensaje del cliente final por
+   WhatsApp, **Then** recibe el mismo aviso con contacto que por el chat web, con las mismas reglas
+   de contacto, y el proceso de la instancia **sigue vivo**.
 
 ---
 
@@ -152,7 +167,7 @@ y comprobando que la interfaz deja de indicar espera y ofrece contacto.
 
 1. **Given** un chat abierto, **When** el envío de un mensaje termina en un fallo que la interfaz no
    reconoce, **Then** la interfaz deja de indicar que el bot está escribiendo y muestra un aviso con
-   la forma de contactar con el negocio.
+   la forma de contactar con el negocio, tomada de la que la página trae desde que se cargó.
 2. **Given** ese mismo estado, **When** el cliente vuelve a escribir más tarde y el servicio ya
    funciona, **Then** la conversación continúa con normalidad.
 
@@ -204,12 +219,16 @@ de aceptación comprobable.
 - **FR-001**: Una instancia ya arrancada MUST seguir en ejecución cuando su base de datos deja de
   estar disponible, sea cual sea el momento del corte, y MUST NOT terminar el proceso por ese
   motivo.
-- **FR-002**: Durante el corte, el chat web MUST responder a los mensajes del cliente final con el
-  aviso de que no se le puede atender y con una forma de contactar con una persona, aplicando las
-  reglas de contacto ya existentes: el contacto del negocio si se puede leer su información, y el
-  teléfono de emergencia de la instancia si no.
-- **FR-003**: Durante el corte, la comprobación de salud de la instancia MUST responder indicando
-  que no está correcta, en lugar de no responder.
+- **FR-002**: Durante el corte, **todos los canales del núcleo** (chat web y WhatsApp) MUST
+  responder a los mensajes del cliente final con el aviso de que no se le puede atender y con una
+  forma de contactar con una persona, aplicando las reglas de contacto ya existentes: el contacto
+  del negocio si se puede leer su información, y el teléfono de emergencia de la instancia si no.
+  Ningún canal puede quedar sin respuesta durante el corte.
+- **FR-003**: Durante el corte, la comprobación de salud de la instancia MUST responder —en lugar
+  de quedarse sin respuesta— con un resultado **correcto** que indique en su contenido que la base
+  de datos no está disponible. El resultado MUST NOT ser uno que la política de reinicio del
+  despliegue interprete como motivo para reiniciar el proceso: el proceso vive y sirve, aunque su
+  base de datos esté degradada.
 - **FR-004**: Cuando la base de datos vuelve, la instancia MUST recuperar el servicio por sí sola,
   sin reiniciar el proceso y sin intervención del operador.
 - **FR-005**: Todos los puntos del núcleo que abren conexiones a la base de datos MUST tratar el
@@ -226,15 +245,26 @@ de aceptación comprobable.
   ocurrido en otra.
 - **FR-009**: La interfaz del chat web MUST dejar de indicar espera y MUST mostrar un aviso con la
   forma de contactar ante cualquier respuesta de error que no sepa interpretar, incluidas las que no
-  proceden de la instancia.
+  proceden de la instancia. El contacto que muestra es el que la página ya trae consigo (FR-013),
+  sin depender de una respuesta del servidor en ese momento.
 - **FR-010**: El conjunto de pruebas MUST incluir una prueba que corte de verdad la base de datos
   con la instancia en marcha y verifique FR-001 a FR-004. No vale inyectar el fallo en la capa de
-  datos: tiene que ser el servidor el que deje de estar.
+  datos: tiene que ser el servidor el que deje de estar. Esta prueba MUST formar parte de las
+  pruebas de integración que se ejecutan con la orden de pruebas habitual, y MUST usar una base de
+  datos propia y aislada, de modo que pararla no altere el resto de las pruebas.
 - **FR-011**: El conjunto de pruebas MUST incluir una prueba de la reconstrucción de direcciones de
   base de datos con una dirección por socket local, sin necesidad de una base de datos real.
 - **FR-012**: Ningún mensaje, registro ni salida nueva de esta corrección MUST contener
   credenciales, direcciones de base de datos ni partes de ellas, manteniendo la regla ya vigente en
   el núcleo.
+- **FR-013**: La página del chat web MUST llevar consigo la forma de contacto desde el momento en
+  que se carga, de modo que la interfaz pueda mostrarla sin pedir nada más al servidor. Si al cargar
+  la página no se puede leer la información del negocio, el contacto que viaja es el teléfono de
+  emergencia de la instancia.
+- **FR-014**: Durante un corte, la instancia MUST registrar una vez el inicio del corte y una vez
+  su recuperación, agrupando los fallos de conexión repetidos del intervalo en lugar de registrar
+  uno por cada conexión o cada reintento. El volumen del registro MUST NOT crecer con el número de
+  peticiones ni con la duración del corte.
 
 ### Key Entities
 
@@ -251,10 +281,11 @@ de aceptación comprobable.
 
 ### Measurable Outcomes
 
-- **SC-001**: Con la base de datos parada, el cliente final recibe respuesta con contacto en el
-  chat en menos de 10 segundos desde que envía el mensaje, en el 100 % de los intentos.
+- **SC-001**: Con la base de datos parada, el cliente final recibe respuesta con contacto en menos
+  de 10 segundos desde que envía el mensaje, en el 100 % de los intentos y en los dos canales (chat
+  web y WhatsApp).
 - **SC-002**: Una instancia sobrevive a un corte de su base de datos de cualquier duración sin
-  reiniciarse ni una sola vez.
+  reiniciarse ni una sola vez, ni por la caída de sus conexiones ni por su comprobación de salud.
 - **SC-003**: Al volver la base de datos, la instancia vuelve a atender con normalidad en menos de
   30 segundos, sin intervención del operador y sin que las sesiones del panel se pierdan.
 - **SC-004**: La comprobación de una copia de seguridad da «restaurable» en las dos instancias de
@@ -265,6 +296,8 @@ de aceptación comprobable.
   Criterio de que las pruebas sirven de verdad.
 - **SC-007**: Las pruebas cubren las dos formas de dirección de base de datos, no solo la de nombre
   de servidor.
+- **SC-008**: Un corte de una hora deja en el registro un número de anotaciones acotado —el inicio,
+  la recuperación y los resúmenes del intervalo—, no una por petición fallida.
 
 ## Assumptions
 
@@ -283,7 +316,8 @@ de aceptación comprobable.
 - **Sale la versión 0.1.1 del núcleo**, con imagen nueva y actualización de las dos instancias
   desplegadas, lo que sirve además de primera prueba real del ciclo de actualización sobre
   instancias en producción.
-- **Las pruebas de integración ya levantan PostgreSQL en un contenedor**, así que parar ese
-  contenedor en mitad de una prueba es posible sin infraestructura nueva.
+- **Las pruebas de integración ya levantan PostgreSQL en un contenedor**, así que parar un
+  contenedor en mitad de una prueba es posible sin infraestructura nueva. La prueba del corte usa
+  uno propio y aislado (FR-010), para que pararlo no afecte a las demás pruebas de integración.
 - **Al terminar se repiten las dos casillas bloqueadas de la fase 9** del plan de despliegue: la
   comprobación de copias y el teléfono de emergencia mostrado por el bot.
