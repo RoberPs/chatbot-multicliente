@@ -23,7 +23,7 @@ dentro.
 
 ---
 
-## Escenario 1 · Las pruebas automáticas (FR-001 a FR-011)
+## Escenario 1 · Las pruebas automáticas (FR-001 a FR-014)
 
 ```bash
 pnpm lint && pnpm typecheck
@@ -42,6 +42,12 @@ pnpm test frame-degraded                    # la interfaz no se queda colgada: F
 
 **Qué hay que ver.** Todo verde. La prueba del corte tarda más que el resto (para y arranca
 PostgreSQL dos veces); está dentro de `pnpm test` a propósito.
+
+**En Windows hay un caso que se salta** y lo dice por pantalla: el de `db:verify` con una ruta de
+socket Unix literal, que solo se puede ejecutar en sistemas que admiten sockets. La forma que
+causaba el fallo —la dirección sin nombre de servidor— **sí** se comprueba en cualquier sistema.
+Como no hay integración continua en Linux, la verificación de la forma literal de producción es el
+escenario 6 (SC-004), que por eso es obligatorio antes de cerrar la feature.
 
 ---
 

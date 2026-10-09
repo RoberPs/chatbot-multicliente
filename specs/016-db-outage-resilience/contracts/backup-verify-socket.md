@@ -30,7 +30,7 @@ withDatabaseName(url: string, database: string): string | null
 - Nunca lanza: los casos imposibles devuelven `null`.
 - No se muestra en ningún mensaje ni registro (FR-012).
 
-**Prueba de FR-011**: tabla unitaria con las dos formas de dirección, **sin base de datos real**.
+**Prueba de FR-011**: tabla unitaria con las tres formas de dirección, **sin base de datos real**.
 Es la prueba que cae si se revierte la corrección (SC-006, SC-007).
 
 ---

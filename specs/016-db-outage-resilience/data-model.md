@@ -99,14 +99,19 @@ de R2 (red de Node, SQLSTATE clase 08, `57P01`/`57P02`/`57P03`) o si `isPoolBusy
 
 ---
 
-## 4 · Dirección de base de datos — dos formas, un solo intérprete
+## 4 · Dirección de base de datos — tres formas, un solo intérprete
 
 `src/config/database-url.ts`. Sin tipos nuevos: se añade una función.
 
 | Forma | Ejemplo | Quién la usa |
 |---|---|---|
 | Por nombre de servidor | `postgres://u:c@servidor:5432/base?sslmode=verify-full` | desarrollo, pruebas, instancias remotas |
-| **Por socket local** | `postgres://u:c@/base?host=/var/run/postgresql` | **el despliegue de producción** |
+| **Autoridad vacía** | `postgres://u:c@/base?host=localhost&port=5432` | **las pruebas de las dos formas sin servidor, en cualquier sistema operativo** |
+| **Ruta de socket Unix** | `postgres://u:c@/base?host=/var/run/postgresql` | **el despliegue de producción** |
+
+Las dos últimas comparten el defecto que corrige esta feature —la autoridad vacía, que el
+intérprete estándar no admite— y se tratan igual. La diferencia es solo de transporte, y por eso
+la de autoridad vacía se puede probar en Windows y la de socket Unix no (ver FR-006).
 
 ```text
 withDatabaseName(url: string, database: string): string | null
@@ -117,7 +122,7 @@ withDatabaseName(url: string, database: string): string | null
 - Conserva usuario, contraseña, servidor (o su ausencia), puerto y **todos** los parámetros de
   consulta, incluidos `host`, `sslmode` y `sslrootcert`.
 - Cambia solo el nombre de la base.
-- `withDatabaseName(u, nombreDeSuBase)` ≡ `u` para las dos formas (idempotencia).
+- `withDatabaseName(u, nombreDeSuBase)` ≡ `u` para las tres formas (idempotencia).
 - Devuelve `null` —nunca lanza— si la dirección no se puede interpretar o el protocolo no es
   `postgres:`/`postgresql:`.
 - No aparece en ningún mensaje: es un valor de entrada a `pg`, nunca de salida (FR-012).

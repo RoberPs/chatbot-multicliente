@@ -33,9 +33,12 @@ Enfoque técnico (detalle en [research.md](research.md)):
    503; lo que falta es WhatsApp, cuya maquinaria de disculpa (012) necesita la base de datos para
    funcionar. Módulo nuevo `src/conversation/degraded-reply.ts` que, cuando guardar falla por
    indisponibilidad, envía la disculpa con el teléfono de emergencia **sin tocar la base**, una
-   sola vez por cliente y corte, y vuelve a lanzar para que Meta reintente.
+   sola vez por cliente y corte, y vuelve a lanzar para que Meta reintente. Esa cadencia —cada
+   petición en los canales sincrónicos, al menos una vez por cliente y corte en los
+   asincrónicos— es la que fija FR-002: repetir el aviso con cada reintento de Meta convertiría
+   la disculpa en una ráfaga de mensajes salientes.
 6. **Una sola forma de reconstruir una dirección de BD** (R6). `withDatabaseName` en
-   `src/config/database-url.ts`, que admite las dos formas. Sustituye al `new URL` de
+   `src/config/database-url.ts`, que admite las tres formas. Sustituye al `new URL` de
    `src/backup/service.ts:721`. La auditoría de FR-007 destapa dos comprobaciones de seguridad
    que en producción nunca se han ejecutado: la calidad de la contraseña de la BD y la regla que
    prohíbe el usuario `postgres`, las dos silenciadas por el mismo `new URL`.
@@ -61,7 +64,9 @@ códigos SQLSTATE), Drizzle ORM, Fastify 5, Eta, Zod 4, `@testcontainers/postgre
 **Testing**: Vitest.
 
 - `unit`:
-  - `withDatabaseName` con las dos formas de dirección, incluida la de socket (FR-011, SC-007);
+  - `withDatabaseName` con las tres formas de dirección: nombre de servidor, autoridad vacía con
+    el servidor en un parámetro y ruta de socket Unix (FR-011, SC-007); las tres son texto, así
+    que esta prueba no necesita base de datos y corre en cualquier sistema operativo;
   - `isDbUnavailable`: tabla de códigos, cadena de causas y los errores que **no** son de
     disponibilidad;
   - vigilante de cortes con reloj y sondeo falsos: una anotación de inicio, resúmenes espaciados,
@@ -82,8 +87,11 @@ códigos SQLSTATE), Drizzle ORM, Fastify 5, Eta, Zod 4, `@testcontainers/postgre
     levantada por `startInstance`. Verifica FR-001 a FR-004 y SC-001 a SC-003: respuesta con
     contacto por chat web y por WhatsApp, proceso vivo, `/health` 200 `db_unavailable`,
     recuperación sin reinicio con la sesión del panel intacta y registro acotado;
-  - `db:verify` sobre un PostgreSQL alcanzado por **socket Unix** (FR-006), con copia válida,
-    copia dañada y clave ajena, más el caso de servidor inalcanzable (FR-008).
+  - `db:verify` con la dirección **sin nombre de servidor** (FR-006), con copia válida, copia
+    dañada y clave ajena, más el caso de servidor inalcanzable (FR-008). El caso con **ruta de
+    socket Unix literal** va en el mismo fichero y se salta en Windows con una razón visible;
+    como no hay integración continua en Linux, su verificación obligatoria es el escenario de
+    producción de SC-004 (T051).
 - Sin `eval`: la conversación no cambia de contenido; las plantillas que se usan ya existen.
 
 **Target Platform**: servidor Linux (contenedor `node:22-slim` fijado por digest) con PostgreSQL
@@ -137,7 +145,7 @@ cadencias del registro y la técnica de la prueba del corte están fijados en el
 | III. Personalizaciones aisladas | **No aplica**: sin extensiones ni puntos de extensión nuevos. |
 | IV. Solo información registrada | **Cumple.** Durante el corte el bot no afirma nada del negocio: dice que no puede atender y da el contacto. Es el caso extremo del principio —sin información registrada, se reconoce la falta y se ofrece contacto— y usa las plantillas fijas que ya existen (`errorReply`, `emergencyContact`), sin inventar ni estimar nada. |
 | V. Siempre hay salida a una persona | **Cumple, y es la razón de ser de la feature.** Hoy el principio está incumplido en la práctica: el cliente final se queda en «escribiendo…» para siempre, sin aviso ni teléfono. FR-002 lo restablece en **todos** los canales del núcleo, FR-009 y FR-013 lo garantizan en la interfaz incluso cuando el servidor no contesta, y FR-013 hace que el contacto viaje en la página para que no dependa de ninguna petición. |
-| VI. El operador registra la información | **Cumple.** El negocio no gana acceso a nada. Las órdenes afectadas (`db:verify`, `instance:versions`, `instance:check`) son del operador, y dos reglas de seguridad suyas que estaban silenciadas en producción vuelven a aplicarse (R6). |
+| VI. El operador registra la información | **Cumple.** El negocio no gana acceso a nada. Las órdenes afectadas (`db:verify`, `instance:versions`, `instance:check`) son del operador, y dos reglas de seguridad suyas que estaban silenciadas en producción vuelven a aplicarse (R6). `instance:check` no se modifica: hereda la corrección a través de `databaseIdentity` (`src/provisioning/fingerprint.ts`), de quien depende su regla del usuario `postgres`. |
 | Aislamiento entre instancias | **Cumple.** `withDatabaseName` conserva servidor y parámetros, así que la base temporal de verificación sigue creándose en el servidor de verificación y no en el de producción. El vigilante de cortes y la memoria del aviso degradado viven en el proceso de una instancia y no se comparten. |
 | Flujo de desarrollo (convenciones) | Spec de núcleo declarada. Sin migraciones y sin subida de `formatVersion`. El dominio (`src/conversation/degraded-reply.ts`) no depende de HTTP; la clasificación de direcciones sigue en `src/config`; el adaptador de canal y el envoltorio de la recepción se conectan en `src/app.ts`. Duraciones del vigilante en minutos y segundos, medidas por la máquina, no horarios del negocio. Al cerrar se actualizan, **avisando antes al usuario**, `README.md` y `docs/operacion-multicliente.md` (§9.1 con fecha, §9.2, la propuesta que cubre y las secciones de operación de `/health` y `db:verify`). |
 | Pruebas de IV y V | **Obligatorias aquí y cubiertas.** La prueba del corte real verifica la salida a una persona por los dos canales con la base de datos parada (FR-010), y las de contrato verifican el contacto en la página y el fin del «escribiendo…». Son, además, las pruebas que hoy no existen y que dejaron pasar el fallo. |
@@ -177,7 +185,7 @@ src/
 │   ├── outage.ts                    # NUEVO — vigilante del corte: estado, registro y sondeo
 │   └── migrate.ts                   # client.on('error') en inspect
 ├── config/
-│   ├── database-url.ts              # withDatabaseName (las dos formas de dirección)
+│   ├── database-url.ts              # withDatabaseName (las tres formas de dirección)
 │   └── secret-rules.ts              # urlPassword con el parseo tolerante
 ├── health/
 │   └── report.ts                    # HealthStatus db_unavailable; regla y vistas; aviso al vigilante
@@ -201,16 +209,18 @@ src/
 │   └── healthcheck.ts               # sale con 0 también con db_unavailable
 ├── provisioning/
 │   ├── versions.ts                  # statusSchema, codeMatches y etiquetas con db_unavailable
-│   └── fingerprint.ts               # parsePgUrl tolerante: identidad y contraseña con socket
+│   ├── fingerprint.ts               # parsePgUrl tolerante: identidad y contraseña con socket
+│   └── database.ts                  # comentarios: parseAdminUrl y buildUrl rechazan socket a propósito
 ├── app.ts                           # BotHttp expone el remitente; onInbound con el envoltorio degradado
 └── startup.ts                       # engancha el vigilante al registro de la instancia
 
 tests/
 ├── helpers/own-postgres.ts          # NUEVO — contenedor propio con pg_ctl stop/start
+├── helpers/db.ts                    # las tres formas de dirección para las pruebas
 ├── unit/db/outage.test.ts · client-unavailable.test.ts · pool-listeners.test.ts
 ├── unit/config/database-url.test.ts · secret-rules.test.ts
 ├── unit/health/report.test.ts · unit/cli/healthcheck.test.ts
-├── unit/provisioning/fingerprint.test.ts · versions.test.ts
+├── unit/provisioning/fingerprint.test.ts · versions.test.ts · check.test.ts
 ├── unit/conversation/degraded-reply.test.ts
 ├── unit/backup/verify-failures.test.ts
 ├── unit/channels/frame-degraded.test.ts

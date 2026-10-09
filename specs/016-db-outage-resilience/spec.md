@@ -4,7 +4,7 @@
 
 **Created**: 2026-10-09
 
-**Status**: Draft
+**Status**: Ready for implementation
 
 **Ámbito**: Núcleo (corrección; afecta a todas las instancias)
 
@@ -111,7 +111,8 @@ y comprobando que llega respuesta con contacto, sin tocar nada más del sistema.
    web, **When** la base de datos deja de estar disponible y el cliente envía un mensaje,
    **Then** el chat responde que no puede atenderle ahora y muestra una forma de contactar con una
    persona, y el proceso de la instancia **sigue vivo**.
-2. **Given** la misma situación, **When** no se puede leer la información del negocio,
+2. **Given** la misma situación, **When** no se puede leer la información del negocio —que durante
+   un corte es siempre el caso, porque se lee de la base de datos en cada respuesta y sin caché—,
    **Then** el contacto que se muestra es el teléfono de emergencia de la instancia.
 3. **Given** una instancia que ha pasado por un corte de la base de datos, **When** la base de datos
    vuelve, **Then** la instancia vuelve a atender con normalidad **sin que haya hecho falta
@@ -119,9 +120,13 @@ y comprobando que llega respuesta con contacto, sin tocar nada más del sistema.
 4. **Given** una instancia durante el corte, **When** se consulta su estado de salud,
    **Then** responde e informa de que su base de datos no está disponible, y ese resultado no
    provoca que el despliegue reinicie el proceso.
-5. **Given** la misma instancia durante el corte, **When** llega un mensaje del cliente final por
-   WhatsApp, **Then** recibe el mismo aviso con contacto que por el chat web, con las mismas reglas
-   de contacto, y el proceso de la instancia **sigue vivo**.
+5. **Given** la misma instancia durante el corte, **When** llega el primer mensaje de un cliente
+   final por WhatsApp, **Then** recibe el mismo aviso con el mismo contacto de emergencia que por
+   el chat web, y el proceso de la instancia **sigue vivo**.
+6. **Given** un cliente que ya recibió el aviso por WhatsApp en este corte, **When** insiste con
+   más mensajes o la plataforma reintenta la entrega, **Then** no se le envía ningún mensaje
+   saliente más durante ese corte; cuando la base de datos vuelva, sus mensajes se atienden con
+   normalidad, y un corte posterior volverá a avisarle (FR-002).
 
 ---
 
@@ -221,9 +226,22 @@ de aceptación comprobable.
   motivo.
 - **FR-002**: Durante el corte, **todos los canales del núcleo** (chat web y WhatsApp) MUST
   responder a los mensajes del cliente final con el aviso de que no se le puede atender y con una
-  forma de contactar con una persona, aplicando las reglas de contacto ya existentes: el contacto
-  del negocio si se puede leer su información, y el teléfono de emergencia de la instancia si no.
-  Ningún canal puede quedar sin respuesta durante el corte.
+  forma de contactar con una persona. Ningún canal puede quedar sin respuesta durante el corte.
+  La cadencia del aviso depende de la naturaleza del canal:
+  - **Canales sincrónicos** (chat web): cada petición del cliente MUST obtener su respuesta con
+    contacto, sin excepción.
+  - **Canales asincrónicos** (WhatsApp): el aviso con contacto MUST llegar **al menos una vez por
+    cliente y corte**, y MUST NOT repetirse con cada mensaje insistente ni con cada reintento de
+    la plataforma, porque el envío no depende de una petición del cliente y repetirlo convertiría
+    el aviso en una ráfaga de mensajes salientes. Tras la recuperación, un corte posterior vuelve
+    a avisar.
+
+  El contacto que se ofrece durante el corte es el **teléfono de emergencia de la instancia**, por
+  construcción: la información del negocio se lee de la base de datos en cada respuesta y sin
+  caché, así que mientras la base no está no hay contacto del negocio que ofrecer. La regla de dos
+  ramas —contacto del negocio si se puede leer su información, emergencia si no— sigue aplicándose
+  donde sí hay información disponible: en la carga de la página del chat (FR-013) y en el resto de
+  los fallos que ya cubre la 012.
 - **FR-003**: Durante el corte, la comprobación de salud de la instancia MUST responder —en lugar
   de quedarse sin respuesta— con un resultado **correcto** que indique en su contenido que la base
   de datos no está disponible. El resultado MUST NOT ser uno que la política de reinicio del
@@ -236,7 +254,13 @@ de aceptación comprobable.
   que crean conexiones o agrupaciones de conexiones no devuelve ninguno sin ese tratamiento.
 - **FR-006**: La comprobación de una copia de seguridad MUST funcionar cuando la base de datos de
   verificación se alcanza por socket local, y MUST devolver «restaurable» con sus recuentos cuando
-  la copia es válida.
+  la copia es válida. Verificación: la forma **sin nombre de servidor** —la que rompía el código y
+  es la raíz del fallo— MUST comprobarse en las pruebas automáticas en cualquier sistema
+  operativo; la forma con **ruta de socket Unix literal** solo se puede ejecutar en sistemas que
+  admiten sockets Unix, así que su prueba se salta en Windows con una razón visible y su
+  verificación obligatoria es el escenario de producción de SC-004. No existe hoy integración
+  continua en Linux, de modo que SC-004 es la única puerta que ejercita la forma literal de
+  producción y MUST pasarse antes de dar la feature por terminada.
 - **FR-007**: Todos los puntos del núcleo que interpretan o reconstruyen una dirección de base de
   datos MUST admitir las direcciones por socket local, con el mismo criterio que ya aplica el módulo
   de clasificación de direcciones.
@@ -255,8 +279,11 @@ de aceptación comprobable.
 - **FR-011**: El conjunto de pruebas MUST incluir una prueba de la reconstrucción de direcciones de
   base de datos con una dirección por socket local, sin necesidad de una base de datos real.
 - **FR-012**: Ningún mensaje, registro ni salida nueva de esta corrección MUST contener
-  credenciales, direcciones de base de datos ni partes de ellas, manteniendo la regla ya vigente en
-  el núcleo.
+  credenciales, direcciones de base de datos ni partes de ellas —usuario, contraseña, servidor,
+  nombre de base ni ruta de socket—, manteniendo la regla ya vigente en el núcleo. Criterio
+  verificable: cada salida nueva de esta feature tiene una aserción que lo comprueba, en concreto
+  las anotaciones del corte (inicio, resumen y recuperación), las del aviso degradado, el informe
+  de salud con el estado nuevo y los tres motivos nuevos de la comprobación de copias.
 - **FR-013**: La página del chat web MUST llevar consigo la forma de contacto desde el momento en
   que se carga, de modo que la interfaz pueda mostrarla sin pedir nada más al servidor. Si al cargar
   la página no se puede leer la información del negocio, el contacto que viaja es el teléfono de
@@ -271,9 +298,22 @@ de aceptación comprobable.
 - **Agrupación de conexiones**: el conjunto de conexiones abiertas que una instancia mantiene contra
   su base de datos. Tiene dos: la general (panel, recepción de mensajes, derivaciones, copias) y la
   de las lecturas públicas del chat. Las dos están afectadas.
-- **Dirección de base de datos**: cómo se nombra una base de datos. Dos formas en uso: **por nombre
-  de servidor**, la de los entornos de desarrollo y pruebas, y **por socket local**, la del
-  despliegue de producción, que no lleva nombre de servidor.
+- **Dirección de base de datos**: cómo se nombra una base de datos. Tres formas en uso, que se
+  agrupan en dos familias según cómo las interpreta el código:
+  - **Por nombre de servidor** (`postgres://usuario:clave@servidor:puerto/base`): la de los
+    entornos de desarrollo y pruebas. La interpretan bien todas las herramientas.
+  - **Sin nombre de servidor, con autoridad vacía**
+    (`postgres://usuario:clave@/base?host=…&port=…`): el servidor viaja como parámetro. Es la
+    forma que rompe el intérprete de direcciones estándar y, por tanto, la raíz del fallo 2. Se
+    puede construir y probar en cualquier sistema operativo, incluso apuntando a un servidor por
+    TCP.
+  - **Sin nombre de servidor, con ruta de socket Unix** (`host=/var/run/postgresql`): la del
+    despliegue de producción. Es la forma literal de producción y comparte con la anterior el
+    mismo defecto de interpretación, pero solo se puede ejercitar en sistemas que admiten sockets
+    Unix.
+
+  Cuando esta spec dice «direcciones por socket local» o «sin nombre de servidor» se refiere a las
+  dos últimas: las dos tienen la autoridad vacía y las dos deben admitirse.
 - **Base de datos temporal de verificación**: la que se crea para restaurar una copia y comprobarla,
   y se borra al terminar. Vive en una agrupación distinta de la de producción.
 
@@ -282,10 +322,16 @@ de aceptación comprobable.
 ### Measurable Outcomes
 
 - **SC-001**: Con la base de datos parada, el cliente final recibe respuesta con contacto en menos
-  de 10 segundos desde que envía el mensaje, en el 100 % de los intentos y en los dos canales (chat
-  web y WhatsApp).
-- **SC-002**: Una instancia sobrevive a un corte de su base de datos de cualquier duración sin
-  reiniciarse ni una sola vez, ni por la caída de sus conexiones ni por su comprobación de salud.
+  de 10 segundos desde que envía el mensaje, en los dos canales (chat web y WhatsApp), con la
+  cadencia de FR-002: en el chat web, el 100 % de los envíos obtiene respuesta; por WhatsApp, el
+  primer mensaje de cada cliente en cada corte obtiene el aviso, y los siguientes del mismo corte
+  no generan mensajes salientes adicionales.
+- **SC-002**: Una instancia sobrevive a un corte de su base de datos sin reiniciarse ni una sola
+  vez, ni por la caída de sus conexiones ni por su comprobación de salud. Umbrales comprobables:
+  en la prueba de integración, un corte que abarque al menos dos ciclos del sondeo de salud y una
+  petición de cada canal; en el escenario de producción, un corte de al menos 5 minutos con la
+  sonda del contenedor activa. Nada en el diseño hace que la duración importe —no hay contador
+  que se agote ni memoria que crezca—, y de eso responde SC-008.
 - **SC-003**: Al volver la base de datos, la instancia vuelve a atender con normalidad en menos de
   30 segundos, sin intervención del operador y sin que las sesiones del panel se pierdan.
 - **SC-004**: La comprobación de una copia de seguridad da «restaurable» en las dos instancias de
@@ -294,8 +340,10 @@ de aceptación comprobable.
   interfaz termina en un aviso con contacto.
 - **SC-006**: Las dos pruebas de regresión fallan si se revierte su corrección correspondiente.
   Criterio de que las pruebas sirven de verdad.
-- **SC-007**: Las pruebas cubren las dos formas de dirección de base de datos, no solo la de nombre
-  de servidor.
+- **SC-007**: Las pruebas cubren las tres formas de dirección de base de datos, no solo la de
+  nombre de servidor: la de nombre de servidor y la de autoridad vacía con el servidor en un
+  parámetro, en cualquier sistema operativo; la de ruta de socket Unix, en los sistemas que la
+  admiten y, obligatoriamente, en el escenario de producción de SC-004.
 - **SC-008**: Un corte de una hora deja en el registro un número de anotaciones acotado —el inicio,
   la recuperación y los resúmenes del intervalo—, no una por petición fallida.
 
