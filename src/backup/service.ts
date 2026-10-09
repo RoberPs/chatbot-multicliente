@@ -10,7 +10,7 @@ import { Readable, type Transform } from 'node:stream';
 import { pipeline } from 'node:stream/promises';
 import pg from 'pg';
 import { from as copyFrom } from 'pg-copy-streams';
-import { describeDatabaseError } from '../config/database-url.js';
+import { describeDatabaseError, withDatabaseName } from '../config/database-url.js';
 import type { LoggerLike } from '../conversation/activity-log.js';
 import { systemClock, type Clock } from '../conversation/ports.js';
 import { conversationSettings } from '../conversation/settings.js';
@@ -716,13 +716,6 @@ export interface VerifyInternals {
   beforeLoad?: (database: string) => Promise<void>;
 }
 
-/** La misma URL apuntando a otra base de datos del servidor. */
-function withDatabase(url: string, database: string): string {
-  const u = new URL(url);
-  u.pathname = `/${database}`;
-  return u.toString();
-}
-
 /** Bases `verify_%` del servidor con sus conexiones; legible para cualquier usuario (R5). */
 async function listVerifyDatabases(
   admin: pg.ClientBase,
@@ -830,6 +823,21 @@ export async function verifyBackup(options: {
       config: options.config,
       acceptAnyInstance: true,
     });
+    /**
+     * **La corrección del fallo 2 de la 016** (FR-006, FR-008, research R6).
+     *
+     * Se interpreta la dirección **antes de conectar**, por dos motivos. El primero: antes esto
+     * era `new URL(verifyUrl)` más abajo, y `new URL` **lanza** con las direcciones sin nombre
+     * de servidor —las del despliegue real, alcanzadas por socket—, así que en producción las
+     * copias nunca se pudieron comprobar. El segundo: haciéndolo aquí, una dirección que no se
+     * puede interpretar tiene su propio motivo y no se disfraza de fallo de conexión ni de
+     * creación, que es la regla de no mentir del contrato (FR-008).
+     *
+     * `withDatabaseName` es el intérprete tolerante del núcleo, el mismo que ya rodeaba esta
+     * limitación para clasificar direcciones.
+     */
+    const verifyDatabaseUrl = withDatabaseName(options.config.verifyUrl, database);
+    if (verifyDatabaseUrl === null) throw new RestoreFailure('verify_url_invalid');
     try {
       admin = new pg.Client({ connectionString: options.config.verifyUrl });
       admin.on('error', () => undefined);
@@ -846,14 +854,16 @@ export async function verifyBackup(options: {
       await admin.query(
         `revoke connect, temporary on database ${quoteIdent(database)} from public`,
       );
-    } catch {
+    } catch (error) {
+      // 016 (FR-008): aquí la conexión **ya** funcionó, así que el motivo es de la creación, no
+      // de la conexión. Un fallo de TLS conserva su código propio.
       // Si la base llegó a crearse, el `finally` la borra.
-      throw new RestoreFailure('verify_db_unavailable');
+      throw new RestoreFailure(connectFailure(error, 'verify_db_create_failed'));
     }
     let client: pg.Client | null = null;
     try {
       try {
-        client = await connect(withDatabase(options.config.verifyUrl, database));
+        client = await connect(verifyDatabaseUrl);
       } catch (error) {
         throw new RestoreFailure(connectFailure(error, 'verify_db_unavailable'));
       }

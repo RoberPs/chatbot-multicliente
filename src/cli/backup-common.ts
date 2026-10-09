@@ -215,7 +215,10 @@ export const restoreFailureReasons: Record<RestoreFailureCode, string> = {
   instance_running: 'la instancia está en marcha',
   count_mismatch: 'los recuentos cargados no coinciden con la copia',
   db_error: 'error de la base de datos al cargarla',
-  verify_db_unavailable: 'no se pudo crear la base de datos temporal',
+  // 016 (FR-008): un motivo por capa; el de la creación solo cuando la creación es lo que falló.
+  verify_url_invalid: 'BACKUP_VERIFY_URL no se puede interpretar',
+  verify_db_unavailable: 'no se pudo conectar con el servidor de verificación',
+  verify_db_create_failed: 'no se pudo crear la base de datos temporal',
   db_ca_unreadable: 'no se puede leer el certificado de la autoridad (sslrootcert)',
   db_tls_untrusted: 'el certificado del servidor de la base de datos no es de confianza',
   db_tls_unsupported: 'el servidor de la base de datos no acepta TLS',
@@ -252,8 +255,12 @@ export function restoreFailureMessage(
       return 'Los recuentos cargados no coinciden con la copia. No se ha modificado nada.';
     case 'db_error':
       return 'Error de la base de datos al restaurar. No se ha modificado nada.';
+    case 'verify_url_invalid':
+      return 'BACKUP_VERIFY_URL no se puede interpretar. Revisa su formato en el fichero de entorno.';
     case 'verify_db_unavailable':
-      return 'No se pudo crear la base de datos temporal: BACKUP_VERIFY_URL necesita un servidor accesible y un usuario con CREATEDB.';
+      return 'No se pudo conectar con el servidor de verificación. Comprueba que está en marcha y accesible desde la instancia.';
+    case 'verify_db_create_failed':
+      return 'No se pudo crear la base de datos temporal: BACKUP_VERIFY_URL necesita un usuario con CREATEDB.';
     case 'db_ca_unreadable':
     case 'db_tls_untrusted':
     case 'db_tls_unsupported':

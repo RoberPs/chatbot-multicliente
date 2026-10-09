@@ -32,7 +32,16 @@ export type RestoreFailureCode =
   | 'instance_running'
   | 'count_mismatch'
   | 'db_error'
+  /**
+   * 016 (FR-008): los tres motivos de la comprobación, uno por capa, para que un fallo
+   * ocurrido en una nunca se atribuya a otra. Antes `verify_db_unavailable` cubría las tres y
+   * el mensaje decía «no se pudo crear la base de datos temporal» incluso cuando la conexión y
+   * la creación habían funcionado y lo que fallaba era interpretar la dirección.
+   */
+  | 'verify_url_invalid'
+  /** Estrechado en la 016: **solo** «no se pudo conectar» con el servidor de verificación. */
   | 'verify_db_unavailable'
+  | 'verify_db_create_failed'
   | DbTlsFailureCode;
 
 export type MigrationBlockCode = BackupFailureCode | 'backup_not_configured';

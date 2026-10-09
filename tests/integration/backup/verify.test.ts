@@ -104,7 +104,12 @@ describe('comprobación de una copia', () => {
     expect(report).toMatchObject({ restorable: true, sourceInstance: 'otra-02' });
   });
 
-  it('usuario sin CREATEDB o servidor inalcanzable → verify_db_unavailable', async () => {
+  /**
+   * 016 (FR-008): este caso cubría dos capas con un solo motivo. Ahora se distinguen, porque un
+   * usuario sin CREATEDB **sí** conecta —lo que falla es crear la base temporal— y decirle que
+   * no se pudo conectar era mentirle.
+   */
+  it('usuario sin CREATEDB → verify_db_create_failed; servidor inalcanzable → verify_db_unavailable', async () => {
     const admin = inject('pgAdminUrl');
     await withClient(admin, async (client) => {
       await client.query(`drop role if exists sin_createdb`);
@@ -117,7 +122,7 @@ describe('comprobación de una copia', () => {
       file: path(backup.file),
       config: { ...config, verifyUrl: url.toString() },
     });
-    expect(noCreate).toMatchObject({ restorable: false, failure: 'verify_db_unavailable' });
+    expect(noCreate).toMatchObject({ restorable: false, failure: 'verify_db_create_failed' });
 
     const unreachable = await verifyBackup({
       file: path(backup.file),
