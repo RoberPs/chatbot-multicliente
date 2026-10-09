@@ -8,6 +8,7 @@ import {
   DatabaseConfigError,
   describeDatabaseError,
   requiresVerifiedTls,
+  withDatabaseName,
 } from '../../../src/config/database-url.js';
 
 const base = (host: string, query = '') => `postgres://usuario:clave@${host}:5432/basex${query}`;
@@ -221,6 +222,73 @@ describe('classifyDatabaseUrl: IP literal remota (aclaración posterior)', () =>
     });
     for (const host of ['127.0.0.1', '[::1]']) {
       expect(requiresVerifiedTls(classifyDatabaseUrl(base(host)))).toBe(false);
+    }
+  });
+});
+
+/**
+ * `withDatabaseName` (016, T004; FR-011, SC-007): la misma dirección apuntando a otra base, con
+ * las **tres** formas de dirección de la spec. Es la corrección del fallo 2: `new URL` lanza con
+ * las dos formas sin servidor, que son las del despliegue real.
+ */
+describe('withDatabaseName: las tres formas de dirección', () => {
+  const casos: Array<[string, string, string]> = [
+    [
+      'con nombre de servidor',
+      'postgres://u:c@servidor:5432/base?sslmode=verify-full',
+      'postgres://u:c@servidor:5432/otra?sslmode=verify-full',
+    ],
+    [
+      'con autoridad vacía (servidor en parámetro)',
+      'postgres://u:c@/base?host=localhost&port=5433',
+      'postgres://u:c@/otra?host=localhost&port=5433',
+    ],
+    [
+      'con ruta de socket Unix',
+      'postgres://u:c@/base?host=/var/run/postgresql',
+      'postgres://u:c@/otra?host=/var/run/postgresql',
+    ],
+  ];
+
+  it.each(casos)('%s', (_nombre, url, esperada) => {
+    expect(withDatabaseName(url, 'otra')).toBe(esperada);
+  });
+
+  it('conserva usuario, contraseña, puerto y todos los parámetros en su orden', () => {
+    const url =
+      'postgres://oper%40dor:cl%2Fave@/base?host=/var/run/postgresql&port=6432&sslmode=verify-full&sslrootcert=/ca/ca.crt';
+    const result = withDatabaseName(url, 'verify_1');
+    expect(result).not.toBeNull();
+    expect(result).toBe(
+      'postgres://oper%40dor:cl%2Fave@/verify_1?host=/var/run/postgresql&port=6432&sslmode=verify-full&sslrootcert=/ca/ca.crt',
+    );
+    // La clasificación de la 013 sigue leyendo lo mismo de la dirección reconstruida.
+    expect(classifyDatabaseUrl(result ?? '')).toMatchObject({
+      kind: 'ok',
+      local: true,
+      caFile: '/ca/ca.crt',
+    });
+  });
+
+  it.each(casos.map(([nombre, url]) => [nombre, url] as const))(
+    'es idempotente con el mismo nombre de base: %s',
+    (_nombre, url) => {
+      expect(withDatabaseName(url, 'base')).toBe(url);
+    },
+  );
+
+  it.each([
+    ['protocolo ajeno', 'mysql://u:c@servidor/base'],
+    ['texto no interpretable', 'no es una dirección'],
+    ['vacío', ''],
+    ['solo el esquema', 'postgres://'],
+  ])('devuelve null sin lanzar: %s', (_nombre, url) => {
+    expect(withDatabaseName(url, 'otra')).toBeNull();
+  });
+
+  it('no lleva la dirección a ningún mensaje: no lanza nunca (FR-012)', () => {
+    for (const url of ['', 'basura', 'postgres://u:c@/base?host=/var/run/postgresql']) {
+      expect(() => withDatabaseName(url, 'x')).not.toThrow();
     }
   });
 });

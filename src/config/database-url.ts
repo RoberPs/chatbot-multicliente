@@ -99,6 +99,42 @@ export function classifyDatabaseUrl(url: string): DatabaseUrlClassification {
   };
 }
 
+/**
+ * La misma dirección apuntando a otra base del mismo servidor (016, FR-006, FR-007, research R6).
+ *
+ * Existe porque `new URL` **lanza** con las direcciones sin nombre de servidor
+ * (`postgres://u:c@/base?host=…`), que son las del despliegue real: por eso `db:verify` no se
+ * podía usar en producción. Aquí se reutiliza el `parse()` tolerante de este fichero, que ya
+ * rodeaba esa limitación para la clasificación, en lugar de dejar que cada módulo tenga su
+ * propia versión del problema.
+ *
+ * Conserva usuario, contraseña, servidor (o su ausencia), puerto y **todos** los parámetros en
+ * su orden; solo cambia el nombre de la base. Devuelve `null` —nunca lanza— si la dirección no
+ * se puede interpretar o el protocolo no es de PostgreSQL, para que quien llame decida el motivo
+ * sin tener que capturar nada ni mostrar la dirección (FR-012).
+ */
+export function withDatabaseName(url: string, database: string): string | null {
+  const parsed = parse(url);
+  if (!parsed) return null;
+  const { url: u } = parsed;
+  if (u.protocol !== 'postgres:' && u.protocol !== 'postgresql:') return null;
+  const text = url.trim();
+  // `parse()` pudo sustituir la autoridad vacía por un servidor de relleno, así que no se puede
+  // reconstruir con `u.toString()`: se cambia solo el nombre de la base sobre el texto original.
+  const hash = text.indexOf('#');
+  const body = hash === -1 ? text : text.slice(0, hash);
+  const suffix = hash === -1 ? '' : text.slice(hash);
+  const query = body.indexOf('?');
+  const authority = query === -1 ? body : body.slice(0, query);
+  const search = query === -1 ? '' : body.slice(query);
+  // El nombre de la base es lo que va tras la primera `/` después de `//`.
+  const start = authority.indexOf('//');
+  if (start === -1) return null;
+  const slash = authority.indexOf('/', start + 2);
+  if (slash === -1) return null;
+  return `${authority.slice(0, slash + 1)}${encodeURIComponent(database)}${search}${suffix}`;
+}
+
 /** `verify-full` con una IP remota: pide TLS verificado pero no se comprueba el nombre. */
 export function isVerifyFullOnIp(classification: DatabaseUrlClassification): boolean {
   return (

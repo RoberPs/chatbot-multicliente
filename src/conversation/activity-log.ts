@@ -161,6 +161,25 @@ export type BotEvent =
   | { event: 'login_throttled'; delayMs: number; queued: number; rejected: number }
   /** Secretos débiles fuera de producción, al arrancar (R14). Sin valores. */
   | { event: 'weak_secrets'; findings: Array<{ variable: string; rule: string }> }
+  // --- Cortes de la base de datos (016, data-model.md §1) ---
+  /**
+   * La base de datos deja de dar servicio; **una sola vez** por corte, sean los que sean los
+   * fallos y las peticiones (FR-014). Sin campos: el error no viaja al registro, para que no
+   * pueda llevar la dirección de la base de datos (FR-012).
+   */
+  | { event: 'db_outage_started' }
+  /** Corte en curso: un resumen cada 5 min con los fallos agrupados del intervalo. */
+  | { event: 'db_outage_ongoing'; elapsedMs: number; failures: number }
+  /** La base de datos volvió, sin reiniciar el proceso; una sola vez por corte. */
+  | { event: 'db_outage_recovered'; durationMs: number; failures: number }
+  /** Aviso degradado con contacto enviado a un cliente final durante el corte (FR-002). */
+  | { event: 'db_degraded_reply_sent'; channel: Channel }
+  /** No había nada que enviar, o este cliente ya fue avisado en este corte. */
+  | {
+      event: 'db_degraded_reply_skipped';
+      channel: Channel;
+      reason: 'no_contact' | 'no_sender' | 'already_notified' | 'send_failed';
+    }
   | HandoffEvent;
 
 export type BotEventName = BotEvent['event'];
@@ -193,6 +212,12 @@ export const eventLevels: Record<BotEventName, Level> = {
   batch_abandoned: 'error',
   login_throttled: 'warn',
   weak_secrets: 'warn',
+  // 016: el corte es grave (`error`); su curso y su fin, informativos para no duplicar alarma.
+  db_outage_started: 'error',
+  db_outage_ongoing: 'warn',
+  db_outage_recovered: 'info',
+  db_degraded_reply_sent: 'warn',
+  db_degraded_reply_skipped: 'warn',
   handoff_daily_limit: 'warn',
   handoff_forward_deferred: 'debug',
   handoff_offered: 'info',

@@ -26,6 +26,51 @@ export const withDatabase = (url: string, database: string): string => {
   return u.toString();
 };
 
+/**
+ * Las tres formas de dirección de base de datos de la 016 (spec, Key Entities; data-model §4).
+ * Las pruebas de este repositorio solo usaban la primera, y por eso dos fallos de producción
+ * pasaron por todas ellas.
+ *
+ * - `hostUrl`: con nombre de servidor. La de desarrollo y pruebas.
+ * - `authoritylessUrl`: **sin nombre de servidor**, con el servidor y el puerto en parámetros.
+ *   Es la forma que hace que `new URL` lance, que es exactamente el defecto que rompía
+ *   `db:verify` en producción. Conecta por TCP, así que **se puede ejecutar en cualquier sistema
+ *   operativo**, Windows incluido: reproduce el fallo sin necesitar un socket Unix.
+ * - `socketPathUrl`: sin nombre de servidor y con una **ruta de socket Unix**. La forma literal
+ *   del despliegue real. Comparte el mismo defecto de interpretación que la anterior, pero solo
+ *   se puede *conectar* donde haya sockets Unix; construirla y parsearla funciona en todas
+ *   partes.
+ */
+export const hostUrl = (
+  host: string,
+  port: number,
+  database: string,
+  { user = 'u', password = 'c' } = {},
+): string => `postgres://${user}:${password}@${host}:${port}/${database}`;
+
+export const authoritylessUrl = (
+  host: string,
+  port: number,
+  database: string,
+  { user = 'u', password = 'c' } = {},
+): string => `postgres://${user}:${password}@/${database}?host=${host}&port=${port}`;
+
+export const socketPathUrl = (
+  socketDir: string,
+  database: string,
+  { user = 'u', password = 'c', port = 5432 } = {},
+): string => `postgres://${user}:${password}@/${database}?host=${socketDir}&port=${port}`;
+
+/** La misma dirección que `url` pero con la autoridad vacía: el servidor pasa a parámetro. */
+export const toAuthorityless = (url: string, database?: string): string => {
+  const u = new URL(url);
+  const name = database ?? u.pathname.replace(/^\//, '');
+  return authoritylessUrl(u.hostname, Number(u.port || '5432'), name, {
+    user: u.username,
+    password: u.password,
+  });
+};
+
 export interface TestDatabase {
   db: Db;
   url: string;

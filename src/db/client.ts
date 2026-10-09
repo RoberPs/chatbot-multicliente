@@ -66,6 +66,56 @@ export function isPoolBusy(error: unknown): boolean {
   return false;
 }
 
+/**
+ * Códigos de «la base de datos no está dando servicio» (016, research R2; data-model §2).
+ *
+ * Solo por código, nunca por texto: los textos de `pg` y de Node cambian entre versiones y
+ * pueden llevar la dirección de la base de datos. Las dos únicas comparaciones de texto del
+ * núcleo (`isPoolBusy` aquí y `PG_NO_SSL` en `src/config/database-url.ts`) se mantienen, pero no
+ * se añade ninguna.
+ */
+const UNAVAILABLE_CODES = new Set([
+  // Red de Node: el servidor no está, la conexión se cayó o el nombre no resuelve.
+  'ECONNREFUSED',
+  'ECONNRESET',
+  'ENOTFOUND',
+  'EHOSTUNREACH',
+  'ENETUNREACH',
+  'ETIMEDOUT',
+  'EPIPE',
+  'EAI_AGAIN',
+  // El socket Unix no existe: la forma de producción cuando PostgreSQL está parado.
+  'ENOENT',
+  // SQLSTATE clase 08 (fallos de conexión) y apagado del servidor.
+  '08000',
+  '08001',
+  '08003',
+  '08004',
+  '08006',
+  '08007',
+  '08P01',
+  '57P01',
+  '57P02',
+  '57P03',
+]);
+
+/**
+ * «La base de datos no contesta», mirando el error y sus `cause` hasta 5 niveles, como
+ * `isPoolBusy`, porque Drizzle envuelve los errores de `pg`.
+ *
+ * No distingue causas: para esta corrección basta saber que no hay servicio. Quien lo use decide
+ * qué hacer —no morir, avisar al vigilante, responder con contacto—, y nunca muestra el error.
+ */
+export function isDbUnavailable(error: unknown): boolean {
+  if (isPoolBusy(error)) return true;
+  for (let e: unknown = error, depth = 0; e instanceof Error && depth < 5; depth++) {
+    const code = (e as { code?: unknown }).code;
+    if (typeof code === 'string' && UNAVAILABLE_CODES.has(code)) return true;
+    e = e.cause;
+  }
+  return false;
+}
+
 export async function closeDb(db: Db): Promise<void> {
   await db.$client.end();
 }
