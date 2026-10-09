@@ -4,6 +4,7 @@
  * si un valor candidato es el de una instancia; con ella solo se sabe si dos valores son iguales.
  */
 import { createHmac, timingSafeEqual } from 'node:crypto';
+import { parseDatabaseUrlParts } from '../config/database-url.js';
 import type { EnvMap } from './env-file.js';
 
 export const FINGERPRINT_CLASSES = [
@@ -69,42 +70,32 @@ export function parseInventoryKey(text: string | undefined): Buffer | null {
 // Identidad de la base de datos
 // ---------------------------------------------------------------------------
 
-function parsePgUrl(url: string): URL | null {
-  try {
-    const parsed = new URL(url.trim());
-    return parsed.protocol === 'postgres:' || parsed.protocol === 'postgresql:' ? parsed : null;
-  } catch {
-    return null;
-  }
-}
-
-function decode(text: string): string {
-  try {
-    return decodeURIComponent(text);
-  } catch {
-    return text;
-  }
-}
-
-/** Servidor, puerto, nombre y usuario de una `DATABASE_URL`, sin contraseña. */
+/**
+ * Servidor, puerto, nombre y usuario de una `DATABASE_URL`, sin contraseña.
+ *
+ * 016 (FR-007): se apoya en el intérprete tolerante del núcleo en lugar de `new URL`, que
+ * **lanza** con las direcciones sin nombre de servidor. Con la forma del despliegue real esto
+ * devolvía `null`, y con ello se quedaban calladas dos comprobaciones del operador: la huella de
+ * la instancia y la regla de `instance:check` que prohíbe el usuario `postgres`. Con un socket,
+ * `host` es la ruta del socket y `port`, 5432.
+ */
 export function databaseIdentity(databaseUrl: string | undefined): DatabaseIdentity | null {
   if (databaseUrl === undefined || databaseUrl.trim() === '') return null;
-  const url = parsePgUrl(databaseUrl);
-  if (!url || url.hostname === '') return null;
+  const parts = parseDatabaseUrlParts(databaseUrl);
+  if (!parts) return null;
   return {
-    host: url.hostname.toLowerCase(),
-    port: url.port === '' ? 5432 : Number(url.port),
-    name: decode(url.pathname.replace(/^\//, '')),
-    user: decode(url.username),
+    host: parts.host.toLowerCase(),
+    port: parts.port,
+    name: parts.database,
+    user: parts.user,
   };
 }
 
 /** Contraseña de una `DATABASE_URL` (solo para huella y calidad; nunca se muestra). */
 export function databasePassword(databaseUrl: string | undefined): string | null {
   if (databaseUrl === undefined) return null;
-  const url = parsePgUrl(databaseUrl);
-  if (!url || url.password === '') return null;
-  return decode(url.password);
+  // 016 (FR-007): igual que `databaseIdentity`, con el intérprete tolerante.
+  return parseDatabaseUrlParts(databaseUrl)?.password ?? null;
 }
 
 // ---------------------------------------------------------------------------

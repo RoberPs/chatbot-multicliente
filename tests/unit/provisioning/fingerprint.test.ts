@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   databaseIdentity,
+  databasePassword,
   envFingerprints,
   fingerprint,
   keyCheck,
@@ -126,5 +127,50 @@ describe('huellas (research R4)', () => {
     expect(variables).not.toContain('DATABASE');
     expect(variables).not.toContain('DATABASE_PASSWORD');
     expect(variables).not.toContain('WHATSAPP_ACCESS_TOKEN');
+  });
+});
+
+/**
+ * 016 (T038, FR-007, SC-007): las direcciones **sin nombre de servidor**, que son las del
+ * despliegue real. Antes, `new URL` lanzaba con ellas y estas funciones devolvían `null`: la
+ * huella de la instancia se quedaba sin la identidad de su base de datos y la regla de
+ * `instance:check` que prohíbe el usuario `postgres` no se aplicaba, las dos calladas.
+ */
+describe('direcciones sin nombre de servidor (016)', () => {
+  it('con ruta de socket Unix: host es la ruta y port, 5432', () => {
+    expect(databaseIdentity('postgres://chatbot:clave@/chatbot?host=/var/run/postgresql')).toEqual({
+      host: '/var/run/postgresql',
+      port: 5432,
+      name: 'chatbot',
+      user: 'chatbot',
+    });
+  });
+
+  it('con autoridad vacía: host y puerto salen de los parámetros', () => {
+    expect(databaseIdentity('postgres://u:p@/base?host=db.interna&port=6543')).toEqual({
+      host: 'db.interna',
+      port: 6543,
+      name: 'base',
+      user: 'u',
+    });
+  });
+
+  it('devuelve la contraseña, también con socket', () => {
+    expect(databasePassword('postgres://chatbot:cl%40ve@/chatbot?host=/var/run/postgresql')).toBe(
+      'cl@ve',
+    );
+    expect(databasePassword('postgres://chatbot@/chatbot?host=/tmp')).toBeNull();
+  });
+
+  it('el usuario postgres se reconoce con socket: la regla de instance:check se aplica', () => {
+    expect(databaseIdentity('postgres://postgres:p@/chatbot?host=/var/run/postgresql')?.user).toBe(
+      'postgres',
+    );
+  });
+
+  it('lo que no es una dirección de PostgreSQL sigue dando null', () => {
+    for (const url of ['mysql://u:p@/base?host=/tmp', 'basura', '', 'postgres://u:p@/base']) {
+      expect(databaseIdentity(url)).toBeNull();
+    }
   });
 });

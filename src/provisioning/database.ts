@@ -107,7 +107,16 @@ export interface AdminTarget {
   ipHost: boolean;
 }
 
-/** Servidor, puerto, TLS y clasificación de la URL de administración, o `null` si no es válida. */
+/**
+ * Servidor, puerto, TLS y clasificación de la URL de administración, o `null` si no es válida.
+ *
+ * **Auditoría de FR-007 (016)**: esta función y `buildDatabaseUrl` son los dos únicos puntos del
+ * núcleo que trabajan solo con direcciones **con nombre de servidor**, y lo hacen **a propósito**
+ * —no por el descuido que corrige la 016—. `instance:db` tiene que construir la `DATABASE_URL`
+ * de la instancia nueva y probar la conexión, y para las dos cosas necesita un servidor al que
+ * apuntar: una ruta de socket del equipo del operador no significa nada dentro del contenedor de
+ * la instancia. Así que aquí se sigue usando `new URL` y se sigue rechazando el socket.
+ */
 export function parseAdminUrl(adminUrl: string): AdminTarget | null {
   const c = classifyDatabaseUrl(adminUrl);
   if (c.kind !== 'ok') return null;
@@ -117,7 +126,8 @@ export function parseAdminUrl(adminUrl: string): AdminTarget | null {
   } catch {
     return null;
   }
-  // Un socket no sirve: la conexión de prueba y la DATABASE_URL necesitan un servidor.
+  // Un socket no sirve, a propósito (ver la cabecera): la conexión de prueba y la DATABASE_URL
+  // que se construye para la instancia necesitan un servidor al que apuntar.
   if (url.hostname === '') return null;
   return {
     host: url.hostname.toLowerCase(),
@@ -136,6 +146,14 @@ export function describeAdminUrl(adminUrl: string): string {
   return target ? `${target.host}:${String(target.port)}` : '?';
 }
 
+/**
+ * `DATABASE_URL` de una instancia a partir de sus piezas.
+ *
+ * **Auditoría de FR-007 (016)**: construye siempre la forma **con nombre de servidor**, y eso es
+ * lo correcto: la dirección se escribe en el entorno de la instancia, que se conecta por red al
+ * servidor que el operador indicó. Quien despliega con PostgreSQL en la misma máquina escribe su
+ * dirección por socket a mano en el fichero de entorno, y desde la 016 todo el núcleo la admite.
+ */
 export function buildDatabaseUrl(input: {
   host: string;
   port: number;

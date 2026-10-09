@@ -29,7 +29,14 @@ export type DatabaseUrlClassification =
       caFile: string | null;
     };
 
-/** Lee la URL como `pg-connection-string`: un host vacío con credenciales también vale (socket). */
+/**
+ * Lee la URL como `pg-connection-string`: un host vacío con credenciales también vale (socket).
+ *
+ * Es el **intérprete tolerante** del núcleo, y existe porque `new URL` lanza con las direcciones
+ * sin nombre de servidor (`postgres://u:c@/base?host=…`), que son las del despliegue real. La
+ * 016 lo saca de este fichero (`parseUrlLoose`, `parseDatabaseUrlParts`) porque había tres
+ * sitios más que usaban `new URL` directamente y se quedaban callados con esa forma.
+ */
 function parse(url: string): { url: URL; hostname: string } | null {
   const text = url.trim();
   try {
@@ -74,6 +81,55 @@ export function isLocalHost(host: string): boolean {
     default:
       return false;
   }
+}
+
+/**
+ * La URL interpretada con el criterio tolerante, sin exigir ningún protocolo. Para quien solo
+ * necesita leer sus partes (la contraseña, por ejemplo) y tiene que funcionar también con URL
+ * que no son de base de datos, como `SMTP_URL`.
+ *
+ * Ojo: con las formas sin servidor, `hostname` queda vacío o con un relleno; el servidor de
+ * verdad lo da `parseDatabaseUrlParts`.
+ */
+export function parseUrlLoose(url: string): URL | null {
+  return parse(url)?.url ?? null;
+}
+
+/** Partes de una dirección de base de datos, con las tres formas de la spec (016, FR-007). */
+export interface DatabaseUrlParts {
+  /** Servidor efectivo: el parámetro `host` manda sobre el de la URL, como en `pg`. */
+  host: string;
+  port: number;
+  database: string;
+  user: string;
+  /** `null` si la dirección no lleva contraseña. */
+  password: string | null;
+}
+
+/**
+ * Lee las partes de una dirección de base de datos, admitiendo las tres formas (016, FR-007).
+ *
+ * Con una dirección por socket, `host` es la ruta del socket y `port` es 5432 si no se indica,
+ * que es lo que hace `pg`. Devuelve `null` —nunca lanza— si no se puede interpretar o el
+ * protocolo no es de PostgreSQL.
+ */
+export function parseDatabaseUrlParts(url: string): DatabaseUrlParts | null {
+  const parsed = parse(url);
+  if (!parsed) return null;
+  const { url: u } = parsed;
+  if (u.protocol !== 'postgres:' && u.protocol !== 'postgresql:') return null;
+  const hostParam = u.searchParams.getAll('host').at(-1);
+  const host = hostParam ?? decode(parsed.hostname);
+  if (host === '') return null;
+  const portParam = u.searchParams.getAll('port').at(-1);
+  const port = Number(portParam ?? (u.port === '' ? '5432' : u.port));
+  return {
+    host,
+    port: Number.isFinite(port) && port > 0 ? port : 5432,
+    database: decode(u.pathname.replace(/^\//, '')),
+    user: decode(u.username),
+    password: u.password === '' ? null : decode(u.password),
+  };
 }
 
 export function classifyDatabaseUrl(url: string): DatabaseUrlClassification {

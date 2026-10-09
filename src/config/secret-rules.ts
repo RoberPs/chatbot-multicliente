@@ -4,6 +4,7 @@
  * instance:check` y la generación de secretos de la 007; el valor examinado nunca sale de este
  * módulo: las incidencias solo nombran variables y reglas.
  */
+import { parseUrlLoose } from './database-url.js';
 
 export type SecretRule =
   'too_short' | 'example_value' | 'trivial' | 'reused' | 'health_secret_required';
@@ -106,14 +107,22 @@ export function isPlaceholder(value: string): boolean {
 
 const distinct = (value: string): number => new Set(value.toLowerCase()).size;
 
-/** Contraseña de una URL (`DATABASE_URL`, `SMTP_URL`), o `null` sin ella o si no es una URL. */
+/**
+ * Contraseña de una URL (`DATABASE_URL`, `SMTP_URL`), o `null` sin ella o si no es una URL.
+ *
+ * 016 (FR-007): usa el intérprete tolerante del núcleo en lugar de `new URL`, que **lanza** con
+ * las direcciones sin nombre de servidor. Con la forma del despliegue real, esta función
+ * devolvía `null`, así que la regla de calidad de la contraseña de la base de datos **no se
+ * aplicaba en producción** y nadie se enteraba: la comprobación pasaba callada.
+ */
 export function urlPassword(url: string | undefined): string | null {
   if (url === undefined) return null;
+  const password = parseUrlLoose(url)?.password;
+  if (password === undefined || password === '') return null;
   try {
-    const password = new URL(url.trim()).password;
-    return password === '' ? null : decodeURIComponent(password);
+    return decodeURIComponent(password);
   } catch {
-    return null;
+    return password;
   }
 }
 

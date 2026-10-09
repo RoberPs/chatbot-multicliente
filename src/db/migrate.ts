@@ -42,6 +42,9 @@ export interface MigrationOptions {
 /** Versión actual y migraciones pendientes, leídas con una conexión propia. */
 async function inspect(databaseUrl: string, folder: string) {
   const client = new pg.Client({ connectionString: databaseUrl });
+  // 016 (FR-005): una conexión que se cae no debe terminar el proceso. Aquí, además, el arranque
+  // sin base de datos sigue fallando como siempre: lo hace el `connect()`, con su propio error.
+  client.on('error', () => undefined);
   await client.connect();
   try {
     return {

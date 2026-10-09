@@ -774,3 +774,39 @@ describe('formato del resultado', () => {
     expect(formatCheckResult(run(fresh())).split('\n').at(-1)).toBe('APTO para desplegar.');
   });
 });
+
+/**
+ * 016 (T039, FR-007): las reglas del operador también se aplican con la dirección del
+ * despliegue real.
+ *
+ * Antes no: `databaseIdentity` y `urlPassword` usaban `new URL`, que lanza con las direcciones
+ * sin nombre de servidor, así que con la forma de producción estas dos comprobaciones **se
+ * saltaban sin avisar**. `instance:check` decía «apto» sobre un entorno que usaba el
+ * superusuario o una contraseña trivial.
+ */
+describe('instance:check con DATABASE_URL por socket (016)', () => {
+  const socketUrl = (user: string, password: string) =>
+    `postgres://${user}:${password}@/chatbot_demo_09?host=/var/run/postgresql`;
+
+  it('la regla que prohíbe el usuario postgres se aplica', () => {
+    const result = run(fresh({ DATABASE_URL: socketUrl('postgres', token(24)) }));
+    expect(warningKeys(result)).toContain('database_superuser:DATABASE_URL');
+  });
+
+  it('la regla de calidad de la contraseña se aplica', () => {
+    const result = run(fresh({ DATABASE_URL: socketUrl('chatbot_demo_09', 'corta') }));
+    expect(errorKeys(result)).toContain('secret_too_short:DATABASE_URL');
+  });
+
+  it('un entorno correcto por socket no genera ninguna de las dos', () => {
+    const result = run(fresh({ DATABASE_URL: socketUrl('chatbot_demo_09', token(24)) }));
+    expect(warningKeys(result)).not.toContain('database_superuser:DATABASE_URL');
+    expect(errorKeys(result)).not.toContain('secret_too_short:DATABASE_URL');
+  });
+
+  it('ningún texto del informe lleva la dirección ni la contraseña (FR-012)', () => {
+    const password = token(24);
+    const env = fresh({ DATABASE_URL: socketUrl('postgres', password) });
+    expectSecretFree(run(env), env);
+  });
+});

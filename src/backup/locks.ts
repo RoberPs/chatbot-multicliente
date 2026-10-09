@@ -19,6 +19,15 @@ export interface AdvisoryLock {
  */
 export async function tryAdvisoryLock(url: string, key: bigint): Promise<AdvisoryLock | null> {
   const client = new pg.Client({ connectionString: url, application_name: 'chatbot-lock' });
+  /**
+   * 016 (FR-005): el oyente va **aquí**, antes de conectar y de consultar el cerrojo. Antes
+   * estaba después de tomarlo, así que entre la construcción y esa línea quedaba una ventana en
+   * la que una conexión caída emitía `error` sin oyentes y terminaba el proceso.
+   *
+   * Una conexión caída libera el bloqueo en el servidor; aquí solo se evita que tumbe el
+   * proceso.
+   */
+  client.on('error', () => undefined);
   await client.connect();
   let taken = false;
   try {
@@ -31,8 +40,6 @@ export async function tryAdvisoryLock(url: string, key: bigint): Promise<Advisor
     if (!taken) await client.end().catch(() => undefined);
   }
   if (!taken) return null;
-  // Una conexión caída libera el bloqueo en el servidor; aquí solo se evita que tumbe el proceso.
-  client.on('error', () => undefined);
   let released = false;
   return {
     async release() {
