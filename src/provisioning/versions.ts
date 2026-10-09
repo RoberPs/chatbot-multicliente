@@ -18,6 +18,8 @@ import { updateInstance, type Instance, type Inventory } from './inventory.js';
 
 export type RowResult =
   | 'ok'
+  /** 016: responde 200 pero su base de datos no contesta; la instancia vive y sirve. */
+  | 'db_unavailable'
   | 'degraded'
   | 'not_ready'
   | 'unreachable'
@@ -30,7 +32,8 @@ export type RowResult =
   | 'not_queried';
 
 export type RowReason = 'no_url' | 'not_https' | 'no_secret';
-type InstanceStatus = 'ok' | 'degraded' | 'not_ready';
+/** `db_unavailable` (016): la instancia vive y sirve, pero su base de datos no contesta. */
+type InstanceStatus = 'ok' | 'db_unavailable' | 'degraded' | 'not_ready';
 
 export interface VersionRow {
   id: string;
@@ -70,7 +73,7 @@ export type QueryOutcome =
 // Respuestas de /health (contracts/health-endpoint.md)
 // ---------------------------------------------------------------------------
 
-const statusSchema = z.enum(['ok', 'degraded', 'not_ready']);
+const statusSchema = z.enum(['ok', 'db_unavailable', 'degraded', 'not_ready']);
 const publicSchema = z.strictObject({ status: statusSchema });
 const fullSchema = z.strictObject({
   status: statusSchema,
@@ -158,9 +161,13 @@ function parseJson(text: string): unknown {
 const schemaLabel = (ref: { index: number; tag: string | null } | null): string | null =>
   ref === null ? null : (ref.tag ?? `desconocida (#${String(ref.index)})`);
 
-/** Código coherente con el estado: 200 solo con `ok`, 503 con los demás. */
+/**
+ * Código coherente con el estado: 200 con `ok` y con `db_unavailable` (016, FR-003), 503 con los
+ * demás. Sin esto, una instancia en corte se leería como `invalid_response` y el inventario diría
+ * que no se puede hablar con ella, cuando lo que pasa es que su base de datos no está.
+ */
 const codeMatches = (code: number, status: InstanceStatus) =>
-  status === 'ok' ? code === 200 : code === 503;
+  status === 'ok' || status === 'db_unavailable' ? code === 200 : code === 503;
 
 type InstanceRef = Pick<Instance, 'id' | 'client' | 'imageVersion'>;
 
@@ -233,6 +240,7 @@ export function classify(instance: InstanceRef, outcome: QueryOutcome): VersionR
 
 const RESULT_LABELS: Record<RowResult, string> = {
   ok: 'Correcto',
+  db_unavailable: 'Sin base de datos',
   degraded: 'Degradado',
   not_ready: 'No lista',
   unreachable: 'No responde',
@@ -247,6 +255,7 @@ const RESULT_LABELS: Record<RowResult, string> = {
 
 const STATUS_LABELS: Record<InstanceStatus, string> = {
   ok: 'correcto',
+  db_unavailable: 'sin base de datos',
   degraded: 'degradado',
   not_ready: 'no lista',
 };

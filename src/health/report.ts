@@ -26,7 +26,14 @@ import {
 import type { ContactOnlyReason, SpendCapLevel } from '../usage/types.js';
 import { createLifecycle, type Lifecycle } from './lifecycle.js';
 
-export type HealthStatus = 'ok' | 'degraded' | 'not_ready';
+/**
+ * `db_unavailable` (016, FR-003): la base de datos no contesta, pero **el proceso vive y sirve**.
+ * Viaja con HTTP 200 a propósito, para que ninguna política de reinicio lo tome por un motivo
+ * para reiniciar la instancia: reiniciar durante un corte es el bucle que la 016 elimina.
+ * `degraded` queda para lo que de verdad necesita al operador —la base contesta pero su esquema
+ * está vacío, es desconocido o no es el esperado— y sigue siendo 503.
+ */
+export type HealthStatus = 'ok' | 'db_unavailable' | 'degraded' | 'not_ready';
 
 /** Migración por índice y etiqueta; `tag: null` si este núcleo no la conoce (esquema más nuevo). */
 export interface SchemaRef {
@@ -123,6 +130,8 @@ export function createSchemaProbe(
   folder = defaultMigrationsFolder,
   /** Producción y modelos (012): deciden si el tope sale como `blocked`. */
   protection: ProtectionConfig = defaultProtectionConfig(''),
+  /** 016: recibe el error de una conexión ociosa caída (el vigilante del corte). */
+  onPoolError?: (error: unknown) => void,
 ): SchemaProbe {
   const pool = new pg.Pool({
     connectionString: databaseUrl,
@@ -133,8 +142,11 @@ export function createSchemaProbe(
     idleTimeoutMillis: 30_000,
     allowExitOnIdle: true,
   });
-  // Una conexión inactiva que se cae (BD parada) no debe tumbar el proceso.
-  pool.on('error', () => undefined);
+  // Una conexión inactiva que se cae (BD parada) no debe tumbar el proceso. Desde la 016 el
+  // error se entrega además al vigilante del corte, que es quien lo registra una sola vez.
+  pool.on('error', (error) => {
+    onPoolError?.(error);
+  });
   let expected: SchemaVersion | null = null;
 
   return {
@@ -202,9 +214,15 @@ function withTimeout<T>(promise: Promise<T>, ms: number): Promise<T> {
 }
 
 /**
- * Reglas en orden (R3): `not_ready` si la instancia no está lista (sin consultar la BD);
- * `degraded` si la BD no responde en el tope, está vacía o su esquema no es el esperado (índice,
- * etiqueta o hash, o una migración desconocida); si no, `ok`.
+ * Reglas en orden (R3; reordenadas en la 016, data-model §3):
+ *
+ * 1. la instancia no está lista → `not_ready` (sin consultar la BD);
+ * 2. el sondeo **falla o se pasa de plazo** → `db_unavailable` (la BD no contesta);
+ * 3. el sondeo contesta `empty`, `unknown` o con otro esquema → `degraded`;
+ * 4. en otro caso → `ok`.
+ *
+ * El criterio es «contesta o no contesta», no la causa: por eso cualquier fallo del sondeo es
+ * `db_unavailable` y no hace falta clasificar el error (ni, por tanto, tocarlo).
  */
 export async function buildHealthReport(deps: HealthReportDeps): Promise<HealthReport> {
   const expected = deps.expected ?? installedSchema();
@@ -229,8 +247,9 @@ export async function buildHealthReport(deps: HealthReportDeps): Promise<HealthR
   try {
     result = await withTimeout(deps.probe.read(), deps.timeoutMs ?? PROBE_TIMEOUT_MS);
   } catch {
-    // Sin la causa: ni en el informe ni en los registros.
-    return report('degraded', null);
+    // Sin la causa: ni en el informe ni en los registros. El vigilante se entera del corte por
+    // el oyente del pool del sondeo, no por aquí, para no depender del momento de la petición.
+    return report('db_unavailable', null);
   }
   switch (result.kind) {
     case 'empty':
@@ -267,10 +286,17 @@ export function createInstanceHealth(options: {
   folder?: string;
   /** Producción y modelos de la instancia (012); sin ella, como fuera de producción. */
   protection?: ProtectionConfig;
+  /** 016: el vigilante del corte, avisado por el oyente del pool del sondeo. */
+  onPoolError?: (error: unknown) => void;
 }): InstanceHealth {
   const lifecycle = options.lifecycle ?? createLifecycle();
   const folder = options.folder ?? defaultMigrationsFolder;
-  const probe = createSchemaProbe(options.databaseUrl, folder, options.protection);
+  const probe = createSchemaProbe(
+    options.databaseUrl,
+    folder,
+    options.protection,
+    options.onPoolError,
+  );
   const expected = installedSchema(folder);
   return {
     lifecycle,

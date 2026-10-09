@@ -19,6 +19,7 @@ import {
 import { conversationSettings } from '../../conversation/settings.js';
 import { formOf, unavailableContact } from '../../conversation/templates.js';
 import { isPoolBusy, type Db } from '../../db/client.js';
+import { noteDbError } from '../../db/outage.js';
 import type { KnowledgeReader } from '../../knowledge/types.js';
 import { findActiveByConversation } from '../../handoff/repositories/handoff.js';
 import { activeHandoffNotice } from '../../handoff/templates.js';
@@ -124,6 +125,10 @@ export async function webChatApi(api: FastifyInstance, deps: WebApiDeps): Promis
 
   /** Límite por IP, cuerpo demasiado grande o JSON roto: nada llega a la recepción. */
   api.setErrorHandler(async (error: FastifyError, request, reply: FastifyReply) => {
+    // 016 (FR-014): si el fallo es porque la base de datos no está, el vigilante del corte lo
+    // agrupa y lo registra una sola vez. **Ninguna respuesta cambia**: el 503 con `unavailable`
+    // y el contacto de emergencia que ya da este canal es justamente el correcto (FR-002).
+    noteDbError(error);
     const status = error.statusCode ?? 500;
     if (error instanceof IpLimitError) {
       // Sin la IP en el registro: solo que se ha alcanzado el límite (FR-029).

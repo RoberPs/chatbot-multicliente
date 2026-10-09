@@ -29,7 +29,12 @@ const reportOf = (status: HealthStatus): HealthReport => ({
   status,
   coreVersion: '1.4.0',
   schema: {
-    applied: status === 'not_ready' ? null : status === 'ok' ? EXPECTED : { index: 6, tag: null },
+    applied:
+      status === 'not_ready' || status === 'db_unavailable'
+        ? null
+        : status === 'ok'
+          ? EXPECTED
+          : { index: 6, tag: null },
     expected: EXPECTED,
   },
   // 010: el tope solo se informa con el esquema esperado.
@@ -118,6 +123,10 @@ afterAll(async () => {
 describe('GET /health sin credencial', () => {
   it.each([
     ['ok', 200],
+    // 016 (FR-003): el proceso vive y sirve aunque su base de datos no conteste, así que el
+    // nivel sin credencial responde **200**. Con 503 la sonda del contenedor marcaría la
+    // instancia como enferma y la política de reinicio la relanzaría en mitad del corte.
+    ['db_unavailable', 200],
     ['degraded', 503],
     ['not_ready', 503],
   ] as const)('estado %s → %i con solo {status}', async (status, code) => {
@@ -441,6 +450,58 @@ describe('privacidad (FR-002, SC-003)', () => {
       remoteAddress: nextAddress(),
     });
     expect(res.json()).toEqual({ status: 'ok' });
+    await app.close();
+  });
+});
+
+/**
+ * 016 (T012, FR-003): el estado nuevo en los dos niveles, con 200 y sin tocar nada de lo que el
+ * contrato de la 009 ya garantizaba.
+ */
+describe('GET /health con db_unavailable (016)', () => {
+  it('nivel completo: 200 con el informe entero y applied/spendCap en null', async () => {
+    const app = await appWith({
+      secret: HEALTH_SECRET,
+      report: () => Promise.resolve(reportOf('db_unavailable')),
+    });
+    const res = await health(app, { authorization: `Bearer ${HEALTH_SECRET}` });
+    expect(res.statusCode).toBe(200);
+    expect(res.json()).toMatchObject({
+      status: 'db_unavailable',
+      coreVersion: '1.4.0',
+      schema: { applied: null, expected: EXPECTED },
+      spendCap: null,
+    });
+    expect(res.headers['cache-control']).toBe('no-store');
+    await app.close();
+  });
+
+  it('el 401 sigue siendo indistinguible durante el corte', async () => {
+    const app = await appWith({
+      secret: HEALTH_SECRET,
+      report: () => Promise.resolve(reportOf('db_unavailable')),
+    });
+    const res = await health(app, { authorization: `Bearer ${'f'.repeat(64)}` });
+    expect(res.statusCode).toBe(401);
+    expect(res.json()).toEqual({ error: 'unauthorized' });
+    await app.close();
+  });
+
+  it('no publica ninguna clave fuera del contrato', async () => {
+    const app = await appWith({
+      secret: HEALTH_SECRET,
+      report: () => Promise.resolve(reportOf('db_unavailable')),
+    });
+    const levels: Array<Record<string, string>> = [
+      {},
+      { authorization: `Bearer ${HEALTH_SECRET}` },
+    ];
+    for (const headers of levels) {
+      const res = await health(app, headers);
+      for (const key of Object.keys(res.json())) {
+        expect(ALLOWED_KEYS.has(key)).toBe(true);
+      }
+    }
     await app.close();
   });
 });

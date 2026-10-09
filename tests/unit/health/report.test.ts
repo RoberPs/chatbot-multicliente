@@ -93,19 +93,66 @@ describe('buildHealthReport (009, R3)', () => {
     expect(report).toMatchObject({ status: 'degraded', schema: { applied: null } });
   });
 
-  it('degraded si la BD no responde, sin el mensaje del error', async () => {
+  /**
+   * 016 (T011, FR-003): la BD que **no contesta** dejó de ser `degraded` y pasó a
+   * `db_unavailable`, que viaja con HTTP 200. `degraded` queda para lo que necesita al operador:
+   * la BD contesta pero su esquema no es el que debe. La diferencia importa porque `degraded`
+   * (503) es, para la sonda del contenedor, un motivo de reinicio, y reiniciar durante un corte
+   * de la base de datos es justamente el bucle que esta corrección elimina.
+   */
+  it('db_unavailable si la BD no responde, sin el mensaje del error', async () => {
     const error = new Error('connect ECONNREFUSED 10.0.0.7:5432 password=s3creta');
     const report = await build(error);
-    expect(report).toMatchObject({ status: 'degraded', coreVersion: '1.4.0' });
+    expect(report).toMatchObject({ status: 'db_unavailable', coreVersion: '1.4.0' });
     expect(report.schema.applied).toBeNull();
     expect(JSON.stringify(report)).not.toMatch(/ECONNREFUSED|10\.0\.0\.7|s3creta/);
   });
 
-  it('degraded si la BD tarda más que el tope', async () => {
+  it('db_unavailable si la BD tarda más que el tope', async () => {
     const started = Date.now();
     const report = await build('hang', ready(), 50);
-    expect(report.status).toBe('degraded');
+    expect(report.status).toBe('db_unavailable');
     expect(Date.now() - started).toBeLessThan(1000);
+  });
+
+  it('db_unavailable deja applied y spendCap en null, y conserva lo que no sale de la BD', async () => {
+    const report = await build(new Error('ECONNREFUSED'));
+    expect(report.schema.applied).toBeNull();
+    expect(report.spendCap).toBeNull();
+    // Se leen del núcleo, no de la base de datos: siguen valiendo durante el corte.
+    expect(report.coreVersion).toBe('1.4.0');
+    expect(report.schema.expected).toEqual({ index: 5, tag: '0005_config_transfer' });
+  });
+
+  it('el estado nuevo no lleva nada de la dirección de la base de datos (FR-012)', async () => {
+    const url = 'postgres://operador:secreta@/chatbot?host=/var/run/postgresql';
+    const report = await build(Object.assign(new Error(`no such file ${url}`), { code: 'ENOENT' }));
+    const dump = JSON.stringify([report, publicView(report), fullView(report, 'inst-1')]);
+    for (const secret of ['operador', 'secreta', 'chatbot', '/var/run/postgresql']) {
+      expect(dump).not.toContain(secret);
+    }
+  });
+
+  const answers: Array<[string, ProbeResult]> = [
+    ['BD vacía', { kind: 'empty' }],
+    ['migración desconocida', { kind: 'unknown', index: 9 }],
+    ['esquema distinto', { kind: 'known', schema: { index: 4, tag: '0004_handoff', hash: 'h4' } }],
+  ];
+
+  it.each(answers)('sigue en degraded cuando la BD sí contesta: %s', async (_name, result) => {
+    const report = await build(result);
+    expect(report.status).toBe('degraded');
+  });
+
+  it('las dos vistas publican el estado nuevo tal cual', async () => {
+    const report = await build(new Error('ECONNREFUSED'));
+    expect(publicView(report)).toEqual({ status: 'db_unavailable' });
+    expect(fullView(report, 'inst-1')).toMatchObject({
+      status: 'db_unavailable',
+      instanceId: 'inst-1',
+      schema: { applied: null },
+      spendCap: null,
+    });
   });
 
   it('no escribe nada en la consola', async () => {

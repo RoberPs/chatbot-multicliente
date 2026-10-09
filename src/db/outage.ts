@@ -52,6 +52,31 @@ export interface OutageWatcher {
   close: () => void;
 }
 
+/**
+ * Vigilante del proceso (data-model §1: «uno por proceso; las pruebas crean el suyo»).
+ *
+ * Existe para que `createDb` pueda entregarle los errores de sus pools sin cambiar su firma: la
+ * crean una docena de sitios, entre ellos las órdenes de `src/cli`, y ninguno debería tener que
+ * enterarse de que existe un vigilante. Mientras nadie lo instale —el caso de las órdenes— no
+ * hay vigilante, `noteDbError` no hace nada y no se arranca ningún sondeo: silencioso por
+ * omisión. El arranque de la instancia instala el suyo y lo retira en `stop()`.
+ */
+let current: OutageWatcher | null = null;
+
+export function setOutageWatcher(watcher: OutageWatcher | null): void {
+  current = watcher;
+}
+
+/** Entrega un error de base de datos al vigilante del proceso, si hay alguno instalado. */
+export function noteDbError(error: unknown): void {
+  current?.note(error);
+}
+
+/** El vigilante del proceso, para quien necesite su estado o su memoria de avisos. */
+export function currentOutageWatcher(): OutageWatcher | null {
+  return current;
+}
+
 export function createOutageWatcher(options: OutageWatcherOptions): OutageWatcher {
   const now = options.now ?? (() => new Date());
   const probeIntervalMs = options.probeIntervalMs ?? PROBE_INTERVAL_MS;

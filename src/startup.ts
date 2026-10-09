@@ -3,6 +3,7 @@
  * migraciones con copia previa, borrado de conversaciones caducadas antes de escuchar, servidor
  * y tareas periódicas. Las dependencias se inyectan para poder probar el orden.
  */
+import { sql } from 'drizzle-orm';
 import type { FastifyInstance } from 'fastify';
 import { buildApp as defaultBuildApp, type BuildAppOptions } from './app.js';
 import { backupConfigFromEnv } from './backup/config.js';
@@ -22,6 +23,7 @@ import { createActivityLog, type LoggerLike } from './conversation/activity-log.
 import { systemClock, type Clock } from './conversation/ports.js';
 import { createRetention } from './conversation/retention.js';
 import { closeDb, createDb, createPublicDb } from './db/client.js';
+import { createOutageWatcher, noteDbError, setOutageWatcher } from './db/outage.js';
 import { runMigrations } from './db/migrate.js';
 import { createInstanceHealth } from './health/report.js';
 import { CoreVersionError, readCoreVersion } from './health/version.js';
@@ -84,6 +86,17 @@ export async function startInstance(options: StartInstanceOptions): Promise<Runn
   const db = createDb(env.DATABASE_URL);
   // Lecturas del chat web en su propio pool pequeño (012, FR-022).
   const publicDb = createPublicDb(env.DATABASE_URL);
+
+  /**
+   * Vigilante del corte (016, FR-014, FR-004): recoge los errores de los pools, registra el
+   * corte una sola vez y sondea la base hasta que vuelve, que es lo que permite recuperar el
+   * servicio sin reiniciar el proceso. Se instala aquí, antes de nada, para que ya esté puesto
+   * si la base se cae durante el propio arranque; su registro llega en cuanto exista el logger.
+   */
+  const outage = createOutageWatcher({
+    probe: () => db.execute(sql`select 1`),
+  });
+  setOutageWatcher(outage);
   const started: { bot: Bot | null } = { bot: null };
   let app: FastifyInstance | null = null;
   try {
@@ -96,9 +109,13 @@ export async function startInstance(options: StartInstanceOptions): Promise<Runn
         databaseUrl: env.DATABASE_URL,
         coreVersion,
         protection: protectionConfigFromEnv(env),
+        // El pool del sondeo también se cae en un corte: su error va al mismo vigilante.
+        onPoolError: noteDbError,
       }),
     });
     const logger = options.logger ?? app.log;
+    // Desde aquí el vigilante ya puede escribir; antes era silencioso.
+    outage.attachLogger(createActivityLog(logger, env.SESSION_SECRET));
     logWeakSecrets(env, logger);
 
     const backup = backupConfigFromEnv(env);
@@ -128,6 +145,10 @@ export async function startInstance(options: StartInstanceOptions): Promise<Runn
 
     await listen(app);
   } catch (error) {
+    // El arranque sin base de datos sigue terminando el proceso (assumption de la 016): lo que
+    // cambia es el comportamiento de una instancia **ya en marcha**.
+    outage.close();
+    setOutageWatcher(null);
     await app?.close().catch(() => undefined);
     await closeDb(db).catch(() => undefined);
     await closeDb(publicDb).catch(() => undefined);
@@ -166,6 +187,8 @@ export async function startInstance(options: StartInstanceOptions): Promise<Runn
       await bot?.processor.stop();
       await bot?.retention.stop();
       await scheduler?.stop();
+      outage.close();
+      setOutageWatcher(null);
       await closeDb(db);
       await closeDb(publicDb);
       await lock.release();

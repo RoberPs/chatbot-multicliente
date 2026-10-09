@@ -433,3 +433,55 @@ describe('estado del tope de gasto (010, contracts/health-spend-cap.md)', () => 
     expect(annotationPlan(report([reached]))).toEqual(annotationPlan(report([none])));
   });
 });
+
+/**
+ * 016 (T014, FR-003): una instancia en corte responde **200** con `db_unavailable`. Antes de la
+ * corrección, `codeMatches` exigía 503 para cualquier estado que no fuera `ok`, así que esa
+ * respuesta se leía como `invalid_response` y el inventario decía que no se podía hablar con la
+ * instancia, cuando lo que pasaba era que su base de datos no estaba.
+ */
+describe('instance:versions con db_unavailable (016)', () => {
+  const row = (outcome: QueryOutcome) => classify(instance(), outcome);
+
+  it('nivel completo: 200 con db_unavailable se lee como ese estado', () => {
+    const r = row(
+      response(
+        200,
+        JSON.stringify({
+          status: 'db_unavailable',
+          instanceId: 'demo-01',
+          coreVersion: '1.4.0',
+          schema: {
+            applied: null,
+            expected: { index: 5, tag: '0005_config_transfer' },
+          },
+          spendCap: null,
+        }),
+      ),
+    );
+    expect(r).toMatchObject({
+      result: 'db_unavailable',
+      status: 'db_unavailable',
+      coreVersion: '1.4.0',
+      schema: { applied: null, expected: '0005_config_transfer' },
+    });
+    expect(r.result).not.toBe('invalid_response');
+  });
+
+  it('nivel sin credencial: 200 con db_unavailable se lee como ese estado', () => {
+    expect(row(response(200, '{"status":"db_unavailable"}', false))).toMatchObject({
+      result: 'status_only',
+      reason: 'no_secret',
+      status: 'db_unavailable',
+    });
+  });
+
+  it('db_unavailable con 503 es incoherente → invalid_response', () => {
+    expect(row(response(503, full({ status: 'db_unavailable' }))).result).toBe('invalid_response');
+  });
+
+  it('la tabla muestra su etiqueta', () => {
+    const rows = [row(response(200, full({ status: 'db_unavailable', schema: { applied: null, expected: { index: 5, tag: '0005_config_transfer' } } })))];
+    expect(renderTable(report(rows))).toContain('Sin base de datos');
+  });
+});

@@ -1,6 +1,7 @@
 import { sql } from 'drizzle-orm';
 import { drizzle, type NodePgDatabase } from 'drizzle-orm/node-postgres';
 import pg from 'pg';
+import { noteDbError } from './outage.js';
 import * as schema from './schema.js';
 
 export type Db = NodePgDatabase<typeof schema> & { $client: pg.Pool };
@@ -47,6 +48,25 @@ export function createDb(databaseUrl: string, limits: PoolLimits | null = MAIN_P
           idle_in_transaction_session_timeout: limits.idleInTransactionMs,
         }
       : {}),
+  });
+  /**
+   * **La corrección del fallo 1 de la 016** (FR-001, research R1).
+   *
+   * Un `pg.Pool` emite `error` cuando una conexión **ociosa** se cae, que es lo que pasa con
+   * todas a la vez cuando PostgreSQL desaparece. Un `EventEmitter` que emite `error` sin ningún
+   * oyente lanza esa excepción como no capturada, y Node **termina el proceso**. La política de
+   * reinicio lo relanzaba, el arranque intentaba migrar contra una base que seguía sin estar y
+   * la instancia entraba en un bucle de reinicios con el proxy devolviendo 502.
+   *
+   * Lo grave no era la caída, sino que dejaba inalcanzable toda la resistencia a fallos que la
+   * 012 ya tenía escrita: el proceso moría antes de poder responder al cliente final.
+   *
+   * El error se entrega al vigilante del corte —que lo registra una sola vez— y **no se vuelve a
+   * lanzar**. Las consultas en vuelo siguen rechazándose como siempre, cada una por su camino:
+   * esto solo cubre las conexiones ociosas, que no tienen a nadie esperándolas.
+   */
+  pool.on('error', (error) => {
+    noteDbError(error);
   });
   return drizzle(pool, { schema });
 }

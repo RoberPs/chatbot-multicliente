@@ -149,6 +149,8 @@ export function createBot({ env, db, logger, clock = systemClock }: CreateBotOpt
     intake: routedIntake,
     reader,
     emergencyContactPhone: env.emergencyContactPhone,
+    // 016: para la disculpa con contacto durante un corte de la base de datos.
+    whatsappSender: graph,
     clock,
     handoff,
     processor,

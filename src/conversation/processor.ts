@@ -6,6 +6,7 @@
  * ventana de 24 h, negocio activo, chat activado, tope) sale de su `ChannelPolicy`.
  */
 import type { Db } from '../db/client.js';
+import { noteDbError } from '../db/outage.js';
 import { markCustomerNotified, type HandoffWithCustomer } from '../handoff/repositories/handoff.js';
 import { attentionAt } from '../handoff/schedule.js';
 import type { HandoffService } from '../handoff/service.js';
@@ -843,6 +844,10 @@ export function createProcessor(deps: ProcessorDeps): Processor {
 
   /** Un lote que lanza se reintenta con espera creciente; al quinto, se abandona (012, R10). */
   async function failed(conversationId: string, error: unknown): Promise<void> {
+    // 016 (FR-014): si el lote falló porque la base de datos no está, el vigilante del corte lo
+    // agrupa y lo registra una sola vez. No cambia nada más: la espera creciente y el abandono
+    // de la 012 siguen exactamente igual.
+    noteDbError(error);
     const errorClass = error instanceof Error ? error.name : typeof error;
     const now = clock.now().getTime();
     let attempt: number | null;

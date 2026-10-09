@@ -3,7 +3,11 @@
  * dos niveles. Sin cabecera `Authorization`, solo `{status}`; con `Bearer <HEALTH_SECRET>`, el
  * informe completo. Cualquier credencial que no sea la de la instancia (también si la instancia no
  * tiene secreto) recibe el mismo 401, para no revelar si lo tiene. El estado va también en el
- * código: 200 solo con `ok`. Sin sesión ni CSRF; no toca el conocimiento ni el pool del bot.
+ * código: **200 con `ok` y con `db_unavailable`** (016, FR-003), 503 con `degraded` y
+ * `not_ready`. `db_unavailable` da 200 porque el proceso vive y sirve aunque su base de datos no
+ * conteste, y un 503 sería para la sonda del contenedor un motivo para reiniciar la instancia:
+ * exactamente el bucle de reinicios que la 016 elimina. Sin sesión ni CSRF; no toca el
+ * conocimiento ni el pool del bot.
  */
 import { randomBytes } from 'node:crypto';
 import type { FastifyError, FastifyPluginAsync, FastifyReply } from 'fastify';
@@ -60,7 +64,8 @@ export const healthRoutes: FastifyPluginAsync<HealthRoutesOptions> = async (app,
       }
       const body =
         credential.kind === 'bearer' ? fullView(report, options.instanceId) : publicView(report);
-      return reply.code(report.status === 'ok' ? 200 : 503).send(body);
+      const healthy = report.status === 'ok' || report.status === 'db_unavailable';
+      return reply.code(healthy ? 200 : 503).send(body);
     },
   );
 };

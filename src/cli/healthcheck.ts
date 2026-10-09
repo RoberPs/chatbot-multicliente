@@ -5,6 +5,11 @@
  * instancia responde 200 con `{"status":"ok"}`; con cualquier otra cosa, 1. No escribe nada: el
  * estado de Docker no debe llenarse de detalles. Usa `fetch` de Node, porque la imagen no trae
  * curl ni wget.
+ *
+ * Desde la 016 sale con 0 también con `db_unavailable` (FR-003, SC-002): un corte de la base de
+ * datos no debe dejar el contenedor `unhealthy`, porque entonces la política de reinicio lo
+ * relanzaría, el arranque intentaría migrar contra una base que no está y la instancia entraría
+ * en un bucle de reinicios. El proceso vive y sirve: eso es lo que la sonda comprueba.
  */
 import { pathToFileURL } from 'node:url';
 
@@ -30,7 +35,7 @@ export async function probeHealth(options: ProbeOptions = {}): Promise<0 | 1> {
     });
     if (response.status !== 200) return 1;
     const body = (await response.json()) as { status?: unknown } | null;
-    return body?.status === 'ok' ? 0 : 1;
+    return body?.status === 'ok' || body?.status === 'db_unavailable' ? 0 : 1;
   } catch {
     return 1;
   }

@@ -111,3 +111,32 @@ describe('probeHealth (013, contracts/image-and-repo.md)', () => {
     expect(error).not.toHaveBeenCalled();
   });
 });
+
+/**
+ * 016 (T013, FR-003, SC-002): un corte de la base de datos **no** debe dejar el contenedor
+ * `unhealthy`. Si lo dejara, la política de reinicio relanzaría el proceso, el arranque
+ * intentaría migrar contra una base que no está y la instancia entraría en el bucle de
+ * reinicios que esta corrección elimina.
+ */
+describe('probeHealth con db_unavailable (016)', () => {
+  it('200 con {"status":"db_unavailable"} → 0', async () => {
+    const port = await serve(json(200, '{"status":"db_unavailable"}'));
+    expect(await probeHealth({ port })).toBe(0);
+  });
+
+  it('200 con {"status":"ok"} sigue dando 0', async () => {
+    const port = await serve(json(200, '{"status":"ok"}'));
+    expect(await probeHealth({ port })).toBe(0);
+  });
+
+  it.each([
+    ['degraded con 503', 503, '{"status":"degraded"}'],
+    ['not_ready con 503', 503, '{"status":"not_ready"}'],
+    ['db_unavailable pero con 503 (incoherente)', 503, '{"status":"db_unavailable"}'],
+    ['cuerpo que no es JSON', 200, 'no soy json'],
+    ['JSON sin status', 200, '{"coreVersion":"0.1.1"}'],
+  ])('%s → 1', async (_name, status, body) => {
+    const port = await serve(json(status, body));
+    expect(await probeHealth({ port })).toBe(1);
+  });
+});

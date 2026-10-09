@@ -27,7 +27,9 @@ import { whatsappWebhook } from './channels/whatsapp/webhook.js';
 import { protectionConfigFromEnv, type Env, type WhatsAppEnv } from './config/env.js';
 import type { ActivityLog } from './conversation/activity-log.js';
 import type { Intake } from './conversation/intake.js';
-import type { Clock } from './conversation/ports.js';
+import { withDegradedReply } from './conversation/degraded-reply.js';
+import type { ChannelSender, Clock } from './conversation/ports.js';
+import { currentOutageWatcher } from './db/outage.js';
 import type { Db } from './db/client.js';
 import type { HandoffService } from './handoff/service.js';
 import { createInstanceHealth, type InstanceHealth } from './health/report.js';
@@ -78,6 +80,12 @@ export interface BotHttp {
   reader: KnowledgeReader;
   /** Contacto de la instancia cuando no se puede leer el snapshot (FR-022). */
   emergencyContactPhone: string | null;
+  /**
+   * Remitente de WhatsApp (016, FR-002): lo necesita la respuesta degradada, que durante un
+   * corte de la base de datos tiene que enviar la disculpa con contacto **sin tocar la base**.
+   * `null` sin WhatsApp configurado.
+   */
+  whatsappSender?: ChannelSender | null;
   clock: Clock;
   /** Derivación al negocio (005): enlaces del email y fin desde el panel. */
   handoff?: HandoffService;
@@ -356,12 +364,28 @@ export async function buildApp({
 
   const whatsapp = channel?.whatsapp;
   if (channel && whatsapp) {
+    // 016: el vigilante del corte lo instala el arranque; sin él (tests que montan la app a
+    // mano) la recepción va sin envolver y se comporta como antes.
+    const watcher = currentOutageWatcher();
+    const degradedIntake = watcher
+      ? withDegradedReply(channel.intake, {
+          watcher,
+          activityLog: channel.activityLog,
+          emergencyContactPhone: channel.emergencyContactPhone,
+          senders: channel.whatsappSender ? { whatsapp: channel.whatsappSender } : {},
+        })
+      : channel.intake;
     await app.register(whatsappWebhook, {
       prefix: '/webhooks/whatsapp',
       config: whatsapp,
       audioTranscription: channel.audioTranscription,
       activityLog: channel.activityLog,
-      onInbound: (events) => channel.intake.handle(events),
+      /**
+       * 016 (FR-002): la recepción va envuelta en la respuesta degradada, que ante un fallo por
+       * indisponibilidad manda la disculpa con el contacto de emergencia y vuelve a lanzar. El
+       * webhook se queda tal cual: sigue respondiendo 503 para que Meta reintente la entrega.
+       */
+      onInbound: (events) => degradedIntake.handle(events),
     });
   }
 
