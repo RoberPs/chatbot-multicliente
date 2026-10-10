@@ -23,4 +23,16 @@
       });
     }
   });
+  /**
+   * Tema del panel (014, R6): al cambiar la opción se aplica al momento, sin recargar y sin perder
+   * lo escrito en un formulario a medio rellenar (FR-007). htmx manda el POST por detrás, que solo
+   * guarda la cookie. En automático se quita el atributo para que vuelva a mandar el sistema.
+   */
+  document.addEventListener('change', function (event) {
+    var input = event.target.closest('.theme-switch input[name="theme"]');
+    if (!input) return;
+    var root = document.documentElement;
+    if (input.value === 'auto') root.removeAttribute('data-theme');
+    else root.setAttribute('data-theme', input.value);
+  });
 })();

@@ -1,0 +1,21 @@
+<%
+/*
+  Control del tema (014, contracts/admin-theme.md §2). Vive en la barra superior del panel y en la
+  pantalla de acceso. Con JavaScript, `app.js` aplica el tema al cambiar la opción y htmx manda el
+  POST por detrás; sin JavaScript, el botón «Aplicar» envía el formulario y el 303 devuelve a la
+  misma pantalla (FR-012).
+*/
+const active = it.theme || 'auto';
+%>
+<form class="theme-switch" method="post" action="/admin/theme" hx-post="/admin/theme" hx-swap="none"
+      hx-trigger="change, submit">
+  <%~ include('/partials/csrf', { token: it.csrf }) %>
+  <input type="hidden" name="next" value="<%= it.next %>">
+  <fieldset>
+    <legend>Tema</legend>
+    <% [['auto', 'Automático'], ['light', 'Claro'], ['dark', 'Oscuro']].forEach(function (option) { %>
+      <label class="inline"><input type="radio" name="theme" value="<%= option[0] %>"<% if (option[0] === active) { %> checked<% } %>> <%= option[1] %></label>
+    <% }) %>
+  </fieldset>
+  <button type="submit" class="small">Aplicar</button>
+</form>

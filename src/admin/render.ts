@@ -12,6 +12,7 @@ import { isHtmx } from './auth/plugin.js';
 import { splitLinks } from './message-links.js';
 import { describeTrace } from './playground-trace.js';
 import { formErrorResponse, type FieldErrors, type FormErrorResponse } from './form-errors.js';
+import { themeFromCookieHeader } from './theme.js';
 
 export const WEEKDAYS = [
   { n: 1, name: 'Lunes', short: 'lun' },
@@ -130,6 +131,8 @@ export async function renderPage(
       path: request.url,
       version,
       spend,
+      // 014: el tema sale del navegador del operador, no de la instancia (FR-010).
+      theme: themeFromCookieHeader(request.headers.cookie),
     },
   });
   return reply.code(status).type('text/html; charset=utf-8').send(html);

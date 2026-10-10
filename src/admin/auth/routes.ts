@@ -9,6 +9,7 @@ import {
   signDeviceCookie,
   verifyDeviceCookie,
 } from './login-throttle.js';
+import { themeFromCookieHeader } from '../theme.js';
 import {
   csrfOnPost,
   endOperatorSession,
@@ -61,14 +62,26 @@ export async function authRoutes(app: FastifyInstance): Promise<void> {
     activityLog.log({ event: 'login_throttled', delayMs, queued, rejected });
   };
 
-  const renderLogin = async (reply: FastifyReply, status: number, error?: string, user = '') => {
-    const html = await reply.viewAsync('login', { csrf: reply.generateCsrf(), error, user });
+  const renderLogin = async (
+    request: FastifyRequest,
+    reply: FastifyReply,
+    status: number,
+    error?: string,
+    user = '',
+  ) => {
+    const html = await reply.viewAsync('login', {
+      csrf: reply.generateCsrf(),
+      error,
+      user,
+      // 014: la pantalla de acceso lleva el mismo tema que el panel (FR-002).
+      theme: themeFromCookieHeader(request.headers.cookie),
+    });
     return reply.code(status).type('text/html; charset=utf-8').send(html);
   };
 
   app.get('/login', async (request, reply) => {
     if (hasOperatorSession(request)) return reply.redirect('/admin', 302);
-    return renderLogin(reply, 200);
+    return renderLogin(request, reply, 200);
   });
 
   app.post<{ Body: { user?: string; password?: string } }>(
@@ -97,12 +110,12 @@ export async function authRoutes(app: FastifyInstance): Promise<void> {
       if (verified === 'full') {
         // Sin verificar y sin contar como fallo.
         logThrottled(delay);
-        return renderLogin(reply, 429, QUEUE_FULL, user);
+        return renderLogin(request, reply, 429, QUEUE_FULL, user);
       }
       if (!verified) {
         throttle.failure();
         request.log.warn('Intento de acceso fallido al panel');
-        return renderLogin(reply, 401, LOGIN_ERROR, user);
+        return renderLogin(request, reply, 401, LOGIN_ERROR, user);
       }
       startOperatorSession(request);
       reply.header(

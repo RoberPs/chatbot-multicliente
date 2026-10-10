@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="es">
+<html lang="es"<% if (it.layout.theme) { %> data-theme="<%= it.layout.theme %>"<% } %>>
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
@@ -17,6 +17,7 @@
       <%= it.layout.status === 'active' ? 'Activo' : 'En preparación' %>
     </span>
     <%~ include('/partials/warnings-count', { count: it.layout.warningsCount, critical: it.layout.criticalCount }) %>
+    <%~ include('/partials/theme-switch', { theme: it.layout.theme, csrf: it.layout.csrf, next: it.layout.path }) %>
     <form class="logout" method="post" action="/admin/logout">
       <%~ include('/partials/csrf', { token: it.layout.csrf }) %>
       <button type="submit" class="link">Salir</button>

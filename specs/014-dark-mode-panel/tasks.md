@@ -130,11 +130,11 @@ y repetirlo con JavaScript desactivado.
 
 > Escríbelos primero y comprueba que fallan.
 
-- [ ] T009 [P] [US2] Crear `tests/unit/admin/theme.test.ts`: cookie ausente, `light`, `dark`, valor
+- [x] T009 [P] [US2] Crear `tests/unit/admin/theme.test.ts`: cookie ausente, `light`, `dark`, valor
       desconocido, rodeada de otras cookies, con espacios y repetida; atributos de la cabecera
       `Set-Cookie` dentro y fuera de producción; borrado con `Max-Age=0` para `auto`; y validación
       del destino (`/admin/hours` válido; `//evil.com`, `http://x`, `/chat` y vacío → `/admin`).
-- [ ] T010 [P] [US2] Crear `tests/contract/admin/theme.test.ts` con el contrato de
+- [x] T010 [P] [US2] Crear `tests/contract/admin/theme.test.ts` con el contrato de
       [contracts/admin-theme.md §1 y §3](contracts/admin-theme.md): `data-theme` en una página del
       panel y en `/admin/login` según la cookie, ausencia de atributo sin cookie, presencia del
       control con su token CSRF en las dos pantallas, y `POST /admin/theme` con los tres valores,
@@ -143,32 +143,43 @@ y repetirlo con JavaScript desactivado.
 
 ### Implementation for User Story 2
 
-- [ ] T011 [US2] Crear `src/admin/theme.ts` (puro, sin Fastify): tipos `ThemeChoice` y
+- [x] T011 [US2] Crear `src/admin/theme.ts` (puro, sin Fastify): tipos `ThemeChoice` y
       `StoredTheme`, `themeFromCookieHeader(header)`, `themeAttribute(theme)`,
       `themeCookieHeader(choice, { production })` y `safeNext(next)`, según
       [data-model.md §1](data-model.md) y [contracts/admin-theme.md §3](contracts/admin-theme.md).
-- [ ] T012 [US2] Crear `src/admin/routes/theme.ts` con `POST /theme`: valida `theme` con Zod sobre
+- [x] T012 [US2] Crear `src/admin/routes/theme.ts` con `POST /theme`: valida `theme` con Zod sobre
       la lista cerrada, pone la cabecera `Set-Cookie` y responde `204` a htmx o `303` al destino
       validado. No consulta la base de datos ni la sesión.
-- [ ] T013 [US2] Registrar la ruta en `src/app.ts` dentro del ámbito `/admin` y **fuera** del
+- [x] T013 [US2] Registrar la ruta en `src/app.ts` dentro del ámbito `/admin` y **fuera** del
       ámbito del operador, con `csrfOnPost` aplicado, para que también funcione en la pantalla de
       acceso (R5).
-- [ ] T014 [US2] Añadir `theme` al objeto `layout` en `renderPage` de `src/admin/render.ts`,
+- [x] T014 [US2] Añadir `theme` al objeto `layout` en `renderPage` de `src/admin/render.ts`,
       leyéndolo de la cabecera de cookie de la petición.
-- [ ] T015 [US2] Pasar el tema a la pantalla de acceso en `src/admin/auth/routes.ts`, en las dos
+- [x] T015 [US2] Pasar el tema a la pantalla de acceso en `src/admin/auth/routes.ts`, en las dos
       llamadas que renderizan `login` (la del `GET` y la del intento fallido).
-- [ ] T016 [US2] Pintar el atributo en `<html>` en `src/admin/views/layout.eta` y en
+- [x] T016 [US2] Pintar el atributo en `<html>` en `src/admin/views/layout.eta` y en
       `src/admin/views/login.eta`.
-- [ ] T017 [US2] Crear `src/admin/views/partials/theme-switch.eta` con el formulario de
+- [x] T017 [US2] Crear `src/admin/views/partials/theme-switch.eta` con el formulario de
       [contracts/admin-theme.md §2](contracts/admin-theme.md) (tres opciones, `fieldset`/`legend`,
       `_csrf`, `next` y botón de respaldo) e incluirlo en la barra superior de `layout.eta` y en
       `login.eta`.
-- [ ] T018 [US2] Añadir los estilos de `.theme-switch` a `src/admin/views/app.css` (solo tokens, sin
+- [x] T018 [US2] Añadir los estilos de `.theme-switch` a `src/admin/views/app.css` (solo tokens, sin
       literales) y el bloque de mapeo `:root[data-theme='dark']` con `color-scheme: dark` y los 16
       tokens oscuros.
-- [ ] T019 [US2] Añadir a `src/admin/views/app.js` el código que aplica el tema al instante: al
+- [x] T019 [US2] Añadir a `src/admin/views/app.js` el código que aplica el tema al instante: al
       cambiar la opción, poner `document.documentElement.dataset.theme` o borrarlo si es
       automático, sin recargar (R6).
+      **Notas de US2**, por si alguien las «limpia»:
+      1. El formulario lleva `hx-trigger="change, submit"`. Sin él htmx solo manda el POST al
+         enviar el formulario, así que el tema cambiaría a la vista pero no se recordaría hasta
+         pulsar «Aplicar»: la elección se perdería en la recarga siguiente (FR-009).
+      2. No hace falta `themeAttribute`: el atributo se pinta en la plantilla con `<%= %>`, que
+         escapa el valor como cualquier otro dato, tal y como pide contracts/admin-theme.md §1.
+         El módulo expone `themeFromCookieHeader`, `themeCookieHeader` y `safeNext`.
+      3. `safeNext` rechaza además los destinos con espacios o saltos de línea: ese valor acaba
+         en una cabecera `Location`.
+      4. `GET /admin/theme` da 404 **con sesión** (la ruta no existe para el panel) y 302 a la
+         pantalla de acceso sin ella, como cualquier otra ruta del panel.
 - [ ] T020 [US2] Validar a mano la historia con [quickstart.md §3](quickstart.md), incluidos el
       recorrido sin JavaScript y la cookie con un valor inventado.
 

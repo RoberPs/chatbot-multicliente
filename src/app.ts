@@ -14,6 +14,7 @@ import './admin/fastify-types.js';
 import { renderNotFound } from './admin/render.js';
 import { CHAT_DESIGN_PREVIEW_PATHS } from './admin/routes/chat-design.js';
 import { adminRoutes } from './admin/routes/index.js';
+import { themeRoutes } from './admin/routes/theme.js';
 import { clientKey } from './channels/client-key.js';
 import { handoffLinkRoutes } from './channels/handoff-links/routes.js';
 import { healthRoutes } from './channels/health/routes.js';
@@ -338,6 +339,8 @@ export async function buildApp({
   await app.register(
     async (admin) => {
       await admin.register(authRoutes);
+      // 014: el tema va fuera del ámbito del operador, para que valga también en el acceso.
+      await admin.register(themeRoutes);
       await admin.register(async (operator) => {
         operator.addHook('onRequest', requireOperator);
         operator.addHook('preHandler', csrfOnPost(operator));

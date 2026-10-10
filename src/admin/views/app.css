@@ -101,6 +101,27 @@
   }
 }
 
+/* Mapeo 3 de 4: oscuro forzado por el operador, pase lo que pase en el sistema (FR-008). */
+:root[data-theme='dark'] {
+  color-scheme: dark;
+  --bg: var(--c-dark-bg);
+  --card: var(--c-dark-card);
+  --field: var(--c-dark-field);
+  --fg: var(--c-dark-fg);
+  --muted: var(--c-dark-muted);
+  --line: var(--c-dark-line);
+  --control-line: var(--c-dark-control-line);
+  --accent: var(--c-dark-accent);
+  --on-accent: var(--c-dark-on-accent);
+  --ok: var(--c-dark-ok);
+  --warn: var(--c-dark-warn);
+  --danger: var(--c-dark-danger);
+  --flash-bg: var(--c-dark-flash-bg);
+  --flash-line: var(--c-dark-flash-line);
+  --error-bg: var(--c-dark-error-bg);
+  --error-line: var(--c-dark-error-line);
+}
+
 * {
   box-sizing: border-box;
 }
@@ -684,4 +705,34 @@ a.button.danger {
   background: var(--field);
   color: var(--danger);
   border-color: var(--danger);
+}
+
+/* Control del tema (014): barra superior del panel y pantalla de acceso. */
+.theme-switch {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+.theme-switch fieldset {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  padding: 0.1rem 0.5rem 0.2rem;
+  margin: 0;
+}
+.theme-switch legend {
+  font-size: 0.8rem;
+  color: var(--muted);
+  padding: 0 0.2rem;
+}
+.theme-switch label {
+  font-size: 0.85rem;
+  font-weight: 400;
+  gap: 0.25rem;
+}
+.login .theme-switch {
+  margin-top: 1.5rem;
+  flex-wrap: wrap;
 }
