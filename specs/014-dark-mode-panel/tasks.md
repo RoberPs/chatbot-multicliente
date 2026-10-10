@@ -342,6 +342,12 @@ ojos, más el despliegue:
 - **T030**: despliegue de la `0.1.2` por tandas (feature 009) y la jornada de trabajo real de
   [quickstart.md §5](quickstart.md).
 
+**En la pantalla de acceso el cambio llega recargando, y es a proposito.** login.eta no carga
+htmx ni app.js —no se le anade codigo a una pagina previa a la sesion solo por comodidad—, asi que
+alli el control se comporta como el caso sin JavaScript: el boton Aplicar manda el POST y el 303
+devuelve a la misma pantalla ya con el tema. Dentro del panel si cambia al instante. No es un fallo
+del recorrido de T020.
+
 El orden en el VPS importa: primero la `0.1.1` con las dos casillas de la fase 9 que cierran la
 T051 de la 016, y después la `0.1.2` con el modo oscuro. Son dos pasadas del procedimiento de la
 [sección 5](../../docs/operacion-multicliente.md#5-actualizar-el-núcleo), no una.
