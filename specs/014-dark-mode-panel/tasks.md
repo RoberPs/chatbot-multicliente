@@ -97,7 +97,7 @@ ni cookie, ni ruta, ni control: esta historia es solo CSS.
 
 > Escríbelos primero y comprueba que fallan antes de tocar el CSS.
 
-- [ ] T006 [P] [US1] Crear `tests/unit/admin/theme-css.test.ts` con la primera mitad del contrato de
+- [x] T006 [P] [US1] Crear `tests/unit/admin/theme-css.test.ts` con la primera mitad del contrato de
       [contracts/panel-theme-css.md §2](contracts/panel-theme-css.md): lee
       `src/admin/views/app.css`, extrae los bloques de mapeo y comprueba que (1) todos declaran el
       mismo conjunto de 16 tokens de trabajo, (2) ningún bloque de mapeo contiene un color literal,
@@ -106,7 +106,7 @@ ni cookie, ni ruta, ni control: esta historia es solo CSS.
 
 ### Implementation for User Story 1
 
-- [ ] T007 [US1] Añadir a `src/admin/views/app.css` el bloque
+- [x] T007 [US1] Añadir a `src/admin/views/app.css` el bloque
       `@media (prefers-color-scheme: dark) { :root:not([data-theme='light']) { … } }` con
       `color-scheme: dark` y los 16 tokens apuntando a `var(--c-dark-*)`.
 - [ ] T008 [US1] Validar a mano la historia con [quickstart.md §2](quickstart.md): sistema en

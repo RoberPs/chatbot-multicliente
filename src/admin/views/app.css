@@ -78,6 +78,29 @@
   background: var(--bg);
 }
 
+/* Mapeo 2 de 4: oscuro si lo pide el sistema y el operador no ha forzado claro (FR-001). */
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme='light']) {
+    color-scheme: dark;
+    --bg: var(--c-dark-bg);
+    --card: var(--c-dark-card);
+    --field: var(--c-dark-field);
+    --fg: var(--c-dark-fg);
+    --muted: var(--c-dark-muted);
+    --line: var(--c-dark-line);
+    --control-line: var(--c-dark-control-line);
+    --accent: var(--c-dark-accent);
+    --on-accent: var(--c-dark-on-accent);
+    --ok: var(--c-dark-ok);
+    --warn: var(--c-dark-warn);
+    --danger: var(--c-dark-danger);
+    --flash-bg: var(--c-dark-flash-bg);
+    --flash-line: var(--c-dark-flash-line);
+    --error-bg: var(--c-dark-error-bg);
+    --error-line: var(--c-dark-error-line);
+  }
+}
+
 * {
   box-sizing: border-box;
 }
