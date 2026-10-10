@@ -37,7 +37,7 @@ caen en `src/admin/`, más una línea en `src/app.ts`.
 
 **Purpose**: partir de un punto conocido y dejar anotado lo que se va a tocar
 
-- [ ] T001 Comprobar el punto de partida con `pnpm lint && pnpm typecheck && pnpm test` en verde, y
+- [x] T001 Comprobar el punto de partida con `pnpm lint && pnpm typecheck && pnpm test` en verde, y
       anotar en el seguimiento de la rama los 13 colores literales de
       `src/admin/views/app.css` que se van a tokenizar (líneas 123, 124, 131, 132, 199, 235, 239,
       243, 370, 434, 438, 581 y 597), para poder comprobar al final que no queda ninguno.
@@ -51,25 +51,34 @@ Es la base de las tres historias.
 
 **⚠️ CRITICAL**: ninguna historia puede empezar hasta terminar esta fase.
 
-- [ ] T002 Añadir al bloque `:root` de `src/admin/views/app.css` las dos paletas completas
+- [x] T002 Añadir al bloque `:root` de `src/admin/views/app.css` las dos paletas completas
       (`--c-light-*` y `--c-dark-*`, 16 colores cada una) y los tres colores fijos
       (`--fixed-sample`, `--fixed-canvas-a`, `--fixed-canvas-b`), con los valores exactos de
       [data-model.md §2.2 y §2.3](data-model.md). Solo declaraciones: todavía no las usa nadie.
-- [ ] T003 Convertir el bloque `:root` de `src/admin/views/app.css` en el primer mapeo:
+- [x] T003 Convertir el bloque `:root` de `src/admin/views/app.css` en el primer mapeo:
       `color-scheme: light` y los 16 tokens de trabajo apuntando a `var(--c-light-*)`, sustituyendo
       los nueve valores literales que hoy tienen `--bg`, `--fg`, `--muted`, `--line`, `--card`,
       `--accent`, `--ok`, `--warn` y `--danger`.
-- [ ] T004 Sustituir en `src/admin/views/app.css` los 13 literales por los tokens nuevos, según la
+- [x] T004 Sustituir en `src/admin/views/app.css` los 13 literales por los tokens nuevos, según la
       tabla de [contracts/panel-theme-css.md §3](contracts/panel-theme-css.md): campos y botones
       secundarios a `var(--field)`, borde de campos a `var(--control-line)`, texto sobre el color
       primario a `var(--on-accent)`, `.flash` a `var(--flash-bg)`/`var(--flash-line)`,
       `.general-error` a `var(--error-bg)`/`var(--error-line)`, el cuadriculado de la vista previa a
       `var(--fixed-canvas-a)`/`var(--fixed-canvas-b)` y las miniaturas de imágenes y el
       `input[type='color']` a `var(--fixed-sample)`.
-- [ ] T005 Comprobar que el modo claro quedó idéntico (FR-005): `pnpm test` en verde y un recorrido
+- [x] T005 Comprobar que el modo claro quedó idéntico (FR-005): `pnpm test` en verde y un recorrido
       rápido del panel en claro comparando con el estado anterior, especialmente banda de
       «Guardado», banda de error, botones secundarios y de borrar, y la vista previa de
       **Diseño del chat**.
+      **Nota**: los 13 literales de partida eran `#e8f5ec` y `#b7dcc4` (banda de «Guardado»),
+      `#fdecea` y `#f1b7b2` (banda de error), seis `#fff` de campos y botones secundarios y de
+      borrar, dos `#fff` de texto sobre el color primario (`button`/`a.button` y la burbuja del
+      operador) y el par `#f6f7f9`/`#eef0f3` del cuadriculado de la vista previa. Ya no queda
+      ninguno fuera de las paletas: lo comprueba `theme-css.test.ts` (T006). El modo claro sale
+      idéntico por construcción —cada literal se sustituyó por un token cuyo valor claro es el
+      mismo color (`--control-line` y `--line` comparten `#d9dde4`, y `--field`,
+      `--on-accent` y `--fixed-sample` valen `#ffffff`)—; el repaso a ojo va con el recorrido
+      manual del quickstart.
 
 **Checkpoint**: el panel se ve exactamente como antes y todo su color pasa por tokens.
 
