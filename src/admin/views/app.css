@@ -122,6 +122,39 @@
   --error-line: var(--c-dark-error-line);
 }
 
+/*
+ * Mapeo 4 de 4: al imprimir, siempre claro (FR-021). Repite los selectores de los mapeos oscuros
+ * para igualar su especificidad: así manda por ir después, también con el tema forzado a oscuro.
+ */
+@media print {
+  :root,
+  :root[data-theme='dark'],
+  :root[data-theme='light'] {
+    color-scheme: light;
+    --bg: var(--c-light-bg);
+    --card: var(--c-light-card);
+    --field: var(--c-light-field);
+    --fg: var(--c-light-fg);
+    --muted: var(--c-light-muted);
+    --line: var(--c-light-line);
+    --control-line: var(--c-light-control-line);
+    --accent: var(--c-light-accent);
+    --on-accent: var(--c-light-on-accent);
+    --ok: var(--c-light-ok);
+    --warn: var(--c-light-warn);
+    --danger: var(--c-light-danger);
+    --flash-bg: var(--c-light-flash-bg);
+    --flash-line: var(--c-light-flash-line);
+    --error-bg: var(--c-light-error-bg);
+    --error-line: var(--c-light-error-line);
+  }
+}
+
+/* Foco visible en todo el panel, con 3:1 contra el fondo en los dos temas (FR-015). */
+:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
 * {
   box-sizing: border-box;
 }

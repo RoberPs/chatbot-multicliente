@@ -198,26 +198,32 @@ manual de las quince secciones no encuentra ninguna zona del tema contrario.
 
 ### Tests for User Story 3
 
-- [ ] T021 [P] [US3] Completar `tests/unit/admin/theme-css.test.ts` con la segunda mitad del
+- [x] T021 [P] [US3] Completar `tests/unit/admin/theme-css.test.ts` con la segunda mitad del
       contrato: todas las parejas de [data-model.md §2.4](data-model.md) cumplen su mínimo usando
       `contrastRatio`, `MIN_TEXT_CONTRAST` y `MIN_UI_CONTRAST` de
       `src/webchat/design/contrast.ts`; la paleta `--c-light-*` es idéntica a los valores de hoy
       (FR-005); y existe la regla `:focus-visible` con `outline` de 2 px.
-- [ ] T022 [P] [US3] Ampliar `tests/contract/admin/chat-design.test.ts`: la vista previa del chat
+- [x] T022 [P] [US3] Ampliar `tests/contract/admin/chat-design.test.ts`: la vista previa del chat
       **no** recibe `data-theme` del panel y su HTML es idéntico con la cookie en `dark` y sin
       cookie (FR-019), y el aviso de contraste del diseño da el mismo resultado en los dos casos
       (FR-020).
 
 ### Implementation for User Story 3
 
-- [ ] T023 [US3] Añadir a `src/admin/views/app.css` la regla
+- [x] T023 [US3] Añadir a `src/admin/views/app.css` la regla
       `:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px }` (FR-015).
-- [ ] T024 [US3] Añadir a `src/admin/views/app.css` el bloque `@media print` que mapea siempre la
+- [x] T024 [US3] Añadir a `src/admin/views/app.css` el bloque `@media print` que mapea siempre la
       paleta clara y `color-scheme: light` (FR-021).
-- [ ] T025 [US3] Repasar en las plantillas de `src/admin/views/` que ningún estado se distinga solo
+- [x] T025 [US3] Repasar en las plantillas de `src/admin/views/` que ningún estado se distinga solo
       por color: avisos críticos, badges de activo y borrador, errores de campo, diferencias de la
       importación y resultado bloqueado conservan su texto o su etiqueta (FR-016); corregir lo que
       falte.
+      **Resultado del repaso: no hubo nada que corregir.** Cada estado ya llevaba su texto o su
+      etiqueta: «Activo»/«En preparación» en la barra superior, «Crítico»/«Aviso» al principio de
+      cada aviso, «Activo»/«Inactivo» en la columna Estado de servicios y recursos, el verbo
+      («Se añade», «Se quita», «Orden cambiado») en cada línea de las diferencias de la
+      importación, «Se aplicará»/«Se rechazará: …» en el resultado previsto, el mensaje junto al
+      campo con error y el propio texto del aviso en las bandas de protección y de gasto.
 - [ ] T026 [US3] Recorrer a mano las quince secciones en oscuro con la tabla de
       [quickstart.md §4](quickstart.md), incluidos banda de guardado, error de formulario, recorrido
       con tabulador, aviso de contraste del chat e impresión; anotar y corregir lo que aparezca.

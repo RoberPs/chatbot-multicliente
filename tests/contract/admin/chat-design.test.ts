@@ -604,6 +604,42 @@ describe('Diseño del chat (/admin/chat-design)', () => {
       expect(res.body).not.toContain('no está disponible');
     });
 
+    it('el tema del panel no llega a la vista previa ni al aviso de contraste (FR-019, FR-020)', async () => {
+      await start({ webChat: WEB_ON });
+      await seedChatDesign(t.db, { ...GREEN_PALETTE, welcomeText: 'Bienvenida' });
+      const url = '/admin/chat-design/preview?view=open';
+      const claro = await get(app, session, url);
+      const oscuro = await app.inject({
+        method: 'GET',
+        url,
+        headers: { cookie: `${session.cookie}; kb_theme=dark` },
+      });
+      // La vista previa muestra los colores del negocio: su HTML no depende del tema del panel.
+      expect(oscuro.body).toBe(claro.body);
+      expect(oscuro.body).not.toContain('data-theme');
+
+      // El aviso de contraste se calcula sobre los colores elegidos, no sobre el tema (FR-020).
+      const form = encodeForm({
+        _csrf: session.csrf,
+        ...designForm({ text_color: '#aaaaaa' }),
+      });
+      const headers = { 'content-type': 'application/x-www-form-urlencoded' };
+      const avisoClaro = await app.inject({
+        method: 'POST',
+        url: '/admin/chat-design/check',
+        headers: { ...headers, cookie: session.cookie },
+        payload: form,
+      });
+      const avisoOscuro = await app.inject({
+        method: 'POST',
+        url: '/admin/chat-design/check',
+        headers: { ...headers, cookie: `${session.cookie}; kb_theme=dark` },
+        payload: form,
+      });
+      expect(avisoClaro.body).toContain('El texto del chat sobre el fondo tiene un contraste de');
+      expect(avisoOscuro.body).toBe(avisoClaro.body);
+    });
+
     it('preview.css usa las opciones de la consulta y el original si no valen', async () => {
       await start();
       const res = await get(

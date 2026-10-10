@@ -5,6 +5,12 @@
  */
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
+import type { Hex } from '../../../src/webchat/design/defaults.js';
+import {
+  contrastRatio,
+  MIN_TEXT_CONTRAST,
+  MIN_UI_CONTRAST,
+} from '../../../src/webchat/design/contrast.js';
 
 const CSS_PATH = new URL('../../../src/admin/views/app.css', import.meta.url);
 
@@ -27,6 +33,58 @@ const WORKING_TOKENS = [
   '--error-bg',
   '--error-line',
 ] as const;
+
+/** La paleta clara es copia literal de los colores que el panel usaba antes de la 014 (FR-005). */
+const LIGHT_BEFORE_014: Record<string, string> = {
+  bg: '#f6f7f9',
+  card: '#ffffff',
+  field: '#ffffff',
+  fg: '#1d2330',
+  muted: '#5f6878',
+  line: '#d9dde4',
+  'control-line': '#d9dde4',
+  accent: '#1f5fbf',
+  'on-accent': '#ffffff',
+  ok: '#1f7a4a',
+  warn: '#9a6200',
+  danger: '#b3261e',
+  'flash-bg': '#e8f5ec',
+  'flash-line': '#b7dcc4',
+  'error-bg': '#fdecea',
+  'error-line': '#f1b7b2',
+};
+
+/**
+ * Parejas con contraste exigido en oscuro (data-model §2.4): 4,5 para texto y 3 para bordes y
+ * foco, los mismos mínimos que ya se exigen al diseño del chat (FR-014, FR-015).
+ */
+const DARK_PAIRS: Array<[string, string, number]> = [
+  ['fg', 'bg', MIN_TEXT_CONTRAST],
+  ['fg', 'card', MIN_TEXT_CONTRAST],
+  ['fg', 'field', MIN_TEXT_CONTRAST],
+  ['muted', 'bg', MIN_TEXT_CONTRAST],
+  ['muted', 'card', MIN_TEXT_CONTRAST],
+  ['accent', 'bg', MIN_TEXT_CONTRAST],
+  ['accent', 'card', MIN_TEXT_CONTRAST],
+  ['accent', 'field', MIN_TEXT_CONTRAST],
+  ['on-accent', 'accent', MIN_TEXT_CONTRAST],
+  ['ok', 'bg', MIN_TEXT_CONTRAST],
+  ['ok', 'card', MIN_TEXT_CONTRAST],
+  ['warn', 'bg', MIN_TEXT_CONTRAST],
+  ['warn', 'card', MIN_TEXT_CONTRAST],
+  ['danger', 'bg', MIN_TEXT_CONTRAST],
+  ['danger', 'card', MIN_TEXT_CONTRAST],
+  ['ok', 'flash-bg', MIN_TEXT_CONTRAST],
+  ['danger', 'error-bg', MIN_TEXT_CONTRAST],
+  ['fg', 'flash-bg', MIN_TEXT_CONTRAST],
+  ['fg', 'error-bg', MIN_TEXT_CONTRAST],
+  ['control-line', 'field', MIN_UI_CONTRAST],
+  ['control-line', 'bg', MIN_UI_CONTRAST],
+  ['control-line', 'card', MIN_UI_CONTRAST],
+  ['accent', 'bg', MIN_UI_CONTRAST],
+  ['flash-line', 'bg', MIN_UI_CONTRAST],
+  ['error-line', 'bg', MIN_UI_CONTRAST],
+];
 
 /** Tokens que no son de trabajo: las dos paletas y los tres colores fijos. */
 const isPaletteToken = (name: string): boolean => /^--(c-light-|c-dark-|fixed-)/.test(name);
@@ -80,6 +138,15 @@ const mappingBlocks = parseBlocks(code).filter(
   (block) => block.body.includes('color-scheme:') && !block.body.includes('{'),
 );
 
+/** Colores de una paleta, por su nombre corto: `palette('dark').fg`. */
+function palette(variant: 'light' | 'dark'): Record<string, Hex> {
+  const colors: Record<string, Hex> = {};
+  for (const match of code.matchAll(/--c-(light|dark)-([a-z-]+):\s*(#[0-9a-fA-F]{6});/g)) {
+    if (match[1] === variant && match[2] && match[3]) colors[match[2]] = match[3] as Hex;
+  }
+  return colors;
+}
+
 describe('El tema en app.css (014)', () => {
   it('hay al menos un mapeo claro y otro oscuro', () => {
     const schemes = mappingBlocks.map(
@@ -106,10 +173,9 @@ describe('El tema en app.css (014)', () => {
       const prefix = `var(--c-${String(scheme)}-`;
       for (const declaration of declarations(block.body)) {
         if (!declaration.name.startsWith('--') || isPaletteToken(declaration.name)) continue;
-        expect(
-          declaration.value,
-          `${declaration.name} en el mapeo «${block.selector}»`,
-        ).toBe(`${prefix}${declaration.name.slice(2)})`);
+        expect(declaration.value, `${declaration.name} en el mapeo «${block.selector}»`).toBe(
+          `${prefix}${declaration.name.slice(2)})`,
+        );
       }
     }
   });
@@ -123,5 +189,51 @@ describe('El tema en app.css (014)', () => {
       if (!/^--(c-light-|c-dark-|fixed-)[a-z-]+:/.test(line)) offenders.push(line);
     }
     expect(offenders).toEqual([]);
+  });
+
+  it('las dos paletas tienen los mismos 16 colores', () => {
+    const light = Object.keys(palette('light')).sort();
+    const dark = Object.keys(palette('dark')).sort();
+    expect(light).toEqual(WORKING_TOKENS.map((t) => t.slice(2)).sort());
+    expect(dark).toEqual(light);
+  });
+
+  it('la paleta clara es la de antes de la feature (FR-005)', () => {
+    expect(palette('light')).toEqual(LIGHT_BEFORE_014);
+  });
+
+  it('la paleta oscura cumple el contraste de todas sus parejas (FR-014, FR-015)', () => {
+    const dark = palette('dark');
+    for (const [fg, bg, min] of DARK_PAIRS) {
+      const first = dark[fg];
+      const second = dark[bg];
+      expect(first, `falta --c-dark-${fg}`).toBeDefined();
+      expect(second, `falta --c-dark-${bg}`).toBeDefined();
+      if (!first || !second) continue;
+      const ratio = contrastRatio(first, second);
+      expect(ratio, `${fg} sobre ${bg} (mínimo ${String(min)}:1)`).toBeGreaterThanOrEqual(min);
+    }
+  });
+
+  it('el elemento enfocado por teclado se ve en los dos temas (FR-015)', () => {
+    const focus = parseBlocks(code).find((block) => block.selector === ':focus-visible');
+    expect(focus, 'falta la regla :focus-visible').toBeDefined();
+    const rules = declarations(focus?.body ?? '');
+    expect(rules.find((d) => d.name === 'outline')?.value).toBe('2px solid var(--accent)');
+    expect(rules.find((d) => d.name === 'outline-offset')?.value).toBeDefined();
+  });
+
+  it('al imprimir siempre manda la paleta clara, también con el tema forzado (FR-021)', () => {
+    const printAt = code.indexOf('@media print');
+    expect(printAt, 'falta el bloque @media print').toBeGreaterThan(-1);
+    const printBlock = parseBlocks(code).find(
+      (block) => block.body.includes('color-scheme: light') && block.selector.includes('@media'),
+    );
+    expect(printBlock?.selector, 'el bloque de impresión no es un @media').toContain('print');
+    // Igual especificidad que los mapeos oscuros y después de ellos: manda por orden.
+    const forced = code.indexOf(":root[data-theme='dark']");
+    expect(printAt).toBeGreaterThan(forced);
+    const inside = code.slice(printAt);
+    expect(inside).toContain(":root[data-theme='dark']");
   });
 });
