@@ -237,14 +237,18 @@ manual de las quince secciones no encuentra ninguna zona del tema contrario.
 - [ ] T027 Ejecutar `pnpm lint && pnpm typecheck && pnpm test` y comprobar, además, que la rama no
       ha tocado `src/db`, `src/config-transfer` ni `src/webchat` en producción, y que
       `formatVersion` sigue igual (`git diff main --stat`), como exige FR-010.
-- [ ] T028 Avisar al usuario y actualizar `README.md` con el estado de la feature 014 y una línea
+- [x] T028 Avisar al usuario y actualizar `README.md` con el estado de la feature 014 y una línea
       sobre el modo oscuro del panel (convención de CLAUDE.md: avisar antes).
-- [ ] T029 Actualizar `docs/operacion-multicliente.md`: añadir la fila de la 014 a la tabla de specs
+- [x] T029 Actualizar `docs/operacion-multicliente.md`: añadir la fila de la 014 a la tabla de specs
       realizadas (9.1) con su fecha y la nota de que no venía de ninguna propuesta de 9.2, y revisar
       el orden de las pendientes.
 - [ ] T030 Validar en la instancia real con [quickstart.md §5](quickstart.md): desplegar por tandas
       (feature 009), confirmar la versión con `pnpm instance:versions`, trabajar una jornada con el
       tema elegido (SC-008) y comprobar que el chat web de los clientes finales no ha cambiado.
+- [x] T031 Subir `version` en `package.json` a **0.1.2** (guía de operación, §5.1: un número
+      nuevo por imagen, nunca uno ya desplegado). La 014 se despliega con su propia imagen,
+      después de la `0.1.1` de la 016, que es la que cierra su T051. `CURRENT_FORMAT_VERSION`
+      sigue en 2: no hay migración ni configuración nueva del negocio.
 
 ---
 
@@ -323,3 +327,25 @@ Task: "tests/contract/admin/theme.test.ts (T010)"
 - Si en el recorrido manual aparece una zona clara en oscuro, el fallo casi siempre es un token
   olvidado en un bloque de mapeo: T006 debería cazarlo, y si no lo caza, amplía el test antes de
   arreglar el CSS.
+
+---
+
+## Lo que queda (sesión siguiente)
+
+Todo lo automático está hecho y en verde. Queda solo lo que necesita un navegador y un par de
+ojos, más el despliegue:
+
+- **T008, T020 y T026**: los tres recorridos a mano de [quickstart.md](quickstart.md) §2, §3 y §4
+  contra `pnpm dev` (sistema en oscuro sin destello, control con y sin JavaScript, y las quince
+  secciones en oscuro con foco, banda de guardado, banda de error, aviso de contraste del chat e
+  impresión).
+- **T030**: despliegue de la `0.1.2` por tandas (feature 009) y la jornada de trabajo real de
+  [quickstart.md §5](quickstart.md).
+
+El orden en el VPS importa: primero la `0.1.1` con las dos casillas de la fase 9 que cierran la
+T051 de la 016, y después la `0.1.2` con el modo oscuro. Son dos pasadas del procedimiento de la
+[sección 5](../../docs/operacion-multicliente.md#5-actualizar-el-núcleo), no una.
+
+La rama parte de la punta de `016-db-outage-resilience`, así que **contiene la 016**: lo que se
+anote en `docs/plan-despliegue-produccion.md` al cerrar la T051 habrá que traerlo aquí (fusionar
+la 016 en `main` y rebasar esta rama encima) antes de construir la imagen `0.1.2`.

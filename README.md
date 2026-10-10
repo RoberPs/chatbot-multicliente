@@ -17,6 +17,7 @@ Estados: especificada → planificada → en implementación → completada (o a
 | 011 | Diseño del chat web | Núcleo | Completada | `011-chat-design` | [spec](specs/011-chat-design/spec.md) · [plan](specs/011-chat-design/plan.md) · [tareas](specs/011-chat-design/tasks.md) | 2026-10-05  |
 | 012 | Protección frente a abuso y saturación | Núcleo | Completada | `012-abuse-protection` | [spec](specs/012-abuse-protection/spec.md) · [plan](specs/012-abuse-protection/plan.md) · [tareas](specs/012-abuse-protection/tasks.md) | 2026-10-06  |
 | 013 | Requisitos de despliegue seguro | Núcleo (operación) | Completada | `013-secure-deployment` | [spec](specs/013-secure-deployment/spec.md) · [plan](specs/013-secure-deployment/plan.md) · [tareas](specs/013-secure-deployment/tasks.md) | 2026-10-06  |
+| 014 | Modo oscuro del panel del operador | Núcleo | Completada (recorrido a mano y validación en producción pendientes) | `014-dark-mode-panel` | [spec](specs/014-dark-mode-panel/spec.md) · [plan](specs/014-dark-mode-panel/plan.md) · [tareas](specs/014-dark-mode-panel/tasks.md) | 2026-10-10  |
 | 016 | Resistencia a los cortes de la base de datos y verificación de copias por socket | Núcleo (corrección) | Completada | `016-db-outage-resilience` | [spec](specs/016-db-outage-resilience/spec.md) · [plan](specs/016-db-outage-resilience/plan.md) · [tareas](specs/016-db-outage-resilience/tasks.md) | 2026-10-09  |
 
 ---
@@ -63,6 +64,13 @@ reinicia, sigue respondiendo al cliente final con el teléfono de emergencia por
 WhatsApp, informa de su estado con `db_unavailable` y **200** —que no es motivo de reinicio— y se
 recupera sola cuando la base vuelve, sin intervención y sin perder las sesiones del panel. El
 registro deja una anotación al empezar el corte y otra al recuperarse, no una por petición.
+
+El panel del operador tiene **modo oscuro** (feature 014): sigue la preferencia de color del
+sistema y, además, ofrece un control de tres opciones —Automático, Claro, Oscuro— en la barra
+superior y en la pantalla de acceso. La elección se recuerda en una cookie de ese navegador, así
+que es de cada persona: no es configuración del negocio, no viaja en el fichero de configuración
+ni en las copias, y no cambia el esquema. El modo claro queda exactamente como antes y el chat web
+que ven los clientes finales no cambia nada.
 
 Cada instancia **mide el consumo del modelo** (feature 010): tokens por respuesta y por resumen de
 derivación, por canal y sin guardar textos ni datos del cliente. El panel muestra el consumo y el
