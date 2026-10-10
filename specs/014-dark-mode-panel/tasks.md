@@ -234,9 +234,18 @@ manual de las quince secciones no encuentra ninguna zona del tema contrario.
 
 ## Phase 6: Polish & Cross-Cutting Concerns
 
-- [ ] T027 Ejecutar `pnpm lint && pnpm typecheck && pnpm test` y comprobar, además, que la rama no
+- [x] T027 Ejecutar `pnpm lint && pnpm typecheck && pnpm test` y comprobar, además, que la rama no
       ha tocado `src/db`, `src/config-transfer` ni `src/webchat` en producción, y que
       `formatVersion` sigue igual (`git diff main --stat`), como exige FR-010.
+      **Resultado (2026-10-10)**: `pnpm lint` y `pnpm typecheck` limpios y `pnpm test` en verde,
+      **276 ficheros y 3231 tests** (3 saltados: los del socket Unix de la 016, que no corren en
+      Windows), 24 min 42 s. Antes de la feature eran 273 ficheros; los tres nuevos son
+      `tests/unit/admin/theme.test.ts`, `tests/unit/admin/theme-css.test.ts` y
+      `tests/contract/admin/theme.test.ts`.
+      La comprobación de FR-010 se hizo contra la punta de la 016, que es la base de esta rama
+      (`git diff 515f277..HEAD -- src/`): solo `src/admin/**` y tres líneas de `src/app.ts`.
+      Nada en `src/db`, `src/config-transfer`, `src/webchat` ni `drizzle/`, y
+      `CURRENT_FORMAT_VERSION` sigue en 2.
 - [x] T028 Avisar al usuario y actualizar `README.md` con el estado de la feature 014 y una línea
       sobre el modo oscuro del panel (convención de CLAUDE.md: avisar antes).
 - [x] T029 Actualizar `docs/operacion-multicliente.md`: añadir la fila de la 014 a la tabla de specs
