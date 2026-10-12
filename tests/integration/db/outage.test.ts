@@ -139,7 +139,10 @@ afterAll(async () => {
   if (!(await server.isUp())) await server.startServer();
   await instance?.stop().catch(() => undefined);
   await server.stop();
-}, 120_000);
+  // Mismo margen que el arranque: aqui el contenedor puede tener que levantarse otra vez,
+  // que es la operacion mas lenta de las dos. Con 120 s, la suite entera en una maquina
+  // cargada agota el tiempo en este hook aunque los once casos hayan pasado (2026-10-12).
+}, 180_000);
 
 const app = () => {
   if (!instance) throw new Error('La instancia no arrancó');
