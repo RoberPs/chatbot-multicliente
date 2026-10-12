@@ -1104,7 +1104,26 @@ tener presente:
   Incluyen las anotaciones de las fases 7, 8 y 9 y el script de pruebas; el recuento exacto lo da
   `git log origin/main..HEAD --oneline`.
 
-### Proveedor del modelo configurable (Gemini), decidido el 2026-10-08
+### Proveedor del modelo configurable, decidido el 2026-10-08 y ampliado el 2026-10-12
+
+> **Ampliación del 2026-10-12**: la spec (la **017**, siguiente número libre: el 015 se gastó en
+> un commit de tarea sin carpeta) lleva **los tres proveedores —Anthropic, Gemini y OpenAI—
+> elegibles por instancia**, no solo Gemini, para que cada cliente pueda usar el modelo que
+> prefiera. Consecuencias de la ampliación, decidida con ellas sobre la mesa:
+>
+> - La costura (`LLM_PROVIDER` + una variable de clave por proveedor) se paga una vez; lo que se
+>   multiplica por tres es el adaptador, el mapeo de parámetros, el medidor de tokens y el
+>   verificador de respuestas.
+> - **`pnpm test:eval` deja de ser opcional en esta spec**: es la única red que detecta que el
+>   bot responde peor con otro modelo, y `LLM_EFFORT=medium` se calibró contra Sonnet 5. Hay que
+>   presupuestar su coste, por proveedor.
+> - Adelanta a **P7** en la cola de propuestas de `operacion-multicliente.md` §9.2; queda por
+>   anotar allí con su razón al cerrar la 014.
+> - Hoy el esquema de entorno (`src/config/env.ts`) **no conoce** `GEMINI_API_KEY` ni
+>   `OPENAI_API_KEY`: si aparecen en algún `.env`, se ignoran. Lo único de OpenAI que usa el
+>   núcleo es la transcripción de audios (`STT_API_KEY`, `STT_MODEL`), apagada en las dos
+>   instancias.
+
 
 Se planteó dar a la instancia 2 una `GEMINI_API_KEY`. **No se puede hoy**: el núcleo solo habla con
 la API de Anthropic. Se despliega con dos claves de Anthropic y se hace después una **spec de
