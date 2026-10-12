@@ -338,17 +338,9 @@ TXT
       exigir_sana instancia-1
       exigir_sana instancia-2
       verde '  Base de datos y las dos instancias, sanas otra vez.'
-      echo 'Comprueba tambien el chat y /admin antes de dar la casilla por buena.'
-      echo
-      echo 'Las sesiones del panel YA NO VALEN: al perder la base, el proceso de cada instancia'
-      echo 'se cae y la politica de reinicio lo relanza (se ve como `restarting` arriba), y la'
-      echo 'epoca de sesion se regenera en cada arranque (src/admin/auth/plugin.ts). Hay que'
-      echo 'volver a entrar en los dos paneles.'
-      echo
-      echo 'Ese bucle de reinicio es un fallo del nucleo, no una consecuencia buscada de esta'
-      echo 'prueba: los pools de src/db/client.ts se crean sin `pool.on("error")`, asi que una'
-      echo 'conexion ociosa que se cae tumba el proceso. Mientras no se corrija, el bot NO puede'
-      echo 'llegar a responder con EMERGENCY_CONTACT_PHONE: muere antes de contestar.'
+      echo 'Comprueba tambien el chat y /admin antes de dar la casilla por buena. Las sesiones'
+      echo 'del panel siguen valiendo: no se ha reiniciado ninguna instancia (la epoca de'
+      echo 'sesion solo se regenera al arrancar el proceso).'
       ;;
     *) uso ;;
   esac
