@@ -835,7 +835,8 @@ clave es la contraseña. El bloqueo por IP sigue **desactivado**, que es lo corr
 - **Las páginas nuevas llevan `noindex`** y un aviso visible de que el negocio es ficticio: es
   una web de demostración en un dominio público, y no debe parecer una empresa real.
 
-### Fase 9 · Pruebas de punta a punta (Los dos) — **PASADA el 2026-10-09, con dos bloqueos**
+### Fase 9 · Pruebas de punta a punta (Los dos) — **COMPLETA el 2026-10-12**
+(pasada el 2026-10-09 con dos bloqueos; los dos se cerraron el 2026-10-12 con la 0.1.1)
 
 > Las pruebas que se hacen en el VPS están en [deploy/fase9-pruebas.sh](../deploy/fase9-pruebas.sh),
 > con cuatro subcomandos repetibles: `copias`, `aislamiento`, `emergencia parar|arrancar` y
@@ -849,7 +850,7 @@ clave es la contraseña. El bloqueo por IP sigue **desactivado**, que es lo corr
 > en la **0.1.1**; ninguno es de configuración, así que no hay nada que tocar en el VPS.
 
 - [x] Chat de la agencia desde la raíz y del restaurante desde la página de prueba.
-- [ ] Un mensaje que active el contacto de emergencia: el bot **muestra** tu número en su
+- [x] Un mensaje que active el contacto de emergencia: el bot **muestra** tu número en su
   respuesta. **BLOQUEADA el 2026-10-09**: la respuesta existe y es correcta, pero es
   **inalcanzable** porque el proceso de la instancia se muere antes de poder darla (fallo 1 de
   los de abajo). Corregido el 2026-10-08: `EMERGENCY_CONTACT_PHONE` no recibe ningún aviso; es el
@@ -864,17 +865,40 @@ clave es la contraseña. El bloqueo por IP sigue **desactivado**, que es lo corr
     `emergencia parar`. Las dos frases se distinguen sin mirar el número, que aquí es el mismo
     en los dos sitios: «Para hablar con una persona de \<nombre\>: …» frente a «Si necesitas
     hablar con una persona: teléfono …».
+  - **DESBLOQUEADA el 2026-10-12**, con la 0.1.1 en las dos instancias. Corte real de
+    PostgreSQL de 6 min 22 s (11:44:55–11:51:17), por encima del umbral de 5 min de SC-002.
+    Durante el corte: las dos instancias en `Up` y, además, **`healthy`** —la sonda consulta
+    `/health`, que responde **200** con `db_unavailable`, así que Docker no tiene motivo para
+    reiniciarlas—, `RestartCount` **0** en las dos y la hora de arranque sin cambiar. Por el
+    chat web, las dos respondieron «Ahora mismo el chat no está disponible. Si necesitas hablar
+    con una persona: teléfono +34 600 00 00 00», que es la frase del contacto de **emergencia**,
+    no la del negocio. En el registro, una sola `db_outage_started`, una `db_outage_ongoing` al
+    pasar de los 5 min y una `db_outage_recovered` con `durationMs` y `failures: 2`, sin
+    direcciones ni credenciales. Al volver la base, la **misma conversación** siguió atendiendo
+    con datos reales, sin reiniciar nada ni pedir sesión nueva.
+  - **La mitad de WhatsApp no se pudo hacer, y no es un olvido**: las seis variables
+    `WHATSAPP_*` están vacías en las dos instancias (comprobado comparando la huella de cada
+    valor con la de la cadena vacía, sin leer ninguno), tal y como da por supuesto este mismo
+    plan cuando dice que los avisos «con WhatsApp apagado van por correo». El escenario 6 del
+    quickstart de la 016 pedía escribir «por WhatsApp y por el chat web»; se ha corregido allí.
+    El camino degradado de WhatsApp y el aviso una sola vez por cliente y corte (FR-014) tienen
+    cobertura automática en la suite; lo que solo se puede verificar en producción es la forma
+    de dirección por socket, y esa va por `db:verify`.
 - [x] Un aviso por correo llega a tu correo real vía Brevo. **Adelantado al 2026-10-08**, al
   cerrar la fase 7, desde el chat web real del restaurante (`/chat/frame`). El ciclo entero
   comprobado: un cliente pide que le llamen y da nombre y teléfono → llega el correo de aviso →
   el enlace «Le atiendo» abre la página de confirmación con el identificador en la ruta → queda
   «Anotado: atiende a <nombre>» → la derivación aparece en «Derivaciones activas» pendiente de
   terminar y el chat muestra su franja superior. Se repetirá en la fase 9 desde la web pública.
-- [ ] `pnpm db:backup`, `pnpm db:verify <copia>` (`RESTAURABLE`) y `pnpm db:backups`.
+- [x] `pnpm db:backup`, `pnpm db:verify <copia>` (`RESTAURABLE`) y `pnpm db:backups`.
   **Dos de tres el 2026-10-09**, en las dos instancias: la copia se crea, aparece en el montaje
   del anfitrión (o sea, sobrevive al contenedor, que tiene la raíz en solo lectura) y se lista
   bien. **`db:verify` está bloqueada** por el fallo 2 de los de abajo: la copia se crea y se
   guarda, pero **no se puede comprobar que sirva**, que es el riesgo de verdad en producción.
+  - **DESBLOQUEADA el 2026-10-12**, con la 0.1.1: `RESTAURABLE` en las dos instancias, con los
+    recuentos de las 33 tablas iguales a los de la copia y la base temporal borrada después. Es
+    la única verificación real de la forma de dirección por **socket Unix literal** (FR-006,
+    SC-004 de la 016): su prueba se salta en Windows y no hay integración continua en Linux.
 - [x] `pnpm instance:versions` muestra la versión real de las 2 instancias. Hecho el 2026-10-09:
   las dos en `0.1.0`, esquema `0008_abuse_protection`, estado «Correcto» y tope de gasto
   «normal», que de paso confirma el límite de la fase 7.
@@ -1003,11 +1027,47 @@ como está en producción (dos clústeres por socket Unix y una caída de verdad
     que la forma de dirección de producción silenciaba sin avisar. Añadido también el estado
     `db_unavailable` de `/health` con **200**, para que ninguna política de reinicio tenga motivo
     durante un corte, y el fin del «escribiendo…» eterno del chat web.
-  - **Pendiente de hacer en el VPS**: desplegar la 0.1.1 y repetir las dos casillas (T051 y T052
-    de la spec). Hasta que eso se haga, la forma de dirección por **socket Unix literal** solo
-    está comprobada por la vía de la autoridad vacía: su prueba se salta en Windows y no hay
-    integración continua en Linux, así que este despliegue es su única verificación real
-    (FR-006, SC-004 de la 016).
+  - **Hecho en el VPS el 2026-10-12**: imagen `0.1.1` construida con `CORE_VERSION=0.1.1`,
+    publicada en GHCR (`sha256:b1c55ebe…`, digest comprobado al descargarla en el servidor) y
+    desplegada por tandas —primero `instancia-1` (viajes), comprobada, y después `instancia-2`
+    (restaurante)—. Las dos quedan en `Correcto`, núcleo `0.1.1`, esquema `0008_abuse_protection`
+    (sin migración), y el inventario anotado con `instance:versions --annotate`: segunda pasada
+    con «Coincide: sí» y código 0. **Las dos casillas de la fase 9 quedan desbloqueadas**, así
+    que la forma de dirección por socket Unix literal ya tiene su verificación real (FR-006,
+    SC-004). `pnpm test:eval` se saltó a propósito por decisión del usuario, por coste; queda
+    anotado aquí como salto consciente de la puerta de 5.1.
+  - **Lo que salió mal, para no repetirlo** (todo del equipo y del procedimiento, nada del
+    núcleo):
+    - **La IP del VPS había cambiado y no estaba escrita en ninguna parte.** `~/.ssh/config` y
+      `known_hosts` apuntaban a `188.245.83.124`, que Hetzner ya ha reasignado a otra máquina:
+      respondía con tres claves de anfitrión desconocidas. El servidor es `chatbot-prod`,
+      **91.99.107.86**, huella ED25519 `SHA256:Ir9eRo/9NKhfWd9ERuW/qwVhH9nhPOm/PPdM3/aARDM`,
+      verificada por la consola web de Hetzner (la única vía que no pasa por la red que se está
+      verificando). Si no se hubiera comprobado, el despliegue habría ido con secretos a un
+      servidor ajeno. **La huella del servidor queda anotada aquí**: era el dato que faltaba.
+    - **El usuario de acceso es `operador`, no `root`**, y estaba escrito en la fase 2 pero no
+      donde se usa. Los intentos como `root` agotaron el `maxretry` de `fail2ban` y banearon la
+      IP del administrador: el mismo incidente que ya documenta la fase 2, repetido. Se resolvió
+      con `fail2ban-client set sshd unbanip <ip>` desde la consola. Alias `vps` en
+      `~/.ssh/config` con `User operador` para que no vuelva a pasar.
+    - **Avast bloqueaba la construcción.** Su «análisis HTTPS» sustituye el certificado de
+      `registry.npmjs.org` por uno propio (`Avast Web/Mail Shield Root`); Windows se fía porque
+      tiene esa raíz instalada, pero el contenedor no, y `corepack` moría con
+      `UNABLE_TO_VERIFY_LEAF_SIGNATURE`. Se desactiva el análisis HTTPS mientras se construye.
+      **No se mete esa raíz en la imagen**: acabaría en producción fiándose de un certificado de
+      interceptación de un portátil. Es un requisito del equipo de construcción que no estaba
+      escrito.
+    - **El VPS no guarda la sesión de GHCR** (su `/root/.docker/config.json` está vacío: se
+      cierra sesión tras cada descarga, que es lo correcto). Hay que volver a entrar con
+      `sudo docker login ghcr.io -u roberps` y el token `chatbot-ghcr-pull` antes de cada
+      despliegue, y cerrarla después.
+    - **Las copias locales de los entornos estaban desfasadas** respecto al VPS en `SMTP_URL`
+      (la corrección de Brevo del 2026-10-08 nunca volvió a `~/.chatbotasesor/envs/`). Las otras
+      60 claves coincidían. Se arregla con `pnpm instance:sync <id> <fichero>`.
+    - **`deploy/fase9-pruebas.sh` del repositorio describía como vivo el fallo que la 016
+      arregla** y su aviso decía que los contenedores pasan a `unhealthy` durante el corte, algo
+      que con la 0.1.1 ya no ocurre. Corregido en el repositorio y en el VPS, que vuelven a
+      coincidir byte a byte.
 - [ ] `/speckit-specify`: modo oscuro del panel (**núcleo**, afecta a todos los clientes).
 - [ ] Después, la spec del **proveedor del modelo configurable** (ver §6), que es la que lleva la
   instancia 2 a Gemini. Va detrás del modo oscuro a propósito: el modo oscuro es un cambio pequeño

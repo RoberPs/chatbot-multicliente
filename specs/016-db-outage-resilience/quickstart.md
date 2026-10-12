@@ -148,10 +148,19 @@ docker compose -f deploy/docker-compose.prod.yml exec instancia-1 node dist/src/
 
 1. **Qué hay que ver**: `RESTAURABLE` en las dos instancias. Es la casilla que quedó bloqueada en
    la fase 9 por el fallo del socket.
-2. Para PostgreSQL de producción y escribe al bot por WhatsApp y por el chat web.
-3. **Qué hay que ver**: las dos instancias siguen en `Up` (no `Restarting`), `/health` responde
-   200 con `db_unavailable`, y por los dos canales llega el aviso con el **teléfono de
-   emergencia**. Es la segunda casilla bloqueada.
+2. Para PostgreSQL de producción y escribe al bot **por los canales que la instalación tenga
+   configurados**. Con el chat web basta para cerrar la casilla; si hay WhatsApp, pruébalo
+   también. En las dos instancias del VPS las variables `WHATSAPP_*` están vacías (comprobado el
+   2026-10-12), así que allí este paso es solo el chat web; el camino degradado de WhatsApp y su
+   aviso una vez por cliente y corte (FR-014) quedan cubiertos por la suite.
+
+   **Ten el chat abierto y con una conversación empezada antes de parar la base**: la sesión del
+   chat va firmada y no consulta la base, pero pedir una nueva (`POST /session`) sí, y con la
+   base parada fallaría antes de poder escribir.
+3. **Qué hay que ver**: las dos instancias siguen en `Up` —de hecho en `healthy`, porque la sonda
+   consulta `/health` y responde 200—, `/health` responde 200 con `db_unavailable`, y por el chat
+   llega el aviso con el **teléfono de emergencia**, con la frase «Si necesitas hablar con una
+   persona: …», distinta de la del contacto del negocio. Es la segunda casilla bloqueada.
 4. Arranca PostgreSQL y comprueba que las dos vuelven a atender solas.
 
 ---

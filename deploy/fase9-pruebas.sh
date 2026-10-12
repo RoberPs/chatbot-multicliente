@@ -292,7 +292,9 @@ subcomando_emergencia() {
 AVISO. Esto para el PostgreSQL de produccion. Mientras este parado:
   - las DOS instancias se quedan sin datos (es un cluster compartido),
   - los dos paneles /admin dejan de funcionar,
-  - los dos contenedores pasaran a `unhealthy` (Docker NO los reinicia, es lo que se quiere),
+  - los dos contenedores siguen en `Up` y `healthy`: desde la 0.1.1 la sonda consulta
+    /health, que durante el corte responde 200 con `db_unavailable` a proposito, asi que
+    Docker no los marca enfermos ni los reinicia (comprobado el 2026-10-12),
   - un mensaje nuevo en el chat NO se guarda: no hay riesgo de perder ni corromper nada.
 Los datos no se tocan: `stop` no es `down -v`.
 
