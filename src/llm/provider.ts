@@ -105,6 +105,17 @@ export const LLM_KEY_MINIMUMS: Readonly<Record<string, number>> = Object.fromEnt
   LLM_PROVIDERS.map((p) => [keyVariableOf(p), providerDescriptor(p).keyMinLength]),
 );
 
+/**
+ * Proveedor **dueño** de una variable de credencial, o `null` si la variable no es de ninguno.
+ *
+ * Es lo que permite comprobar «este valor no va en esta variable» sin saber cuál es el proveedor
+ * declarado: una clave de Anthropic en `GEMINI_API_KEY` está mal puesta diga lo que diga
+ * `LLM_PROVIDER` (FR-028).
+ */
+export function providerOfKeyVariable(variable: string): LlmProvider | null {
+  return LLM_PROVIDERS.find((p) => keyVariableOf(p) === variable) ?? null;
+}
+
 /** Mensaje de un proveedor no elegible: nombra los tres (FR-002, regla C5). */
 export function ineligibleMessage(value: unknown): string {
   return `LLM_PROVIDER debe ser ${LLM_PROVIDERS.join(', ')}; recibido: ${String(value)}`;

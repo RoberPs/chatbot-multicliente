@@ -96,6 +96,8 @@ const routeResult = z.enum(['sent', 'failed']);
 /** Motivos de una respuesta sin modelo (012, `CapReason`). */
 export const CAP_REASONS = [
   'spend_unreadable',
+  // 017 (FR-005b): el proveedor rechaza la credencial del modelo.
+  'llm_key_rejected',
   'cap_disabled',
   'model_unpriced',
   'stt_unpriced',

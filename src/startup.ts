@@ -188,6 +188,8 @@ export async function startInstance(options: StartInstanceOptions): Promise<Runn
       await bot?.transcriber?.stop();
       await bot?.processor.stop();
       await bot?.retention.stop();
+      // 017: para el reintento de la credencial, que si no mantendría un temporizador vivo.
+      bot?.credentialWatcher.close();
       await scheduler?.stop();
       outage.close();
       setOutageWatcher(null);

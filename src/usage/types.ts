@@ -86,7 +86,14 @@ export interface SpendCapState {
  * Motivos por los que los clientes finales reciben solo el contacto (FR-001, FR-004, FR-008).
  * `stt_unpriced` solo afecta a los audios.
  */
-export type ContactOnlyReason = 'cap_disabled' | 'model_unpriced' | 'stt_unpriced' | 'spend_unreadable';
+export type ContactOnlyReason =
+  | 'cap_disabled'
+  | 'model_unpriced'
+  | 'stt_unpriced'
+  | 'spend_unreadable'
+  // 017 (FR-005b): el proveedor rechaza la credencial. Degrada por el mismo camino que un modelo
+  // sin precio, y la instancia sale sola del degradado cuando la credencial vuelva a servir.
+  | 'llm_key_rejected';
 
 /** Por qué un canal no puede llamar al modelo ahora. */
 export type CapReason = ContactOnlyReason | 'spend_cap' | 'whatsapp_daily';

@@ -13,6 +13,8 @@ export interface MessageContext {
   otherCurrent?: boolean;
   /** Mensaje del esquema del arranque (`env.ts`): textos fijos que solo nombran variables. */
   coreMessage?: string;
+  /** 017: proveedor al que parece pertenecer una credencial. **Nunca** su valor (FR-032). */
+  otherProvider?: string;
   path?: string;
   id?: string;
   other?: string;
@@ -99,6 +101,9 @@ export const CHECK_ERROR_CODES = [
   'database_tls_required',
   'database_tls_ip_host',
   'database_url_invalid',
+  // 017: la credencial encaja con el patron de otro proveedor elegible, o el proveedor la rechaza.
+  'llm_key_other_provider',
+  'llm_key_rejected',
 ] as const;
 
 export const CHECK_WARNING_CODES = [
@@ -112,6 +117,9 @@ export const CHECK_WARNING_CODES = [
   'llm_key_format',
   'weak_argon2_params',
   'retired_instance',
+  // 017: credencial de otro proveedor presente y sin usar, y «no se pudo comprobar».
+  'llm_key_unused',
+  'llm_key_unverified',
 ] as const;
 
 export type CheckErrorCode = (typeof CHECK_ERROR_CODES)[number];
@@ -364,10 +372,53 @@ export const CHECK_CATALOG: Record<CheckCode, CatalogEntry> = {
     detail: () => 'apunta a localhost en production.',
     action: () => 'Comprueba que es la dirección con la que la instancia ve el servidor.',
   },
+  /**
+   * 017 (R3): se queda como **aviso** y a propósito. Una forma que no se reconoce no se rechaza
+   * nunca, porque los proveedores cambian de formato —Gemini está pasando de `AIza` a `AQ.`— y un
+   * clasificador que se equivoca hacia el rechazo bloquea despliegues legítimos. El mensaje ya no
+   * nombra un prefijo concreto: nombrarlo lo dejaba obsoleto con el primer cambio.
+   */
   llm_key_format: {
-    message: () => 'ANTHROPIC_API_KEY no empieza por sk-ant-.',
-    detail: () => 'no empieza por sk-ant-.',
-    action: () => 'Comprueba que es una clave de la API del modelo de lenguaje.',
+    message: (c) => `${v(c)} no tiene la forma de ninguna credencial conocida.`,
+    detail: () => 'no tiene la forma de ninguna credencial conocida.',
+    action: () =>
+      'Comprueba que es la clave de la API del proveedor declarado en LLM_PROVIDER. Si lo es, el aviso solo significa que su formato es nuevo.',
+  },
+  /**
+   * 017 (FR-028): **error**, y es el agujero que la feature existe para cerrar. Hasta ahora una
+   * credencial de otro proveedor pasaba la comprobación con un simple aviso y la instancia fallaba
+   * después delante de cada cliente. Nunca muestra el valor (FR-032).
+   */
+  llm_key_other_provider: {
+    message: (c) =>
+      `${v(c)} parece una credencial de ${c.otherProvider ?? 'otro proveedor'}, no del proveedor declarado.`,
+    detail: (c) => `parece una credencial de ${c.otherProvider ?? 'otro proveedor'}.`,
+    action: (c) =>
+      `Pon en ${v(c)} la clave del proveedor declarado en LLM_PROVIDER, o cambia LLM_PROVIDER a ${c.otherProvider ?? 'el proveedor correcto'}.`,
+  },
+  /** 017 (FR-033): aviso. Presente y sin usar no es un error, pero conviene saberlo. */
+  llm_key_unused: {
+    message: (c) => `${v(c)} está puesta pero no se usa: no es la del proveedor declarado.`,
+    detail: () => 'está puesta pero no se usa: no es la del proveedor declarado.',
+    action: () =>
+      'Quítala si no hace falta. Nunca se usa como respaldo: el proveedor declarado manda.',
+  },
+  /** 017 (FR-030): error. Solo sale con `--validar-credencial`, y solo con un 401 o un 403. */
+  llm_key_rejected: {
+    message: (c) => `El proveedor rechaza la credencial de ${v(c)}.`,
+    detail: () => 'el proveedor la rechaza.',
+    action: (c) => `Genera una clave nueva en la consola del proveedor y ponla en ${v(c)}.`,
+  },
+  /**
+   * 017 (FR-030a): aviso, y **distinguible de no haber pedido la validación**. Si no se pidió, no
+   * se emite nada. «No se comprobó» y «no se pudo comprobar» no pueden confundirse: lo segundo
+   * deja el entorno apto, porque la ausencia de veredicto no es un veredicto.
+   */
+  llm_key_unverified: {
+    message: (c) => `No se pudo comprobar la credencial de ${v(c)} con el proveedor.`,
+    detail: () => 'no se pudo comprobar con el proveedor.',
+    action: () =>
+      'No es un problema del entorno: el proveedor no respondió o no hay salida a internet. Repite la comprobación cuando puedas.',
   },
   weak_argon2_params: {
     message: () => 'OPERATOR_PASSWORD_HASH usa parámetros Argon2id por debajo de los mínimos.',

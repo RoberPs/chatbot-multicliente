@@ -17,6 +17,13 @@ import {
 } from '../config/database-url.js';
 import { checkEnv, INSTANCE_ID_PATTERN, type EnvIssue } from '../config/env.js';
 import { checkSecrets, type SecretRule } from '../config/secret-rules.js';
+import type { CredentialVerdict } from '../llm/credential-probe.js';
+import {
+  isLlmProvider,
+  keyVariableOf,
+  LLM_PROVIDERS,
+  type LlmProvider,
+} from '../llm/provider.js';
 import type { EnvMap } from './env-file.js';
 import { databaseIdentity, envFingerprints, type Fingerprint } from './fingerprint.js';
 import type { Instance, Inventory, InventoryAccess } from './inventory.js';
@@ -97,6 +104,22 @@ class Findings {
 const present = (value: string | undefined): value is string =>
   value !== undefined && value.trim() !== '';
 
+/**
+ * 017: proveedor declarado en el entorno. Ausente equivale a `anthropic` (FR-003). Un valor no
+ * elegible ya lo denuncia el esquema del arranque a través de `checkEnv`, así que aquí se toma el
+ * de por omisión para poder seguir comprobando el resto del entorno en lugar de callarse.
+ */
+function declaredProvider(env: EnvMap): LlmProvider {
+  const raw = env.LLM_PROVIDER?.trim() ?? '';
+  return isLlmProvider(raw) ? raw : 'anthropic';
+}
+
+/** Credencial del proveedor declarado. */
+const llmKeyOf = (env: EnvMap): { variable: string; value: string | undefined } => {
+  const variable = keyVariableOf(declaredProvider(env));
+  return { variable, value: env[variable] };
+};
+
 /** Hosts que no pueden ser la URL pública de una instancia. */
 const LOCAL_PUBLIC_HOSTS = new Set(['localhost', '127.0.0.1', '::1', '[::1]']);
 
@@ -163,7 +186,9 @@ function coherence(env: EnvMap, profile: Profile, out: Findings): void {
   for (const variable of required) {
     if (!present(env[variable])) out.error('missing', { variable });
   }
-  if (present(env.ANTHROPIC_API_KEY) && !present(env.EMERGENCY_CONTACT_PHONE)) {
+  // 017 (FR-005): con bot hay que tener salida a una persona, y «hay bot» es «hay credencial del
+  // proveedor declarado», no «hay ANTHROPIC_API_KEY».
+  if (present(llmKeyOf(env).value) && !present(env.EMERGENCY_CONTACT_PHONE)) {
     out.error('missing', { variable: 'EMERGENCY_CONTACT_PHONE' });
   }
 
@@ -186,8 +211,16 @@ function coherence(env: EnvMap, profile: Profile, out: Findings): void {
     out.warning('database_localhost', { variable: 'DATABASE_URL' });
   }
 
-  if (!present(env.ANTHROPIC_API_KEY) && !out.hasError('ANTHROPIC_API_KEY')) {
-    out.warning('pending_optional', { variable: 'ANTHROPIC_API_KEY' });
+  const llm = llmKeyOf(env);
+  if (!present(llm.value) && !out.hasError(llm.variable)) {
+    out.warning('pending_optional', { variable: llm.variable });
+  }
+  // 017 (FR-033): las credenciales de los otros proveedores elegibles se ignoran para funcionar
+  // —nunca sirven de respaldo (FR-004)— pero conviene que el operador sepa que están ahí.
+  for (const provider of LLM_PROVIDERS) {
+    const variable = keyVariableOf(provider);
+    if (variable === llm.variable) continue;
+    if (present(env[variable])) out.warning('llm_key_unused', { variable });
   }
   if (!present(env.SMTP_URL) && !present(env.SMTP_FROM)) {
     out.warning('pending_optional', { variable: 'SMTP_URL' });
@@ -293,15 +326,37 @@ function secrets(env: EnvMap, profile: Profile, out: Findings): void {
  */
 function operatorHashAndKeyFormat(env: EnvMap, out: Findings): void {
   const reported = new Set(out.errors.map((e) => e.variable));
-  for (const variable of ['OPERATOR_PASSWORD_HASH', 'ANTHROPIC_API_KEY']) {
+  // 017: las **tres** variables de credencial, no solo la de Anthropic, y los dos códigos de forma
+  // —el aviso y el error—, no solo el aviso. Dejar pasar `llm_key_other_provider` aquí habría
+  // dejado el agujero abierto por el otro lado.
+  const LLM_CODES = new Set(['llm_key_format', 'llm_key_other_provider']);
+  for (const variable of ['OPERATOR_PASSWORD_HASH', ...LLM_PROVIDERS.map(keyVariableOf)]) {
     const value = env[variable];
     if (!present(value) || reported.has(variable)) continue;
     for (const q of secretQuality(variable, value)) {
-      if (variable === 'ANTHROPIC_API_KEY' && q.code !== 'llm_key_format') continue;
-      if (q.severity === 'error') out.error(q.code, { variable });
-      else out.warning(q.code, { variable });
+      if (variable !== 'OPERATOR_PASSWORD_HASH' && !LLM_CODES.has(q.code)) continue;
+      const ctx: MessageContext = {
+        variable,
+        ...(q.otherProvider === undefined ? {} : { otherProvider: q.otherProvider }),
+      };
+      if (q.severity === 'error') out.error(q.code, ctx);
+      else out.warning(q.code, ctx);
     }
   }
+}
+
+/**
+ * 017 (FR-030, FR-030a): el veredicto de la validación opcional.
+ *
+ * Si no se pidió la validación **no se emite nada**, y eso es lo que hace «no se comprobó»
+ * distinguible de «no se pudo comprobar». Un `inconclusive` deja el entorno **apto**: la ausencia
+ * de veredicto no es un veredicto.
+ */
+function credentialVerdict(env: EnvMap, verdict: CredentialVerdict | undefined, out: Findings): void {
+  if (verdict === undefined || verdict === 'accepted') return;
+  const { variable } = llmKeyOf(env);
+  if (verdict === 'rejected') out.error('llm_key_rejected', { variable });
+  else out.warning('llm_key_unverified', { variable });
 }
 
 // ---------------------------------------------------------------------------
@@ -386,7 +441,13 @@ export function isSameInstance(fingerprints: Fingerprint[], instance: Instance):
 export function validate(
   env: EnvMap,
   access: InventoryAccess,
-  options: { today?: string } = {},
+  /**
+   * `credentialVerdict` solo llega con `--validar-credencial`. `validate` sigue siendo
+   * **sincrónica y sin red**: la petición la hace quien la llama y aquí solo entra su resultado.
+   * Así la comprobación por omisión no puede hacer red ni por accidente (FR-029, SC-009), y nada
+   * de esto escribe en ninguna parte (FR-034).
+   */
+  options: { today?: string; credentialVerdict?: CredentialVerdict } = {},
 ): CheckResult {
   const rawId = env.INSTANCE_ID?.trim() ?? '';
   const instanceId = INSTANCE_ID_PATTERN.test(rawId) ? rawId : null;
@@ -402,6 +463,7 @@ export function validate(
   coherence(env, profile, out);
   secrets(env, profile, out);
   operatorHashAndKeyFormat(env, out);
+  credentialVerdict(env, options.credentialVerdict, out);
 
   let compared = false;
   let comparedWith = 0;

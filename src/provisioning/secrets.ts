@@ -5,13 +5,21 @@
 import { randomBytes, randomInt } from 'node:crypto';
 import argon2 from 'argon2';
 import { isPlaceholder, secretRule } from '../config/secret-rules.js';
+import { classifyKeyShape, providerOfKeyVariable } from '../llm/provider.js';
 
 export type QualityCode =
-  'weak_secret' | 'example_database' | 'weak_argon2_params' | 'llm_key_format';
+  | 'weak_secret'
+  | 'example_database'
+  | 'weak_argon2_params'
+  | 'llm_key_format'
+  // 017 (FR-028): la credencial encaja con el patrón de otro proveedor elegible.
+  | 'llm_key_other_provider';
 
 export interface QualityFinding {
   code: QualityCode;
   severity: 'error' | 'warning';
+  /** Solo en `llm_key_other_provider`: a qué proveedor parece pertenecer. Nunca el valor. */
+  otherProvider?: string;
 }
 
 // Las reglas de relleno, longitud y variedad son las del arranque (012): `secret-rules.ts`.
@@ -42,8 +50,13 @@ const ARGON2_MIN_TIME = 2;
 export function secretQuality(variable: string, value: string): QualityFinding[] {
   const trimmed = value.trim();
   const findings: QualityFinding[] = [];
-  const add = (code: QualityCode, severity: 'error' | 'warning' = 'error'): void => {
-    if (!findings.some((f) => f.code === code)) findings.push({ code, severity });
+  const add = (
+    code: QualityCode,
+    severity: 'error' | 'warning' = 'error',
+    otherProvider?: string,
+  ): void => {
+    if (findings.some((f) => f.code === code)) return;
+    findings.push({ code, severity, ...(otherProvider === undefined ? {} : { otherProvider }) });
   };
 
   if (
@@ -69,8 +82,24 @@ export function secretQuality(variable: string, value: string): QualityFinding[]
     return findings;
   }
   if (rule !== null) add('weak_secret');
-  if (variable === 'ANTHROPIC_API_KEY' && !trimmed.startsWith('sk-ant-')) {
-    add('llm_key_format', 'warning');
+
+  // 017 (FR-028, R4). Antes esto comprobaba a mano `!startsWith('sk-ant-')` sobre una sola
+  // variable y lo emitía como **aviso**, así que una clave de Gemini en `ANTHROPIC_API_KEY`
+  // **pasaba** la comprobación y la instancia fallaba después delante de cada cliente. Ese es el
+  // agujero que la feature existe para cerrar.
+  //
+  // La pregunta que se hace ahora no necesita saber cuál es el proveedor declarado: «¿este valor
+  // va en esta variable?». Una clave de Anthropic en `GEMINI_API_KEY` está mal puesta diga lo que
+  // diga `LLM_PROVIDER`.
+  const owner = providerOfKeyVariable(variable);
+  if (owner !== null) {
+    const shape = classifyKeyShape(trimmed);
+    if (shape === null) {
+      // Forma no reconocida: **aviso**, nunca error. Los proveedores cambian de formato (R3).
+      add('llm_key_format', 'warning');
+    } else if (shape !== owner) {
+      add('llm_key_other_provider', 'error', shape);
+    }
   }
   return findings;
 }

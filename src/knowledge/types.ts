@@ -262,7 +262,9 @@ export type WarningCode =
   | 'MODEL_UNPRICED'
   | 'STT_MODEL_UNPRICED'
   | 'SPEND_UNREADABLE'
-  | 'BUSINESS_NOTICES_HELD';
+  | 'BUSINESS_NOTICES_HELD'
+  // 017 (FR-005b): el proveedor rechaza la credencial del modelo.
+  | 'LLM_KEY_REJECTED';
 
 /** `instance`: avisos de la instancia, no de la configuración del negocio (012). */
 export type WarningTargetKind =

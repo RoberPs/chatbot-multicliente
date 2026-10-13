@@ -153,3 +153,69 @@ describe('generación de secretos (research R7)', () => {
     expect(codes('OPERATOR_PASSWORD_HASH', real)).toEqual([]);
   });
 });
+
+/**
+ * 017 (FR-028, R4): severidad de la forma de la credencial del modelo.
+ *
+ * Este bloque es la **regresión del fallo que la feature existe para cerrar**. Antes de la 017,
+ * `secretQuality` comprobaba a mano que `ANTHROPIC_API_KEY` empezara por `sk-ant-` y emitía
+ * `llm_key_format` como **aviso**. Un aviso no deja el entorno no apto, así que una clave de Gemini
+ * pegada en `ANTHROPIC_API_KEY` **pasaba** `pnpm instance:check` y la instancia fallaba después,
+ * en silencio, delante de cada cliente.
+ */
+describe('forma de la credencial del modelo (017, FR-028)', () => {
+  const token = (n: number) => randomBytes(n).toString('base64url').slice(0, n);
+  const hallazgo = (variable: string, value: string) =>
+    secretQuality(variable, value).find(
+      (f) => f.code === 'llm_key_other_provider' || f.code === 'llm_key_format',
+    );
+
+  it('la credencial correcta de cada variable no produce ningún hallazgo', () => {
+    expect(hallazgo('ANTHROPIC_API_KEY', `sk-ant-${token(45)}`)).toBeUndefined();
+    expect(hallazgo('GEMINI_API_KEY', `AIza${token(40)}`)).toBeUndefined();
+    expect(hallazgo('GEMINI_API_KEY', `AQ.${token(40)}`)).toBeUndefined();
+    expect(hallazgo('OPENAI_API_KEY', `sk-proj-${token(45)}`)).toBeUndefined();
+    expect(hallazgo('OPENAI_API_KEY', `sk-${token(45)}`)).toBeUndefined();
+  });
+
+  // EL FALLO: hoy esto pasaba con un simple aviso. Ahora es ERROR y el entorno queda no apto.
+  it.each([
+    ['una clave de Gemini en la variable de Anthropic', 'ANTHROPIC_API_KEY', `AIza${'x'.repeat(40)}`, 'gemini'],
+    ['una clave nueva de Gemini en la de Anthropic', 'ANTHROPIC_API_KEY', `AQ.${'x'.repeat(40)}`, 'gemini'],
+    ['una clave de OpenAI en la de Anthropic', 'ANTHROPIC_API_KEY', `sk-proj-${'x'.repeat(45)}`, 'openai'],
+    ['una clave de Anthropic en la de Gemini', 'GEMINI_API_KEY', `sk-ant-${'x'.repeat(45)}`, 'anthropic'],
+    ['una clave de Anthropic en la de OpenAI', 'OPENAI_API_KEY', `sk-ant-${'x'.repeat(45)}`, 'anthropic'],
+    ['una clave de Gemini en la de OpenAI', 'OPENAI_API_KEY', `AIza${'x'.repeat(40)}`, 'gemini'],
+  ])('%s es ERROR y dice de quién parece', (_caso, variable, valor, proveedor) => {
+    const f = hallazgo(variable, valor);
+    expect(f?.code).toBe('llm_key_other_provider');
+    expect(f?.severity).toBe('error');
+    expect(f?.otherProvider).toBe(proveedor);
+  });
+
+  // La trampa del orden (R3): `sk-ant-` es subconjunto de `sk-`. Si se evaluara al revés, una
+  // clave de Anthropic en su propia variable se declararía «de OpenAI» y el entorno correcto
+  // quedaría no apto.
+  it('una clave de Anthropic en su variable NO se acusa de ser de OpenAI', () => {
+    expect(hallazgo('ANTHROPIC_API_KEY', `sk-ant-api03-${'x'.repeat(40)}`)).toBeUndefined();
+  });
+
+  it('una forma no reconocida es AVISO, no error (R3)', () => {
+    const f = hallazgo('ANTHROPIC_API_KEY', `xyz-${'x'.repeat(45)}`);
+    expect(f?.code).toBe('llm_key_format');
+    expect(f?.severity).toBe('warning');
+  });
+
+  it('la regla vale para las tres variables, no solo para la de Anthropic', () => {
+    for (const variable of ['ANTHROPIC_API_KEY', 'GEMINI_API_KEY', 'OPENAI_API_KEY']) {
+      expect(hallazgo(variable, `forma-rara-${'x'.repeat(40)}`)?.code).toBe('llm_key_format');
+    }
+  });
+
+  it('ningún hallazgo lleva el valor examinado (FR-032)', () => {
+    const valor = `AIza${'secretosecreto'.repeat(3)}`;
+    const texto = JSON.stringify(secretQuality('ANTHROPIC_API_KEY', valor));
+    expect(texto).not.toContain(valor);
+    expect(texto).not.toContain('secretosecreto');
+  });
+});

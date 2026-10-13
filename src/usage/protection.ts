@@ -35,6 +35,15 @@ export interface ProtectionConfig {
   llmModel: string;
   /** `STT_MODEL` con `AUDIO_TRANSCRIPTION=on`; `null` con los audios apagados. */
   sttModel: string | null;
+  /**
+   * 017 (FR-005b): ¿el proveedor está rechazando la credencial **ahora mismo**?
+   *
+   * Es una **función**, no un booleano, y a propósito: el estado vive en memoria del proceso y
+   * cambia solo (el vigilante reintenta cada 5 min y sale del degradado cuando la credencial
+   * vuelve a servir). Un booleano capturado al arrancar se quedaría congelado en el valor del
+   * arranque, y la instancia no saldría nunca del degradado sin reiniciar.
+   */
+  credentialRejected?: () => boolean;
 }
 
 export interface ProtectionInput extends ProtectionConfig {
@@ -58,6 +67,9 @@ export const defaultProtectionConfig = (llmModel: string): ProtectionConfig => (
 /** Orden de los motivos cuando hay varios (contracts/protection-conversation.md). */
 const REASON_ORDER: CapReason[] = [
   'spend_unreadable',
+  // 017: va antes que el tope porque es más concreto: si la credencial no sirve, el motivo de que
+  // el cliente reciba solo el contacto es ese y no el gasto.
+  'llm_key_rejected',
   'cap_disabled',
   'model_unpriced',
   'stt_unpriced',
@@ -89,6 +101,22 @@ export type ProtectionRead = ProtectionState & {
   readFailure: string | null;
 };
 
+/**
+ * 017: el motivo de credencial rechazada, si lo hay.
+ *
+ * **Fuera de `if (input.production)` a propósito.** Los demás motivos de «solo contacto» son
+ * exigencias de producción —el tope obligatorio, los precios—, pero una credencial que el
+ * proveedor rechaza no deja responder en ningún entorno: el bot no puede hablar. Degradar solo en
+ * producción dejaría el panel de desarrollo diciendo que todo va bien mientras ninguna respuesta
+ * sale.
+ */
+function credentialReasons(
+  input: ProtectionInput,
+  base: ContactOnlyReason[],
+): ContactOnlyReason[] {
+  return input.credentialRejected?.() === true ? ['llm_key_rejected', ...base] : [...base];
+}
+
 class ProtectionTimeout extends Error {
   constructor() {
     super('Plazo de la lectura del estado de protección');
@@ -99,7 +127,7 @@ class ProtectionTimeout extends Error {
 function unreadable(input: ProtectionInput, errorClass: string): ProtectionRead {
   return {
     production: input.production,
-    contactOnly: ['spend_unreadable'],
+    contactOnly: credentialReasons(input, ['spend_unreadable']),
     spendCap: null,
     whatsapp: null,
     handoffs: null,
@@ -161,7 +189,7 @@ export async function protectionState(tx: DbOrTx, input: ProtectionInput): Promi
         ? null
         : capPercent(spentPico, row.monthly_cap_cents),
   };
-  const contactOnly: ContactOnlyReason[] = [];
+  const contactOnly: ContactOnlyReason[] = credentialReasons(input, []);
   if (input.production) {
     if (!row.cap_enabled) contactOnly.push('cap_disabled');
     if (!row.llm_priced) contactOnly.push('model_unpriced');
@@ -300,6 +328,14 @@ export function protectionWarnings(state: ProtectionState): Warning[] {
       'No se puede leer el gasto; el bot responde solo con el contacto del negocio.',
     );
   }
+  // FR-005b: crítico. El operador tiene que enterarse de que su instancia no puede responder, y
+  // el mensaje nombra la variable que hay que arreglar, nunca su valor (FR-032).
+  if (state.contactOnly.includes('llm_key_rejected')) {
+    critical(
+      'LLM_KEY_REJECTED',
+      'El proveedor del modelo rechaza la clave configurada; mientras no sirva, los clientes reciben solo el contacto del negocio. La instancia lo reintenta cada 5 minutos y se recupera sola.',
+    );
+  }
   if (state.contactOnly.includes('cap_disabled')) {
     critical(
       'SPEND_CAP_REQUIRED',
@@ -336,4 +372,5 @@ export const CONTACT_ONLY_TEXT: Record<ContactOnlyReason, string> = {
   model_unpriced: 'el modelo no tiene precio',
   stt_unpriced: 'el modelo de transcripción no tiene precio (solo los audios)',
   spend_unreadable: 'no se puede leer el gasto',
+  llm_key_rejected: 'el proveedor del modelo rechaza la clave configurada',
 };

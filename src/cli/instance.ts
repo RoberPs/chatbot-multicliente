@@ -23,6 +23,7 @@ import {
   restoreEnvFile,
   setVariable,
   writeNewEnvFile,
+  type EnvMap,
 } from '../provisioning/env-file.js';
 import { envFingerprints, parseInventoryKey } from '../provisioning/fingerprint.js';
 import {
@@ -92,6 +93,11 @@ import {
   type CommandCode,
   type MessageContext,
 } from '../provisioning/messages.js';
+import {
+  verifyCredential,
+  type CredentialVerdict,
+} from '../llm/credential-probe.js';
+import { isLlmProvider, keyVariableOf, type LlmProvider } from '../llm/provider.js';
 import { parseArgs, processIO, runIfMain, type CliIO } from './backup-common.js';
 
 /** E/S de las órdenes: la de las CLI de copias más la terminal de salida y la entrada sin eco. */
@@ -118,6 +124,11 @@ export interface InstanceDeps {
   writeInventory: (path: string, inventory: Inventory) => Promise<void>;
   /** Conexión a PostgreSQL de `instance:db` (solo `database.ts` usa `pg`). */
   connectPg?: PgConnect;
+  /**
+   * 017: verificación de la credencial de `--validar-credencial`, inyectable. Ninguna prueba hace
+   * red (FR-038); la real es la única que la hace, y solo con la bandera puesta.
+   */
+  verifyCredential?: (provider: LlmProvider, apiKey: string) => Promise<CredentialVerdict>;
   /** Pruebas: paso de `instance:db` en el que se inyecta un fallo. */
   dbFailAt?: DbStep;
 }
@@ -139,7 +150,7 @@ type Command = (argv: string[], ctx: Context) => Promise<number>;
 
 const USAGE = [
   'Uso: pnpm instance:<orden> …',
-  '  check <entorno> [--inventory <ruta>] [--json]',
+  '  check <entorno> [--inventory <ruta>] [--json] [--validar-credencial]',
   '  new --id <id> --client <nombre> --url https://… --timezone <IANA> --region <XX>',
   '      --currency <XXX> --emergency-phone <tel> [--whatsapp] [--backup-dir <ruta>]',
   '      [--out <ruta>] [--inventory <ruta>] [--create-inventory]',
@@ -184,16 +195,59 @@ export function inventoryKeyText(io: CliIO): string | undefined {
 // check (US1)
 // ---------------------------------------------------------------------------
 
-/** `instance:check <entorno> [--inventory <ruta>] [--json]`: valida sin escribir nada (FR-009). */
+const CHECK_USAGE =
+  'Uso: pnpm instance:check <entorno> [--inventory <ruta>] [--json] [--validar-credencial]';
+
+/**
+ * `instance:check <entorno> [--inventory <ruta>] [--json] [--validar-credencial]`: valida sin
+ * escribir nada (FR-009, FR-034).
+ *
+ * 017: `--validar-credencial` es **opt-in** a propósito (FR-029, SC-009). Sin ella la comprobación
+ * sigue siendo local y **sin red**, que es lo que permite ejecutarla en cualquier sitio y lo que
+ * hace que su resultado no dependa de que el proveedor esté de buen humor. Con ella se añade una
+ * sola petición al listado de modelos, que no genera tokens.
+ */
 async function checkCommand(argv: string[], { io, deps }: Context): Promise<number> {
-  const args = parseArgs(argv, { flags: ['--json'], options: ['--inventory'], positional: 1 });
-  if (!args) return usage(io, 'Uso: pnpm instance:check <entorno> [--inventory <ruta>] [--json]');
+  const args = parseArgs(argv, {
+    flags: ['--json', '--validar-credencial'],
+    options: ['--inventory'],
+    positional: 1,
+  });
+  if (!args) return usage(io, CHECK_USAGE);
   const env = parseEnvFile(resolve(args.positional[0] ?? ''));
   const path = resolveInventoryPath(args.options.get('--inventory'), io.env);
   const access = await loadInventoryForUse(path, inventoryKeyText(io));
-  const result = validate(env, access, { today: localDate(deps.now()) });
+  // La petición se hace aquí, no dentro de `validate`, que sigue siendo sincrónica y pura: así la
+  // comprobación por omisión no puede hacer red ni por accidente.
+  const credentialVerdict = args.flags.has('--validar-credencial')
+    ? await verifyEnvCredential(env, deps)
+    : undefined;
+  const result = validate(env, access, {
+    today: localDate(deps.now()),
+    ...(credentialVerdict === undefined ? {} : { credentialVerdict }),
+  });
   io.out(args.flags.has('--json') ? checkResultJson(result) : formatCheckResult(result));
   return result.ok ? 0 : 1;
+}
+
+/**
+ * Veredicto de la credencial del proveedor declarado en el entorno que se está comprobando.
+ *
+ * Sin credencial no hay nada que verificar: su ausencia ya la denuncia la comprobación local, y
+ * una petición sin ella no probaría nada.
+ */
+async function verifyEnvCredential(
+  env: EnvMap,
+  deps: Context['deps'],
+): Promise<CredentialVerdict | undefined> {
+  const raw = env.LLM_PROVIDER?.trim() ?? '';
+  // Un proveedor no elegible ya es un error de la comprobación local: no se pide nada.
+  if (raw !== '' && !isLlmProvider(raw)) return undefined;
+  // Ausente equivale a anthropic (FR-003).
+  const provider: LlmProvider = raw === '' ? 'anthropic' : raw;
+  const apiKey = env[keyVariableOf(provider)]?.trim() ?? '';
+  if (apiKey === '') return undefined;
+  return (deps.verifyCredential ?? verifyCredential)(provider, apiKey);
 }
 
 // ---------------------------------------------------------------------------

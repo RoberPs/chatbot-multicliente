@@ -19,6 +19,10 @@ import { createHandoffService } from './handoff/service.js';
 import { createSimulatedRoute } from './handoff/simulated-route.js';
 import { createTokenCipher } from './handoff/tokens.js';
 import { createKnowledgeReader } from './knowledge/snapshot.js';
+import {
+  createCredentialWatcher,
+  type CredentialWatcher,
+} from './llm/credential-probe.js';
 import { createChatModel, createSummarizer } from './llm/factory.js';
 import { createSmtpMailer, smtpTransport } from './mail/smtp-mailer.js';
 import { createTemplateSender } from './channels/whatsapp/template-sender.js';
@@ -34,6 +38,8 @@ export interface Bot extends BotHttp {
   retention: Retention;
   /** Solo con WhatsApp y AUDIO_TRANSCRIPTION=on. */
   transcriber: Transcriber | null;
+  /** 017: vigilante de la credencial del modelo; el arranque lo cierra en `stop()`. */
+  credentialWatcher: CredentialWatcher;
 }
 
 export interface CreateBotOptions {
@@ -60,8 +66,38 @@ export function createBot({ env, db, logger, clock = systemClock }: CreateBotOpt
   const quotaWatch = createQuotaWatch(activityLog);
   // Consumo del modelo (010): respuestas y resúmenes, con el modelo configurado.
   const usage = { meter: createUsageMeter({ db, activityLog }), model: env.LLM_MODEL };
+  /**
+   * 017 (FR-005a/b/c): comprobación de la credencial al arrancar.
+   *
+   * **No bloquea el arranque y nunca es fatal.** Es la lección del Fallo 1 de la 016: un proceso
+   * que muere al arrancar porque una dependencia no está produce un bucle de reinicio y 502 para
+   * todo el mundo. Y el Principio V exige salida a una persona: el degradado la da, el bucle de
+   * reinicio no.
+   */
+  const credentialWatcher = createCredentialWatcher({
+    provider: env.LLM_PROVIDER,
+    apiKey: env.llmApiKey,
+    log: (message) => {
+      logger.warn({ channel: 'bot' }, message);
+    },
+  });
+  void credentialWatcher.check().then((verdict) => {
+    // `inconclusive`: se arranca con normalidad y se deja constancia. No degrada nada, porque la
+    // ausencia de veredicto no es un veredicto (FR-005c).
+    if (verdict === 'inconclusive') {
+      logger.warn(
+        { channel: 'bot' },
+        `No se pudo comprobar la credencial de ${env.llmKeyVariable} al arrancar: la instancia funciona con normalidad y no se degrada nada.`,
+      );
+    }
+  });
   // Protección frente a abuso (012): producción y modelos, calculados una vez del entorno.
-  const protection = protectionConfigFromEnv(env);
+  // 017: el estado de la credencial se consulta en cada comprobación, no se captura: el vigilante
+  // sale del degradado solo y el panel tiene que verlo sin reiniciar.
+  const protection = {
+    ...protectionConfigFromEnv(env),
+    credentialRejected: () => credentialWatcher.state() === 'rejected',
+  };
   // Los **dos** puertos del proveedor se construyen por fábrica y con el mismo proveedor (regla
   // C3, FR-013a): si solo se migrase el de conversación, la instancia conversaría bien y fallaría
   // justo al derivar a una persona.
@@ -163,5 +199,6 @@ export function createBot({ env, db, logger, clock = systemClock }: CreateBotOpt
     processor,
     retention: createRetention({ db, clock, activityLog }),
     transcriber,
+    credentialWatcher,
   };
 }

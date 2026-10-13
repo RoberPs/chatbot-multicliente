@@ -810,3 +810,142 @@ describe('instance:check con DATABASE_URL por socket (016)', () => {
     expectSecretFree(run(env), env);
   });
 });
+
+/**
+ * 017: la tabla de decisión de contracts/credential-verification.md §4.
+ *
+ * Lo que este bloque protege es la diferencia entre los dos consumidores de la verificación. La
+ * comprobación previa no tiene por qué tener red, así que su defensa que siempre funciona es el
+ * clasificador de forma; la red es opcional y su veredicto no concluyente **no** puede dejar un
+ * entorno no apto.
+ */
+describe('validate: credencial del modelo (017)', () => {
+  /** Entorno apto con el proveedor declarado y su credencial. */
+  const conProveedor = (provider: string, overrides: EnvMap = {}): EnvMap => {
+    const env = fresh({ LLM_PROVIDER: provider, LLM_MODEL: 'modelo-declarado', ...overrides });
+    if (provider !== 'anthropic') delete env.ANTHROPIC_API_KEY;
+    return env;
+  };
+
+  it('el proveedor declarado y su credencial → apto', () => {
+    const result = run(conProveedor('gemini', { GEMINI_API_KEY: `AIza${'x'.repeat(40)}` }));
+    expect(errorKeys(result)).toEqual([]);
+  });
+
+  // EL AGUJERO QUE LA FEATURE CIERRA. Antes de la 017 esto era un aviso y el entorno quedaba apto.
+  it('una credencial de otro proveedor elegible → NO APTO (FR-028)', () => {
+    const result = run(fresh({ ANTHROPIC_API_KEY: `AIza${'x'.repeat(40)}` }));
+    expect(errorKeys(result)).toContain('llm_key_other_provider:ANTHROPIC_API_KEY');
+    expect(result.ok).toBe(false);
+  });
+
+  it('el mensaje dice de qué proveedor parece, y no muestra el valor (FR-032)', () => {
+    const valor = `AIza${'x'.repeat(40)}`;
+    const result = run(fresh({ ANTHROPIC_API_KEY: valor }));
+    const f = result.errors.find((e) => e.code === 'llm_key_other_provider');
+    expect(f?.message).toContain('gemini');
+    expect(`${checkResultJson(result)}\n${formatCheckResult(result)}`).not.toContain(valor);
+  });
+
+  it('una forma no reconocida → apto, con aviso (R3)', () => {
+    const result = run(fresh({ ANTHROPIC_API_KEY: `zz-${'x'.repeat(45)}` }));
+    expect(errorKeys(result)).toEqual([]);
+    expect(warningKeys(result)).toContain('llm_key_format:ANTHROPIC_API_KEY');
+    expect(result.ok).toBe(true);
+  });
+
+  it('falta la credencial del proveedor declarado → aviso de pendiente, nombrando SU variable', () => {
+    const env = conProveedor('openai');
+    const result = run(env);
+    expect(warningKeys(result)).toContain('pending_optional:OPENAI_API_KEY');
+  });
+
+  it('una credencial de otro proveedor presente y sin usar → aviso (FR-033)', () => {
+    const env = conProveedor('gemini', {
+      GEMINI_API_KEY: `AIza${'x'.repeat(40)}`,
+      OPENAI_API_KEY: `sk-proj-${'x'.repeat(45)}`,
+    });
+    const result = run(env);
+    expect(warningKeys(result)).toContain('llm_key_unused:OPENAI_API_KEY');
+    expect(result.ok).toBe(true);
+  });
+
+  it('la credencial del proveedor declarado nunca se avisa como sin usar', () => {
+    const env = conProveedor('gemini', { GEMINI_API_KEY: `AIza${'x'.repeat(40)}` });
+    expect(warningKeys(run(env))).not.toContain('llm_key_unused:GEMINI_API_KEY');
+  });
+
+  describe('validación opcional con red (FR-029, FR-030, FR-030a)', () => {
+    const env = () => fresh();
+
+    // La distinción de FR-030a, y la razón de que `llm_key_unverified` exista: «no se comprobó» y
+    // «no se pudo comprobar» no pueden confundirse.
+    it('sin pedir la validación no se emite NADA sobre el veredicto', () => {
+      const result = run(env());
+      const codigos = [...errorKeys(result), ...warningKeys(result)];
+      expect(codigos.some((c) => c.startsWith('llm_key_rejected'))).toBe(false);
+      expect(codigos.some((c) => c.startsWith('llm_key_unverified'))).toBe(false);
+    });
+
+    it('accepted no dice nada', () => {
+      const result = validate(env(), access, { credentialVerdict: 'accepted' });
+      const codigos = [...errorKeys(result), ...warningKeys(result)];
+      expect(codigos.some((c) => c.startsWith('llm_key_'))).toBe(false);
+    });
+
+    it('rejected → NO APTO (FR-030)', () => {
+      const result = validate(env(), access, { credentialVerdict: 'rejected' });
+      expect(errorKeys(result)).toContain('llm_key_rejected:ANTHROPIC_API_KEY');
+      expect(result.ok).toBe(false);
+    });
+
+    it('inconclusive → sigue APTO, con aviso distinguible (FR-030a)', () => {
+      const result = validate(env(), access, { credentialVerdict: 'inconclusive' });
+      expect(errorKeys(result)).toEqual([]);
+      expect(warningKeys(result)).toContain('llm_key_unverified:ANTHROPIC_API_KEY');
+      expect(result.ok).toBe(true);
+    });
+
+    it('el veredicto se emite sobre la variable del proveedor declarado', () => {
+      const result = validate(
+        conProveedor('gemini', { GEMINI_API_KEY: `AIza${'x'.repeat(40)}` }),
+        access,
+        { credentialVerdict: 'rejected' },
+      );
+      expect(errorKeys(result)).toContain('llm_key_rejected:GEMINI_API_KEY');
+    });
+
+    it('ningún mensaje del veredicto lleva la credencial (FR-032)', () => {
+      const e = env();
+      const result = validate(e, access, { credentialVerdict: 'rejected' });
+      expectSecretFree(result, e);
+    });
+  });
+
+  /**
+   * T045a (FR-034). Esta feature añade a una herramienta local justo lo que podría tentar a
+   * escribir en disco: una llamada de red cuyo veredicto se podría «recordar». No se guarda, y
+   * este test existe para que siga sin guardarse. `validate` es **sincrónica y pura**: ni escribe
+   * ni puede hacer red, porque el veredicto le llega ya calculado.
+   */
+  describe('la comprobación no escribe nada (FR-034)', () => {
+    it('validate no modifica el entorno que recibe', () => {
+      const e = fresh({ ANTHROPIC_API_KEY: `AIza${'x'.repeat(40)}` });
+      const antes = JSON.stringify(e);
+      validate(e, access, { credentialVerdict: 'rejected' });
+      expect(JSON.stringify(e)).toBe(antes);
+    });
+
+    it('validate no modifica el inventario con el que compara', () => {
+      const antes = JSON.stringify(inventory);
+      validate(fresh(), access, { credentialVerdict: 'inconclusive' });
+      expect(JSON.stringify(inventory)).toBe(antes);
+    });
+
+    it('validate es sincrónica: no puede hacer red ni esperar a nada', () => {
+      const salida = validate(fresh(), access, { credentialVerdict: 'rejected' });
+      expect(salida).not.toBeInstanceOf(Promise);
+      expect(typeof salida.ok).toBe('boolean');
+    });
+  });
+});

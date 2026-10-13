@@ -197,7 +197,7 @@ derivación a una persona, y ninguna pantalla del panel nombrando al proveedor
 
 ### Reanudación del tramo 2
 
-- [ ] T043b **Antes de seguir**, comprobar que el punto de parada sigue en pie: rama `017-proveedor-modelo-configurable`, árbol limpio, `pnpm test` en verde y la migración 0009 aplicada en la base de datos local. Si algo cambió desde la parada, entenderlo antes de escribir código nuevo
+- [X] T043b **Antes de seguir**, comprobar que el punto de parada sigue en pie: rama `017-proveedor-modelo-configurable`, árbol limpio, `pnpm test` en verde y la migración 0009 aplicada en la base de datos local. Si algo cambió desde la parada, entenderlo antes de escribir código nuevo
 
 **Goal**: una credencial que no corresponde al proveedor declarado se detecta antes de desplegar; y
 una credencial que el proveedor rechaza degrada la instancia en vez de fallar en silencio.
@@ -209,24 +209,24 @@ instancia con una credencial rechazada y comprobar que arranca degradada, avisa 
 
 ### Tests de US2 ⚠️ primero, y deben fallar
 
-- [ ] T044 [P] [US2] Escribir en `tests/unit/provisioning/secrets.test.ts` los tests de severidad: credencial de otro proveedor elegible → `llm_key_other_provider` como **error**; forma no reconocida → `llm_key_format` como **aviso**; y la **regresión del fallo actual**, que hoy deja pasar una credencial de otro proveedor con un simple aviso (SC-003)
-- [ ] T045 [P] [US2] Escribir en `tests/unit/provisioning/check.test.ts` los tests de la tabla de decisión completa de [contracts/credential-verification.md](contracts/credential-verification.md) §4, incluido que `llm_key_unverified` («no se pudo comprobar») es **distinguible** de no haber pedido la validación (FR-028, FR-030, FR-030a)
-- [ ] T045a [P] [US2] Añadir en `tests/unit/provisioning/check.test.ts` la aserción de que **ni la comprobación ni la validación opcional escriben nada**, ni en el entorno ni en el inventario (FR-034). Esta feature añade a una herramienta local justo lo que podría tentar a escribir —una llamada de red cuyo veredicto se podría guardar en disco—, así que el test tiene que existir antes que la bandera
+- [X] T044 [P] [US2] Escribir en `tests/unit/provisioning/secrets.test.ts` los tests de severidad: credencial de otro proveedor elegible → `llm_key_other_provider` como **error**; forma no reconocida → `llm_key_format` como **aviso**; y la **regresión del fallo actual**, que hoy deja pasar una credencial de otro proveedor con un simple aviso (SC-003)
+- [X] T045 [P] [US2] Escribir en `tests/unit/provisioning/check.test.ts` los tests de la tabla de decisión completa de [contracts/credential-verification.md](contracts/credential-verification.md) §4, incluido que `llm_key_unverified` («no se pudo comprobar») es **distinguible** de no haber pedido la validación (FR-028, FR-030, FR-030a)
+- [X] T045a [P] [US2] Añadir en `tests/unit/provisioning/check.test.ts` la aserción de que **ni la comprobación ni la validación opcional escriben nada**, ni en el entorno ni en el inventario (FR-034). Esta feature añade a una herramienta local justo lo que podría tentar a escribir —una llamada de red cuyo veredicto se podría guardar en disco—, así que el test tiene que existir antes que la bandera
 - [X] T046 [P] [US2] Escribir en `tests/unit/llm/credential-probe.test.ts` los tests de clasificación del veredicto: 2xx → `accepted`, 401 y 403 → `rejected`, 5xx, fallo de red y plazo agotado → `inconclusive`
 - [ ] T047 [P] [US2] Escribir en `tests/integration/llm/credential-degraded.test.ts` el test del ciclo completo: credencial rechazada al arrancar → arranca, queda degradada, aviso crítico, y al pasar a aceptada sale del degradado sola, con **una** línea de registro al entrar y **una** al salir (SC-010)
 - [ ] T048 [P] [US2] Escribir el test de que ningún mensaje de la comprobación ni del registro contiene ningún carácter de ninguna credencial (FR-032, SC-004)
 
 ### Implementación de US2
 
-- [ ] T049 [US2] Añadir a `src/provisioning/messages.ts` los códigos y textos de `llm_key_other_provider`, `llm_key_unused`, `llm_key_rejected` y `llm_key_unverified`, con mensaje, detalle y acción, sin mostrar valores
-- [ ] T050 [US2] Cambiar `src/provisioning/secrets.ts` para usar `classifyKeyShape`: emitir `llm_key_other_provider` como **`'error'`** cuando la credencial encaja con otro proveedor elegible, y dejar `llm_key_format` como aviso para la forma no reconocida (R4)
-- [ ] T051 [US2] Cambiar `src/provisioning/check.ts` para contemplar las tres variables de credencial en lugar de solo `ANTHROPIC_API_KEY`, y emitir `llm_key_unused` por cada credencial de otro proveedor elegible presente y sin usar (FR-033)
+- [X] T049 [US2] Añadir a `src/provisioning/messages.ts` los códigos y textos de `llm_key_other_provider`, `llm_key_unused`, `llm_key_rejected` y `llm_key_unverified`, con mensaje, detalle y acción, sin mostrar valores
+- [X] T050 [US2] Cambiar `src/provisioning/secrets.ts` para usar `classifyKeyShape`: emitir `llm_key_other_provider` como **`'error'`** cuando la credencial encaja con otro proveedor elegible, y dejar `llm_key_format` como aviso para la forma no reconocida (R4)
+- [X] T051 [US2] Cambiar `src/provisioning/check.ts` para contemplar las tres variables de credencial en lugar de solo `ANTHROPIC_API_KEY`, y emitir `llm_key_unused` por cada credencial de otro proveedor elegible presente y sin usar (FR-033)
 - [X] T052 [US2] Crear `src/llm/credential-probe.ts` con `verifyCredential(provider, apiKey, opts)`, la petición `GET` al listado de modelos de cada proveedor, las cabeceras propias de cada uno, plazo de 5 s, y la clasificación de [contracts/credential-verification.md](contracts/credential-verification.md) §1 (FR-031: la petición más barata que el proveedor admita, sin generar tokens)
 - [ ] T053 [US2] **Comprobación manual, una sola vez, con red**: verificar proveedor a proveedor que una credencial inválida devuelve 401 o 403, y anotar el resultado en [research.md](research.md) R5. **Si algún proveedor devolviera 2xx sin credencial válida**, usar para él la petición de generación más pequeña posible y anotar su coste. No es un test: la clasificación del veredicto ya la fija T046 con dobles, sin red ni credenciales (FR-038)
-- [ ] T054 [US2] Añadir la bandera `--validar-credencial` a `pnpm instance:check` en `src/cli/instance.ts` y `src/provisioning/check.ts`, **opt-in**: sin ella la comprobación sigue siendo local y sin red (FR-029, SC-009)
+- [X] T054 [US2] Añadir la bandera `--validar-credencial` a `pnpm instance:check` en `src/cli/instance.ts` y `src/provisioning/check.ts`, **opt-in**: sin ella la comprobación sigue siendo local y sin red (FR-029, SC-009)
 - [X] T055 [US2] Añadir a `src/llm/credential-probe.ts` el vigilante de dos estados con la forma de `src/db/outage.ts`: reintento cada 5 min mientras la credencial esté rechazada, una línea al entrar en degradado y una al salir, nunca una por petición (R6)
-- [ ] T056 [US2] Añadir a `src/usage/protection.ts` el estado de credencial rechazada, que degrada a «solo contacto del negocio» por el mismo camino que el modelo sin precio, y su aviso **crítico** en `computeWarnings` (FR-005b)
-- [ ] T057 [US2] Lanzar la comprobación del arranque desde `src/bot.ts` **sin bloquear**: `rejected` → degradado; `inconclusive` → arranca normal con una línea de registro; nunca fatal, nunca bucle de reinicio (FR-005a, FR-005c)
+- [X] T056 [US2] Añadir a `src/usage/protection.ts` el estado de credencial rechazada, que degrada a «solo contacto del negocio» por el mismo camino que el modelo sin precio, y su aviso **crítico** en `computeWarnings` (FR-005b)
+- [X] T057 [US2] Lanzar la comprobación del arranque desde `src/bot.ts` **sin bloquear**: `rejected` → degradado; `inconclusive` → arranca normal con una línea de registro; nunca fatal, nunca bucle de reinicio (FR-005a, FR-005c)
 - [ ] T058 [US2] Cambiar `src/provisioning/generate.ts` para que `pnpm instance:new` acepte el proveedor y emita la variable de credencial correspondiente en el entorno generado (FR-010)
 - [ ] T059 [US2] Registrar el proveedor declarado de cada instancia en el inventario (`src/provisioning/inventory.ts` y las órdenes que lo leen), **sin** registrar ninguna credencial (FR-009)
 
