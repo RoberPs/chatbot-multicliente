@@ -142,7 +142,7 @@ const mappingBlocks = parseBlocks(code).filter(
 function palette(variant: 'light' | 'dark'): Record<string, Hex> {
   const colors: Record<string, Hex> = {};
   for (const match of code.matchAll(/--c-(light|dark)-([a-z-]+):\s*(#[0-9a-fA-F]{6});/g)) {
-    if (match[1] === variant && match[2] && match[3]) colors[match[2]] = match[3] as Hex;
+    if (match[1] === variant && match[2] && match[3]) colors[match[2]] = match[3];
   }
   return colors;
 }

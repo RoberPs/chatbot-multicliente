@@ -248,7 +248,23 @@ manual de las quince secciones no encuentra ninguna zona del tema contrario.
 - [x] T027 Ejecutar `pnpm lint && pnpm typecheck && pnpm test` y comprobar, además, que la rama no
       ha tocado `src/db`, `src/config-transfer` ni `src/webchat` en producción, y que
       `formatVersion` sigue igual (`git diff main --stat`), como exige FR-010.
-      **Resultado (2026-10-10)**: `pnpm lint` y `pnpm typecheck` limpios y `pnpm test` en verde,
+      **Resultado (2026-10-13, tras rebasar sobre la 016)**: `pnpm lint` y `pnpm typecheck`
+      limpios y `pnpm test` en verde, **276 ficheros y 3231 tests** (3 saltados: los del socket
+      Unix de la 016, que no corren en Windows), 31 min 45 s. FR-010 recomprobado sobre la rama
+      rebasada (`git diff main..HEAD -- src/ drizzle/`): solo `src/admin/**` y tres líneas de
+      `src/app.ts`; nada en `src/db`, `src/config-transfer`, `src/webchat` ni `drizzle/`, y
+      `CURRENT_FORMAT_VERSION` sigue en 2.
+
+      **Corrección de la anotación anterior**: la corrida del 2026-10-10 daba `pnpm lint` limpio y
+      no lo estaba. `tests/unit/admin/theme-css.test.ts:145` llevaba una aserción `as Hex`
+      innecesaria (`Hex` es un alias de `string`) desde `70927d7`, el último commit de US3: el lint
+      se pasó antes de ese commit y la casilla se marcó con el resultado viejo. No vino del rebase
+      —el fichero es idéntico antes y después—. Corregida quitando la aserción, sin efecto en
+      ejecución. Nada en el repositorio obliga a pasar la puerta (no hay hooks de git, ni CI, ni
+      `lint-staged`), así que el hueco entre la corrida y el cierre es del flujo de trabajo, no de
+      esta feature.
+
+      **Resultado original (2026-10-10)**: `pnpm test` en verde,
       **276 ficheros y 3231 tests** (3 saltados: los del socket Unix de la 016, que no corren en
       Windows), 24 min 42 s. Antes de la feature eran 273 ficheros; los tres nuevos son
       `tests/unit/admin/theme.test.ts`, `tests/unit/admin/theme-css.test.ts` y
@@ -352,15 +368,12 @@ Task: "tests/contract/admin/theme.test.ts (T010)"
 
 ## Lo que queda (sesión siguiente)
 
-Los tres recorridos a mano (T008, T020 y T026) quedaron cerrados el **2026-10-13**. Queda el
-despliegue y una corrección que se destapó al volver a pasar la puerta de 5.1:
+Los tres recorridos a mano (T008, T020 y T026) quedaron cerrados el **2026-10-13**, y la puerta
+de 5.1 se volvió a pasar entera sobre la rama rebasada: está en verde, con la corrección del lint
+que la rama arrastraba desde US3 (el detalle, en la anotación de T027). Queda una sola casilla:
 
 - **T030**: despliegue de la `0.1.2` por tandas (feature 009) y la jornada de trabajo real de
   [quickstart.md §5](quickstart.md).
-- **Lint pendiente**: `tests/unit/admin/theme-css.test.ts:145` tiene una aserción `as Hex`
-  innecesaria (`Hex` es un alias de `string`), y `pnpm lint` falla por ella. Viene de `70927d7`,
-  no del rebase sobre la 016: el fichero es idéntico antes y después. Es decir, **el `pnpm lint`
-  limpio que anota T027 no era exacto**; hay que corregir la línea y la anotación.
 
 **En la pantalla de acceso el cambio llega recargando, y es a proposito.** login.eta no carga
 htmx ni app.js —no se le anade codigo a una pagina previa a la sesion solo por comodidad—, asi que
