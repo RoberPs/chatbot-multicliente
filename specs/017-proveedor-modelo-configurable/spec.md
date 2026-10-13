@@ -321,6 +321,10 @@ proveedor declarado elegible, con su fecha, su modelo y su ajuste de esfuerzo.
 
 - **FR-013**: El dominio MUST seguir recibiendo la respuesta del modelo en una única forma, válida
   frente al esquema del dominio, sea quien sea el proveedor.
+- **FR-013a**: Todo uso del proveedor MUST quedar cubierto, no solo la respuesta al cliente. En
+  particular, el resumen que se envía al negocio al derivar una conversación MUST funcionar con los
+  tres proveedores: una instancia MUST NOT poder conversar con un proveedor y fallar justo al
+  derivar a una persona, porque esa es la salida que garantiza el Principio V.
 - **FR-014**: El sistema MUST garantizar esa forma con los medios que el proveedor ofrezca y MUST
   revalidarla siempre en el dominio. Una respuesta que no valida MUST NOT llegar nunca al cliente
   final.
