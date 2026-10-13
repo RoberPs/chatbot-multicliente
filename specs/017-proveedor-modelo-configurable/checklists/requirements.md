@@ -83,6 +83,39 @@ Nota de honestidad sobre el primer ítem del checklist: FR-025b nombra una migra
 datos, que roza el detalle de implementación. Se mantiene porque es una restricción de producto del
 proyecto (migraciones de solo añadir, nunca editadas) y porque sin ella FR-025 no sería verificable.
 
+### Iteración 4 (2026-10-13) — remediaciones del `/speckit-analyze`
+
+Ningún ítem cambia de estado: 16/16 seguían y siguen en verde. El análisis no encontró violaciones
+de la constitución ni problemas críticos, pero sí tres huecos reales de cobertura y siete ajustes.
+Los diez se aplicaron.
+
+Cambios en la spec:
+
+- **FR-031** precisa que aplica a los **dos** sitios que validan credencial —comprobación previa y
+  arranque—, incluidos los reintentos. Antes se escribió pensando solo en el primero.
+- **El caso límite del reintento** deja de ser cualitativo: **5 minutos**, con su razón.
+- **FR-032** avisa de que su número no es el de la regla de reversión por aviso crítico que usan
+  otras specs del proyecto, porque FR-025a habla precisamente de esa regla.
+- **FR-025a** nombra esa regla por lo que hace en lugar de por su número.
+
+Cambios en las tareas (de 81 a **90**):
+
+- **FR-020 no tenía ninguna tarea de implementación**, y era el hueco con más riesgo: los SDK nuevos
+  traen su propia política de reintentos y el responder comparte un único presupuesto entre los dos
+  intentos. Añadidos T034a (plazo, aborto y reintento del SDK desactivado) y T029a (su test).
+- **FR-019 no tenía tarea y R9 era la única decisión de investigación sin referencias.** Añadido
+  T034b, con el motivo de R9 en el comentario para que nadie añada la caché explícita de Gemini de
+  buena fe.
+- **FR-034 no tenía test**, y la feature añade a una herramienta local justo lo que podría tentar a
+  escribir en disco. Añadido T045a.
+- **No había ninguna tarea de despliegue**, al contrario que en la 016. Añadida la **fase 9**
+  (T082–T086), que incluye la casilla pendiente de la 014: que la preferencia de tema del panel
+  sobreviva a la actualización.
+- **T053 mezclaba** una comprobación manual con red y un test automático, en una fase que prohíbe la
+  red en los tests. Partida: la comprobación manual se queda en T053 y el test vive en T046.
+- **Trazabilidad completa**: los **46 FR y los 12 SC** están ahora citados en al menos una tarea, y
+  las 16 decisiones de investigación (R1–R16) también.
+
 ### Decisiones cerradas con valor razonable (sin preguntar)
 
 Escritas en **Assumptions** y en los FR correspondientes:

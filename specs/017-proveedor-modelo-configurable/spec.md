@@ -250,8 +250,10 @@ proveedor declarado elegible, con su fecha, su modelo y su ajuste de esfuerzo.
   autorización. El reintento periódico de FR-005b vuelve a comprobarla, la instancia pasa a
   degradado declarado y el aviso crítico aparece sin necesidad de reiniciar.
 - **El proveedor rechaza la credencial al arrancar y sigue rechazándola**: la instancia se queda en
-  degradado indefinidamente, con el aviso crítico en pie. No reintenta tan a menudo como para que el
-  reintento se convierta en gasto, ni tan poco como para tardar horas en recuperarse sola.
+  degradado indefinidamente, con el aviso crítico en pie, y reintenta **cada 5 minutos**. Son como
+  mucho 288 peticiones al día que no generan tokens, y acotan la recuperación automática a 5 minutos
+  después de arreglar la credencial. Deja **una** línea de registro al entrar en degradado y **una**
+  al salir, nunca una por petición.
 - **Entorno sin proveedor declarado y sin ninguna credencial**: se comporta exactamente como hoy un
   entorno sin credencial del modelo, incluida la regla de que el canal de mensajería la exige.
 - **Credencial de un proveedor no elegible**: no se reconoce su forma; se trata como credencial del
@@ -363,7 +365,9 @@ proveedor declarado elegible, con su fecha, su modelo y su ajuste de esfuerzo.
   está activo, porque es entonces cuando hay una protección que deja de poder garantizarse. En los
   demás casos MUST ser un aviso normal. Este aviso nace de una respuesta del bot, no de una
   escritura del operador, así que MUST NOT revertir ninguna escritura ni impedir que el operador
-  siga trabajando: es una alarma, no un bloqueo.
+  siga trabajando: es una alarma, no un bloqueo. La regla que revierte una escritura cuando deja a
+  un negocio activo con un aviso crítico se aplica a las escrituras de configuración del negocio, y
+  esta no es una.
 - **FR-025b**: El registro MUST permitir distinguir una respuesta **no medida** de una respuesta de
   consumo **cero**. Esto MUST conseguirse con una migración de solo añadir, sin tocar ni reescribir
   lo ya registrado.
@@ -393,9 +397,13 @@ proveedor declarado elegible, con su fecha, su modelo y su ajuste de esfuerzo.
   comprobación, nunca un requisito para desplegar, y el fallo que esta feature existe para cerrar
   ya lo bloquea sin red (FR-028). El aviso MUST distinguirse del caso en que no se pidió la
   validación, para que «no se comprobó» y «no se pudo comprobar» no se confundan.
-- **FR-031**: La validación con llamada real MUST usar la petición más barata que el proveedor
-  admita y MUST NOT consumir presupuesto del cliente de forma apreciable.
+- **FR-031**: Toda validación de credencial con llamada real MUST usar la petición más barata que el
+  proveedor admita y MUST NOT consumir presupuesto del cliente de forma apreciable. Esto aplica a
+  los **dos** sitios que validan: la comprobación previa (FR-029) y la comprobación del arranque
+  (FR-005a), incluidos sus reintentos.
 - **FR-032**: Ningún mensaje de la comprobación MUST mostrar ningún carácter de ninguna credencial.
+  (Este identificador es de esta spec; no confundirlo con el FR-032 que otras specs del proyecto
+  usan para la regla de reversión por aviso crítico.)
 - **FR-033**: La comprobación MUST avisar de cada credencial de otro proveedor elegible presente en
   el entorno y no utilizada.
 - **FR-034**: La comprobación MUST seguir sin escribir nada en el entorno ni en el inventario.

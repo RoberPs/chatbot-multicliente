@@ -214,6 +214,7 @@ que exista la costura.
 - **FR-013a** (nuevo): el resumen de derivación también tiene que funcionar con los tres
   proveedores. El hallazgo es de R12 y no estaba en la spec; sin él, la implementación habría dejado
   roto el Principio V justo en el momento de derivar.
-- **La cadencia del reintento** que la spec dejó cualitativa queda en **5 minutos**, razonada en R6.
+- **La cadencia del reintento** que la spec dejó cualitativa queda en **5 minutos**, razonada en R6
+  y ya trasladada al caso límite de la spec tras el análisis.
 - **FR-025b se concreta**: la migración es una columna aditiva `unmeasured_calls`, porque `calls = 0`
   lo prohíbe un `CHECK` publicado que no se puede editar (R11).
