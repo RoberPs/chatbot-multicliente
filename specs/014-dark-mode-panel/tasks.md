@@ -109,9 +109,13 @@ ni cookie, ni ruta, ni control: esta historia es solo CSS.
 - [x] T007 [US1] Añadir a `src/admin/views/app.css` el bloque
       `@media (prefers-color-scheme: dark) { :root:not([data-theme='light']) { … } }` con
       `color-scheme: dark` y los 16 tokens apuntando a `var(--c-dark-*)`.
-- [ ] T008 [US1] Validar a mano la historia con [quickstart.md §2](quickstart.md): sistema en
+- [x] T008 [US1] Validar a mano la historia con [quickstart.md §2](quickstart.md): sistema en
       oscuro sin destello, pantalla de acceso incluida, cambio en caliente sin perder un formulario
       a medio escribir, y modo claro igual que antes.
+      **Resultado (2026-10-13)**: recorrido completo del §2. El punto que quedaba era el §2.3
+      (tema del sistema en caliente): el panel sigue la preferencia del sistema sin recargar y el
+      campo a medio escribir se conserva (FR-004). Sin destello claro al abrir (FR-003), acceso
+      oscuro incluido (FR-002) y el modo claro igual que antes de la feature (FR-005).
 
 **Checkpoint**: con solo esta fase, el modo oscuro ya funciona para quien tiene el sistema en
 oscuro. Es un incremento entregable por sí solo.
@@ -180,8 +184,13 @@ y repetirlo con JavaScript desactivado.
          en una cabecera `Location`.
       4. `GET /admin/theme` da 404 **con sesión** (la ruta no existe para el panel) y 302 a la
          pantalla de acceso sin ella, como cualquier otra ruta del panel.
-- [ ] T020 [US2] Validar a mano la historia con [quickstart.md §3](quickstart.md), incluidos el
+- [x] T020 [US2] Validar a mano la historia con [quickstart.md §3](quickstart.md), incluidos el
       recorrido sin JavaScript y la cookie con un valor inventado.
+      **Resultado (2026-10-13)**: recorrido completo del §3. Los dos puntos que quedaban:
+      §3.6 sin JavaScript (desactivado desde las herramientas del navegador, «Aplicar» manda el
+      POST y el 303 devuelve a la misma sección ya en oscuro, FR-012) y §3.7 con la cookie
+      `kb_theme` puesta a `morado` a mano: el panel se comporta como automático, sin error ni
+      página en blanco (FR-011).
 
 **Checkpoint**: US1 y US2 funcionan por separado; el panel se puede forzar a claro u oscuro y lo
 recuerda.
@@ -224,9 +233,11 @@ manual de las quince secciones no encuentra ninguna zona del tema contrario.
       («Se añade», «Se quita», «Orden cambiado») en cada línea de las diferencias de la
       importación, «Se aplicará»/«Se rechazará: …» en el resultado previsto, el mensaje junto al
       campo con error y el propio texto del aviso en las bandas de protección y de gasto.
-- [ ] T026 [US3] Recorrer a mano las quince secciones en oscuro con la tabla de
+- [x] T026 [US3] Recorrer a mano las quince secciones en oscuro con la tabla de
       [quickstart.md §4](quickstart.md), incluidos banda de guardado, error de formulario, recorrido
       con tabulador, aviso de contraste del chat e impresión; anotar y corregir lo que aparezca.
+      **Resultado (2026-10-13)**: recorrido completo del §4, las quince secciones en oscuro. El
+      punto que quedaba era el §4.5 (impresión): legible en papel. No hizo falta corregir nada.
 
 **Checkpoint**: las tres historias funcionan y el modo oscuro está listo para el uso diario.
 
@@ -341,15 +352,15 @@ Task: "tests/contract/admin/theme.test.ts (T010)"
 
 ## Lo que queda (sesión siguiente)
 
-Todo lo automático está hecho y en verde. Queda solo lo que necesita un navegador y un par de
-ojos, más el despliegue:
+Los tres recorridos a mano (T008, T020 y T026) quedaron cerrados el **2026-10-13**. Queda el
+despliegue y una corrección que se destapó al volver a pasar la puerta de 5.1:
 
-- **T008, T020 y T026**: los tres recorridos a mano de [quickstart.md](quickstart.md) §2, §3 y §4
-  contra `pnpm dev` (sistema en oscuro sin destello, control con y sin JavaScript, y las quince
-  secciones en oscuro con foco, banda de guardado, banda de error, aviso de contraste del chat e
-  impresión).
 - **T030**: despliegue de la `0.1.2` por tandas (feature 009) y la jornada de trabajo real de
   [quickstart.md §5](quickstart.md).
+- **Lint pendiente**: `tests/unit/admin/theme-css.test.ts:145` tiene una aserción `as Hex`
+  innecesaria (`Hex` es un alias de `string`), y `pnpm lint` falla por ella. Viene de `70927d7`,
+  no del rebase sobre la 016: el fichero es idéntico antes y después. Es decir, **el `pnpm lint`
+  limpio que anota T027 no era exacto**; hay que corregir la línea y la anotación.
 
 **En la pantalla de acceso el cambio llega recargando, y es a proposito.** login.eta no carga
 htmx ni app.js —no se le anade codigo a una pagina previa a la sesion solo por comodidad—, asi que
