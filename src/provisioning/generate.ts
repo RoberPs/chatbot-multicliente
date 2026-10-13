@@ -6,6 +6,7 @@
 import { dirname, join, posix, resolve } from 'node:path';
 import { parsePhoneNumberFromString, type CountryCode } from 'libphonenumber-js';
 import { INSTANCE_ID_PATTERN, isValidTimezone } from '../config/env.js';
+import { isLlmProvider, keyVariableOf, type LlmProvider } from '../llm/provider.js';
 import type { EnvMap } from './env-file.js';
 import { envFingerprints, fingerprint, normalize, type Fingerprint } from './fingerprint.js';
 import type { Instance, Inventory } from './inventory.js';
@@ -34,6 +35,8 @@ export interface MinimalInput {
   emergencyPhone: string;
   whatsapp: boolean;
   backupDir?: string | undefined;
+  /** 017: proveedor del modelo. Ausente equivale a `anthropic` (FR-003, FR-010). */
+  provider?: string | undefined;
 }
 
 /** Datos validados y normalizados. */
@@ -49,6 +52,8 @@ export interface MinimalData {
   emergencyPhone: string;
   whatsapp: boolean;
   backupDir: string;
+  /** 017: proveedor del modelo de la instancia (FR-010). */
+  provider: LlmProvider;
 }
 
 const LOCAL_HOSTS = new Set(['localhost', '127.0.0.1', '::1', '[::1]']);
@@ -90,6 +95,13 @@ export function validateMinimalData(input: MinimalInput): MinimalData {
   if (!posix.isAbsolute(backupDir) || backupDir.includes('\\')) {
     throw new ProvisioningError('invalid_backup_dir');
   }
+  // 017 (FR-010): ausente equivale a `anthropic`, igual que en el entorno de una instancia ya
+  // desplegada; un valor no elegible se rechaza nombrando los tres (FR-002).
+  const rawProvider = input.provider?.trim() ?? '';
+  if (rawProvider !== '' && !isLlmProvider(rawProvider)) {
+    throw new ProvisioningError('invalid_provider');
+  }
+  const provider: LlmProvider = rawProvider === '' ? 'anthropic' : rawProvider;
   return {
     id,
     client,
@@ -100,6 +112,7 @@ export function validateMinimalData(input: MinimalInput): MinimalData {
     emergencyPhone: phone.number,
     whatsapp: input.whatsapp,
     backupDir,
+    provider,
   };
 }
 
@@ -150,7 +163,11 @@ function collides(fps: Fingerprint[], inventory: Inventory | null): boolean {
 function pendingFor(data: MinimalData): Record<string, string> {
   const pending: Record<string, string> = {
     DATABASE_URL: `se escribe con pnpm instance:db ${data.id}`,
-    ANTHROPIC_API_KEY: 'clave del modelo de lenguaje de esta instancia (consola del proveedor)',
+    // 017 (FR-010): la variable que se emite es la **del proveedor elegido**, no siempre la de
+    // Anthropic. Emitir la equivocada era pedirle al operador que pegara la clave en el sitio que
+    // la comprobación previa rechaza.
+    [keyVariableOf(data.provider)]:
+      'clave del modelo de lenguaje de esta instancia (consola del proveedor)',
     SMTP_URL: 'servidor de correo de los avisos (opcional; va con SMTP_FROM)',
     SMTP_FROM: 'remitente de los avisos por email (opcional; va con SMTP_URL)',
   };

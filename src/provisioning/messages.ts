@@ -4,6 +4,7 @@
  * acción que lo corrige, en español. Los mensajes solo reciben nombres de variable, ids, rutas,
  * servidor/puerto/nombre/usuario de una base de datos y fechas; nunca un valor secreto (FR-007).
  */
+import { LLM_PROVIDERS } from '../llm/provider.js';
 
 /** Datos que puede llevar un mensaje. Ninguno es un valor de una variable secreta. */
 export interface MessageContext {
@@ -547,6 +548,11 @@ const COMMAND_CATALOG = {
     exit: 1,
     message: () =>
       'El directorio de copias (--backup-dir) debe ser una ruta absoluta POSIX (/var/lib/chatbot/backups).',
+  },
+  /** 017 (FR-002, FR-010): nombra los tres elegibles, como todos los mensajes del proveedor. */
+  invalid_provider: {
+    exit: 1,
+    message: () => `El proveedor (--provider) debe ser ${LLM_PROVIDERS.join(', ')}.`,
   },
   output_exists: {
     exit: 1,

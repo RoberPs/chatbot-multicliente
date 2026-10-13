@@ -52,7 +52,16 @@ describe('validateMinimalData (FR-014)', () => {
       emergencyPhone: '+34600111222',
       whatsapp: false,
       backupDir: '/var/lib/chatbot/backups',
+      // 017 (FR-003, FR-010): sin `--provider`, anthropic, igual que en un entorno ya desplegado.
+      provider: 'anthropic',
     });
+  });
+
+  it('017: el proveedor declarado se conserva, y uno no elegible se rechaza', () => {
+    expect(validateMinimalData({ ...input(), provider: 'gemini' }).provider).toBe('gemini');
+    expect(validateMinimalData({ ...input(), provider: ' openai ' }).provider).toBe('openai');
+    expect(validateMinimalData({ ...input(), provider: '' }).provider).toBe('anthropic');
+    expect(() => validateMinimalData({ ...input(), provider: 'mistral' })).toThrow();
   });
 
   it.each([

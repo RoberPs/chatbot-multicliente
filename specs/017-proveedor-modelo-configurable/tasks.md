@@ -227,7 +227,7 @@ instancia con una credencial rechazada y comprobar que arranca degradada, avisa 
 - [X] T055 [US2] Añadir a `src/llm/credential-probe.ts` el vigilante de dos estados con la forma de `src/db/outage.ts`: reintento cada 5 min mientras la credencial esté rechazada, una línea al entrar en degradado y una al salir, nunca una por petición (R6)
 - [X] T056 [US2] Añadir a `src/usage/protection.ts` el estado de credencial rechazada, que degrada a «solo contacto del negocio» por el mismo camino que el modelo sin precio, y su aviso **crítico** en `computeWarnings` (FR-005b)
 - [X] T057 [US2] Lanzar la comprobación del arranque desde `src/bot.ts` **sin bloquear**: `rejected` → degradado; `inconclusive` → arranca normal con una línea de registro; nunca fatal, nunca bucle de reinicio (FR-005a, FR-005c)
-- [ ] T058 [US2] Cambiar `src/provisioning/generate.ts` para que `pnpm instance:new` acepte el proveedor y emita la variable de credencial correspondiente en el entorno generado (FR-010)
+- [X] T058 [US2] Cambiar `src/provisioning/generate.ts` para que `pnpm instance:new` acepte el proveedor y emita la variable de credencial correspondiente en el entorno generado (FR-010)
 - [ ] T059 [US2] Registrar el proveedor declarado de cada instancia en el inventario (`src/provisioning/inventory.ts` y las órdenes que lo leen), **sin** registrar ninguna credencial (FR-009)
 
 **Checkpoint**: US2 completa. El agujero está cerrado por los dos lados: antes de desplegar y en el arranque.

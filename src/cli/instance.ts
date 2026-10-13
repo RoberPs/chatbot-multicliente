@@ -152,7 +152,8 @@ const USAGE = [
   'Uso: pnpm instance:<orden> …',
   '  check <entorno> [--inventory <ruta>] [--json] [--validar-credencial]',
   '  new --id <id> --client <nombre> --url https://… --timezone <IANA> --region <XX>',
-  '      --currency <XXX> --emergency-phone <tel> [--whatsapp] [--backup-dir <ruta>]',
+  '      --currency <XXX> --emergency-phone <tel> [--whatsapp] [--provider <proveedor>]',
+  '      [--backup-dir <ruta>]',
   '      [--out <ruta>] [--inventory <ruta>] [--create-inventory]',
   '  db <id> [--env <fichero>] [--host <servidor>] [--port <puerto>] [--print-sql]',
   '     [--sslrootcert <ruta>]',
@@ -340,7 +341,14 @@ const NEW_FIELDS: Array<[keyof MinimalInput, string, string]> = [
 async function newCommand(argv: string[], { io, deps }: Context): Promise<number> {
   const args = parseArgs(argv, {
     flags: ['--whatsapp', '--create-inventory'],
-    options: [...NEW_FIELDS.map(([, flag]) => flag), '--backup-dir', '--out', '--inventory'],
+    options: [
+      ...NEW_FIELDS.map(([, flag]) => flag),
+      '--backup-dir',
+      '--out',
+      '--inventory',
+      // 017 (FR-010): opcional; sin ella, `anthropic`, igual que en un entorno ya desplegado.
+      '--provider',
+    ],
   });
   if (!args) return usage(io, USAGE);
   // La contraseña se muestra una sola vez: nada se genera sin terminal (FR-012, R7).
@@ -354,6 +362,7 @@ async function newCommand(argv: string[], { io, deps }: Context): Promise<number
     ...(input as unknown as MinimalInput),
     whatsapp: args.flags.has('--whatsapp'),
     backupDir: args.options.get('--backup-dir'),
+    provider: args.options.get('--provider'),
   });
 
   const inventoryPath = resolveInventoryPath(args.options.get('--inventory'), io.env);
