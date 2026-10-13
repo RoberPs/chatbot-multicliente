@@ -223,8 +223,10 @@ describe('Probar el bot (/admin/playground)', () => {
         cookie: cookie ?? noBotSession.cookie,
         csrf: csrfFrom(page.body),
       };
+      // 017 (FR-008): el aviso ya no nombra la variable de credencial, porque nombrarla delataría
+      // al proveedor. Lo vigila tests/contract/admin/no-provider-leak.test.ts.
       expect(page.body).toContain(
-        'Falta la clave del modelo de lenguaje (ANTHROPIC_API_KEY) en la configuración de la instancia',
+        'Falta la clave del modelo de lenguaje en la configuración de la instancia',
       );
       expect(page.body).toContain('disabled');
       const res = await postForm(noBot, noBotSession, '/admin/playground/messages', {
