@@ -22,7 +22,7 @@ import { systemClock, type ChannelSender } from '../conversation/ports.js';
 import { createProcessor } from '../conversation/processor.js';
 import { closeDb, createDb } from '../db/client.js';
 import { createKnowledgeReader } from '../knowledge/snapshot.js';
-import { createAnthropicChatModel } from '../llm/anthropic-chat-model.js';
+import { createChatModel } from '../llm/factory.js';
 
 loadDotEnvIfPresent();
 const env = loadEnv();
@@ -40,8 +40,8 @@ if (!phone?.isValid()) {
   console.error(`Número no válido: ${values.as}`);
   process.exit(1);
 }
-if (!env.ANTHROPIC_API_KEY) {
-  console.error('Falta ANTHROPIC_API_KEY en .env');
+if (!env.llmApiKey) {
+  console.error(`Falta ${env.llmKeyVariable} en .env`);
   process.exit(1);
 }
 const from = phone.number;
@@ -86,8 +86,8 @@ const policies = buildChannelPolicies({ whatsappSender: consoleSender });
 const processor = createProcessor({
   db,
   reader,
-  chatModel: createAnthropicChatModel({
-    apiKey: env.ANTHROPIC_API_KEY,
+  chatModel: createChatModel(env.LLM_PROVIDER, {
+    apiKey: env.llmApiKey,
     model: env.LLM_MODEL,
     effort: env.LLM_EFFORT,
   }),

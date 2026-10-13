@@ -22,7 +22,13 @@ export interface AnthropicChatModelOptions {
 
 const MAX_TOKENS = 4000;
 const REQUEST_TIMEOUT_MS = 12_000;
-const MAX_RETRIES = 1;
+/**
+ * 017 (FR-020): **0**, antes 1. El plazo y los reintentos son del dominio. Un SDK que reintente por
+ * su cuenta se come parte del presupuesto que el responder reservó para su segundo intento, y lo
+ * hace sin que se note. Es un cambio observable: un fallo pasajero del proveedor que antes se
+ * reintentaba solo, ahora llega al responder, que responde con disculpa y contacto.
+ */
+const MAX_RETRIES = 0;
 
 export function createAnthropicChatModel(opts: AnthropicChatModelOptions): ChatModel {
   const client =
@@ -41,6 +47,8 @@ export function createAnthropicChatModel(opts: AnthropicChatModelOptions): ChatM
             max_tokens: MAX_TOKENS,
             thinking: { type: 'adaptive' },
             output_config: { effort: opts.effort, format: { type: 'json_schema', schema } },
+            // R9 (FR-019): la marca explícita de caché se **conserva** aquí. Es el único proveedor
+            // de los tres que la tiene; Gemini y OpenAI usan su caché automática y no marcan nada.
             system: prompt.system.map((text) => ({
               type: 'text' as const,
               text,

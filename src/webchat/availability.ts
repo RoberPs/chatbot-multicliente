@@ -53,7 +53,7 @@ export function unavailable(
 export interface AvailabilityDeps {
   tx: DbOrTx;
   reader: KnowledgeReader;
-  /** Hay bot en la instancia (ANTHROPIC_API_KEY, R11). */
+  /** Hay bot en la instancia: hay credencial del modelo configurada (R11; 017, FR-006). */
   botPresent: boolean;
   emergencyPhone: string | null;
   now: Date;

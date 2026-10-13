@@ -127,6 +127,15 @@ const envSchema = z.object({
       error: (issue) => ineligibleMessage(issue.input),
     }).default('anthropic'),
   ),
+  /**
+   * Las tres variables de credencial (017). **Única excepción a la regla C1** de que solo
+   * `src/llm/` nombra una variable de credencial, y es deliberada: este módulo es la frontera cuyo
+   * trabajo es declarar variables de entorno, y un esquema construido a partir de la tabla
+   * metería una firma de índice en el tipo `Env`, debilitando el tipado de **todas** las demás.
+   *
+   * Lo que importa es que nadie **decide** aquí: el proveedor declarado dice cuál de las tres se
+   * usa, y el resto del programa lee `llmApiKey` y `llmKeyVariable` sin saber de quién son.
+   */
   ANTHROPIC_API_KEY: optionalText,
   GEMINI_API_KEY: optionalText,
   OPENAI_API_KEY: optionalText,
@@ -355,7 +364,7 @@ const botSchema = envSchema.transform((raw, ctx) => {
   // (FR-004): la comprobación previa las avisa, y aquí ni se miran.
   const llmProvider = raw.LLM_PROVIDER;
   const llmKeyVariable = keyVariableOf(llmProvider);
-  const llmApiKey = raw[llmKeyVariable as 'ANTHROPIC_API_KEY' | 'GEMINI_API_KEY' | 'OPENAI_API_KEY'];
+  const llmApiKey = (raw as unknown as Record<string, string | undefined>)[llmKeyVariable];
 
   // `LLM_MODEL` es obligatoria salvo con el proveedor que conserva su valor por defecto (R2).
   const descriptor = providerDescriptor(llmProvider);

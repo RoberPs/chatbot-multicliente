@@ -19,8 +19,7 @@ import { createHandoffService } from './handoff/service.js';
 import { createSimulatedRoute } from './handoff/simulated-route.js';
 import { createTokenCipher } from './handoff/tokens.js';
 import { createKnowledgeReader } from './knowledge/snapshot.js';
-import { createAnthropicChatModel } from './llm/anthropic-chat-model.js';
-import { createAnthropicSummarizer } from './llm/anthropic-summarizer.js';
+import { createChatModel, createSummarizer } from './llm/factory.js';
 import { createSmtpMailer, smtpTransport } from './mail/smtp-mailer.js';
 import { createTemplateSender } from './channels/whatsapp/template-sender.js';
 import { createBusinessRouter, withBusinessRouter } from './channels/whatsapp/business-router.js';
@@ -45,10 +44,12 @@ export interface CreateBotOptions {
 }
 
 export function createBot({ env, db, logger, clock = systemClock }: CreateBotOptions): Bot | null {
-  if (env.ANTHROPIC_API_KEY === undefined) {
+  // 017: la credencial y su variable las resuelve el entorno a partir del proveedor declarado
+  // (FR-005). Aquí ya no se nombra ninguna: el aviso usa la del proveedor que la instancia eligió.
+  if (env.llmApiKey === undefined) {
     logger.warn(
       { channel: 'bot' },
-      'Sin ANTHROPIC_API_KEY: la instancia arranca solo con el panel y el chat web no disponible',
+      `Sin ${env.llmKeyVariable}: la instancia arranca solo con el panel y el chat web no disponible`,
     );
     return null;
   }
@@ -61,8 +62,11 @@ export function createBot({ env, db, logger, clock = systemClock }: CreateBotOpt
   const usage = { meter: createUsageMeter({ db, activityLog }), model: env.LLM_MODEL };
   // Protección frente a abuso (012): producción y modelos, calculados una vez del entorno.
   const protection = protectionConfigFromEnv(env);
-  const chatModel = createAnthropicChatModel({
-    apiKey: env.ANTHROPIC_API_KEY,
+  // Los **dos** puertos del proveedor se construyen por fábrica y con el mismo proveedor (regla
+  // C3, FR-013a): si solo se migrase el de conversación, la instancia conversaría bien y fallaría
+  // justo al derivar a una persona.
+  const chatModel = createChatModel(env.LLM_PROVIDER, {
+    apiKey: env.llmApiKey,
     model: env.LLM_MODEL,
     effort: env.LLM_EFFORT,
   });
@@ -86,7 +90,10 @@ export function createBot({ env, db, logger, clock = systemClock }: CreateBotOpt
           : null,
       simulated: createSimulatedRoute(clock),
     }),
-    summarizer: createAnthropicSummarizer({ apiKey: env.ANTHROPIC_API_KEY, model: env.LLM_MODEL }),
+    summarizer: createSummarizer(env.LLM_PROVIDER, {
+      apiKey: env.llmApiKey,
+      model: env.LLM_MODEL,
+    }),
     cipher: createTokenCipher(env.SESSION_SECRET),
     phoneRegion: env.DEFAULT_PHONE_REGION as CountryCode,
     policies,

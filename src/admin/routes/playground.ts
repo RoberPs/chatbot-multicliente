@@ -36,8 +36,8 @@ import { readProtection, readState, renderPage, savedResponse, viewHelpers } fro
 
 const TITLE = 'Probar el bot';
 const MAX_CHARS = 1000;
-const NO_BOT =
-  'Falta la clave del modelo de lenguaje (ANTHROPIC_API_KEY) en la configuración de la instancia.';
+// 017 (FR-008): el panel no nombra la variable de credencial, porque eso delataría al proveedor.
+const NO_BOT = 'Falta la clave del modelo de lenguaje en la configuración de la instancia.';
 
 const textSchema = z
   .string()

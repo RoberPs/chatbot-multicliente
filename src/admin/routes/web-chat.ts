@@ -13,8 +13,9 @@ import { parseForm } from '../form-parse.js';
 import { formErrorData, readState, renderPage, submitForm } from '../render.js';
 
 const TITLE = 'Chat web';
+// 017 (FR-008): el panel no nombra la variable de credencial, porque eso delataría al proveedor.
 const NO_BOT =
-  'Falta la clave del modelo de lenguaje (ANTHROPIC_API_KEY) en la configuración de la instancia: ' +
+  'Falta la clave del modelo de lenguaje en la configuración de la instancia: ' +
   'el chat no puede responder.';
 
 /**

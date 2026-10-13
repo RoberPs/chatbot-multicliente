@@ -7,6 +7,10 @@ import type { ChatModel } from '../conversation/ports.js';
 import type { HandoffSummarizer } from '../handoff/ports.js';
 import { createAnthropicChatModel, type Effort } from './anthropic-chat-model.js';
 import { createAnthropicSummarizer } from './anthropic-summarizer.js';
+import { createGeminiChatModel } from './gemini-chat-model.js';
+import { createGeminiSummarizer } from './gemini-summarizer.js';
+import { createOpenAiChatModel } from './openai-chat-model.js';
+import { createOpenAiSummarizer } from './openai-summarizer.js';
 import { ineligibleMessage, isLlmProvider, type LlmProvider } from './provider.js';
 
 /** Opciones comunes a los tres proveedores. `client` existe solo para las pruebas. */
@@ -37,8 +41,20 @@ export function createChatModel(provider: LlmProvider, opts: ChatModelFactoryOpt
         effort: opts.effort,
         client: opts.client as Parameters<typeof createAnthropicChatModel>[0]['client'],
       });
-    default:
-      throw new Error(ineligibleMessage(provider));
+    case 'gemini':
+      return createGeminiChatModel({
+        apiKey: opts.apiKey,
+        model: opts.model,
+        effort: opts.effort,
+        client: opts.client,
+      });
+    case 'openai':
+      return createOpenAiChatModel({
+        apiKey: opts.apiKey,
+        model: opts.model,
+        effort: opts.effort,
+        client: opts.client,
+      });
   }
 }
 
@@ -59,7 +75,17 @@ export function createSummarizer(
         model: opts.model,
         client: opts.client as Parameters<typeof createAnthropicSummarizer>[0]['client'],
       });
-    default:
-      throw new Error(ineligibleMessage(provider));
+    case 'gemini':
+      return createGeminiSummarizer({
+        apiKey: opts.apiKey,
+        model: opts.model,
+        client: opts.client,
+      });
+    case 'openai':
+      return createOpenAiSummarizer({
+        apiKey: opts.apiKey,
+        model: opts.model,
+        client: opts.client,
+      });
   }
 }

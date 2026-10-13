@@ -13,7 +13,7 @@ declare module 'fastify' {
     env: Env;
     /** Época de las sesiones del operador; cambiarla revoca todas las cookies. */
     sessionEpoch: { value: string };
-    /** Bot de la instancia; `null` sin ANTHROPIC_API_KEY (004, R11). */
+    /** Bot de la instancia; `null` sin credencial del modelo configurada (004, R11). */
     bot: BotHttp | null;
     /** Salud de la instancia (009): informe de `/health` y del pie del panel. */
     health: InstanceHealth;

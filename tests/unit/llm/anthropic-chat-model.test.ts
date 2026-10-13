@@ -78,7 +78,9 @@ describe('ChatModel de Anthropic', () => {
     expect(system[1]?.text).toMatch(/^DATOS_DEL_NEGOCIO/);
     for (const block of system) expect(block.cache_control).toEqual({ type: 'ephemeral' });
     expect(params.messages.at(-1)?.role).toBe('user');
-    expect(options).toMatchObject({ signal: s, timeout: 12_000, maxRetries: 1 });
+    // 017 (FR-020): `maxRetries` es 0, antes 1. El plazo y los reintentos son del dominio, y un
+    // SDK que reintente por su cuenta se come el presupuesto del segundo intento del responder.
+    expect(options).toMatchObject({ signal: s, timeout: 12_000, maxRetries: 0 });
   });
 
   it('el JSON Schema no lleva restricciones de longitud y cierra los objetos', () => {

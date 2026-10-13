@@ -3,7 +3,7 @@
 <p class="hint">Conversación de prueba con el bot, con la información registrada y la misma cadena que atiende a los clientes. No cuenta para el uso del chat web.</p>
 
 <% if (!it.botPresent) { %>
-  <p class="notice" role="alert">Falta la clave del modelo de lenguaje (ANTHROPIC_API_KEY) en la configuración de la instancia.</p>
+  <p class="notice" role="alert">Falta la clave del modelo de lenguaje en la configuración de la instancia.</p>
 <% } %>
 <% if (it.layout.spend && it.layout.spend.kind === 'reached') { %>
   <p class="notice" role="status">Los clientes finales están recibiendo solo el contacto del negocio porque se ha alcanzado el tope de gasto. Lo que pruebes aquí sigue usando el modelo y suma al gasto.</p>

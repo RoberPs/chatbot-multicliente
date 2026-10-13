@@ -46,7 +46,7 @@ const messageSchema = z.object({
 
 export interface WebApiDeps {
   db: Db;
-  /** `null` sin `ANTHROPIC_API_KEY`: el chat contesta "no disponible" (R11). */
+  /** `null` sin credencial del modelo configurada: el chat contesta "no disponible" (R11). */
   bot: BotHttp | null;
   /** Lector del snapshot sobre el pool de `db` (012); por defecto, el del bot. */
   reader?: KnowledgeReader | null;

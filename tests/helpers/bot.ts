@@ -24,6 +24,7 @@ import { message, webChatSettings } from '../../src/db/schema.js';
 import { activateBusiness } from '../../src/knowledge/services/business-status.js';
 import { createKnowledgeReader } from '../../src/knowledge/snapshot.js';
 import type { KnowledgeReader } from '../../src/knowledge/types.js';
+import type { HandoffSummarizer } from '../../src/handoff/ports.js';
 import { createHandoffService, type HandoffService } from '../../src/handoff/service.js';
 import {
   createBusinessRouter,
@@ -140,6 +141,11 @@ export interface TestBotOptions {
   alertRoutes?: { whatsapp?: FakeAlertRoute; email?: FakeAlertRoute };
   /** Resumidor falso del motivo de la derivación (005). */
   summarizer?: FakeSummarizer;
+  /**
+   * Resumidor **real** construido por la fábrica sobre un doble de proveedor (017, FR-013a). Manda
+   * sobre `summarizer`; `bot.summarizer` sigue siendo el falso, que en ese caso no se usa.
+   */
+  realSummarizer?: HandoffSummarizer;
   /** Plazos de la derivación (por defecto 15 s por vía y 8 s el resumen). */
   handoffTimeouts?: { routeMs?: number; summaryMs?: number };
   /** Medidor del consumo (010); por defecto el real sobre la BD de prueba. */
@@ -208,7 +214,7 @@ export async function createTestBot(t: TestDatabase, opts: TestBotOptions = {}):
     reader,
     activityLog,
     routes: new FakeAlertRoutesProvider(alertRoutes, createSimulatedRoute(clock)),
-    summarizer,
+    summarizer: opts.realSummarizer ?? summarizer,
     cipher: createTokenCipher(TEST_SESSION_SECRET),
     phoneRegion: 'ES',
     policies,
