@@ -278,9 +278,26 @@ manual de las quince secciones no encuentra ninguna zona del tema contrario.
 - [x] T029 Actualizar `docs/operacion-multicliente.md`: añadir la fila de la 014 a la tabla de specs
       realizadas (9.1) con su fecha y la nota de que no venía de ninguna propuesta de 9.2, y revisar
       el orden de las pendientes.
-- [ ] T030 Validar en la instancia real con [quickstart.md §5](quickstart.md): desplegar por tandas
+- [x] T030 Validar en la instancia real con [quickstart.md §5](quickstart.md): desplegar por tandas
       (feature 009), confirmar la versión con `pnpm instance:versions`, trabajar una jornada con el
       tema elegido (SC-008) y comprobar que el chat web de los clientes finales no ha cambiado.
+      **Resultado (2026-10-13)**: la `0.1.2` se desplegó por tandas en las dos instancias del VPS
+      (`instancia-1` = `viajes` primero, comprobada, y después `instancia-2` = `restaurante`).
+      `pnpm instance:versions`: las dos `Correcto`, núcleo 0.1.2, esquema `0008_abuse_protection`,
+      anotadas con `--annotate`. El operador revisó el panel real y el chat web de los clientes
+      finales y dio los dos por correctos.
+
+      **Alcance real de lo comprobado, por honestidad**: el §5 del quickstart pide además que la
+      preferencia siga puesta **al día siguiente** y **tras la actualización siguiente**. Ninguna de
+      las dos cosas podía haber ocurrido el mismo día del despliegue. La casilla se cierra por
+      decisión del responsable para no dejar la feature abierta semanas: la supervivencia de la
+      cookie a una actualización se comprobará de paso al desplegar la 017, que no cuesta nada, y
+      si aparece cualquier defecto se tratará entonces.
+
+      **Desviaciones conscientes del guión de 5.1**: no se pasó `pnpm test:eval` (la 014 no toca la
+      cadena de respuesta: el diff en `src/` son nueve ficheros de `src/admin/**` y dos líneas de
+      `src/app.ts`), y el §5.2 «instancia de pruebas» no se pudo seguir tal cual porque no existe
+      tal instancia: su papel lo hizo la primera tanda.
 - [x] T031 Subir `version` en `package.json` a **0.1.2** (guía de operación, §5.1: un número
       nuevo por imagen, nunca uno ya desplegado). La 014 se despliega con su propia imagen,
       después de la `0.1.1` de la 016, que es la que cierra su T051. `CURRENT_FORMAT_VERSION`
@@ -368,12 +385,10 @@ Task: "tests/contract/admin/theme.test.ts (T010)"
 
 ## Lo que queda (sesión siguiente)
 
-Los tres recorridos a mano (T008, T020 y T026) quedaron cerrados el **2026-10-13**, y la puerta
-de 5.1 se volvió a pasar entera sobre la rama rebasada: está en verde, con la corrección del lint
-que la rama arrastraba desde US3 (el detalle, en la anotación de T027). Queda una sola casilla:
-
-- **T030**: despliegue de la `0.1.2` por tandas (feature 009) y la jornada de trabajo real de
-  [quickstart.md §5](quickstart.md).
+**Nada pendiente**: las 31 tareas están cerradas (2026-10-13). Los tres recorridos a mano, la
+puerta de 5.1 sobre la rama rebasada —con la corrección del lint que arrastraba desde US3, en la
+anotación de T027— y el despliegue de la `0.1.2` por tandas con su validación en producción
+(T030, donde consta qué se comprobó de verdad y qué queda para el despliegue de la 017).
 
 **En la pantalla de acceso el cambio llega recargando, y es a proposito.** login.eta no carga
 htmx ni app.js —no se le anade codigo a una pagina previa a la sesion solo por comodidad—, asi que
