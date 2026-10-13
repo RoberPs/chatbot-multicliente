@@ -52,6 +52,38 @@ que las bloquea.
 
 ---
 
+## Tramos de ejecución (parada por límite de consumo)
+
+La implementación se parte en **dos tramos**, con una parada entre medias. No se llaman «fases»
+para no confundirlos con las 9 fases internas de esta lista: un tramo agrupa varias fases.
+
+| | Fases | Tareas | Cuántas |
+|---|---|---|---|
+| **Tramo 1** | 1 · Setup, 2 · Foundational, 3 · US1 | T001 – T043a | **51** |
+| **Tramo 2** | 4 · US2 … 9 · Despliegue | T043b – T086 | **45** |
+
+### Por qué el corte va al final de US1
+
+- Es la **frontera del MVP** que ya define el plan: al terminar, una instancia elige proveedor en su
+  fichero de entorno y el bot atiende clientes con los tres, derivación incluida.
+- El repositorio queda **coherente y verificable por sí mismo**: suite entera en verde, sin nada a
+  medio construir, y con el punto de control de refactor puro (T024) ya pasado por dentro del tramo.
+- Es el único corte que no parte un puerto, un dialecto ni una migración por la mitad.
+
+### Qué NO está hecho al parar, y por qué no pasa nada
+
+| Pendiente | Consecuencia de parar ahí |
+|---|---|
+| El agujero de la credencial equivocada (US2) | Sigue abierto, **pero hoy ya lo está**: no hay regresión, solo trabajo pendiente |
+| El panel no sabe pintar «sin dato» (US3) | Solo se ve si alguien configura Gemini u OpenAI **en local**. Por eso T043a deja el entorno de desarrollo en Anthropic |
+| La evaluación por proveedor (US5) | **Ningún proveedor está declarado apto todavía.** Nada en el repositorio puede afirmar lo contrario: `README.md` y la documentación son tramo 2 |
+| El despliegue (fase 9) | Nada se despliega. Producción sigue en 0.1.2 y con Anthropic, sin tocar sus entornos |
+
+**Durante el tramo 1 no se sube la versión ni se toca `README.md`**: las dos cosas son tramo 2
+(T078, T079), precisamente para que un repositorio parado a medias no anuncie algo que no ofrece.
+
+---
+
 ## Phase 1: Setup
 
 **Purpose**: dependencias y sitio para los dobles.
@@ -155,9 +187,17 @@ derivación a una persona, y ninguna pantalla del panel nombrando al proveedor
 
 **Checkpoint**: US1 completa. El bot responde con los tres proveedores, deriva con los tres, y el panel no delata a ninguno.
 
+### Cierre del tramo 1 🛑 PARADA
+
+- [ ] T043a **Dejar el repositorio en estado reanudable y parar.** Concretamente: (a) `pnpm lint && pnpm typecheck && pnpm test` en verde, y **contar al usuario el resultado real**, sin redondear; (b) árbol limpio, todo commiteado, **sin subir nada a `origin`**; (c) `.env` de desarrollo con el proveedor en Anthropic, para que el panel no se encuentre con un «sin dato» que todavía no sabe pintar; (d) comprobar que `package.json` sigue en **0.1.2** y que `README.md` **no** se ha tocado, porque ningún proveedor está declarado apto aún; (e) anotar al usuario en qué tarea se paró y cuál es la primera del tramo 2
+
 ---
 
 ## Phase 4: User Story 2 - La comprobación previa descubre una credencial que no corresponde (Priority: P1)
+
+### Reanudación del tramo 2
+
+- [ ] T043b **Antes de seguir**, comprobar que el punto de parada sigue en pie: rama `017-proveedor-modelo-configurable`, árbol limpio, `pnpm test` en verde y la migración 0009 aplicada en la base de datos local. Si algo cambió desde la parada, entenderlo antes de escribir código nuevo
 
 **Goal**: una credencial que no corresponde al proveedor declarado se detecta antes de desplegar; y
 una credencial que el proveedor rechaza degrada la instancia en vez de fallar en silencio.
@@ -292,7 +332,8 @@ ficheros de entorno de producción, y la sesión de GHCR del VPS se cierra tras 
   (T024) no es opcional: es lo que garantiza que el refactor no cambió nada.
 - **Phase 3 (US1)** y **Phase 4 (US2)**: las dos dependen de la fase 2. US2 depende además de T038
   (las fábricas completas), porque la comprobación del arranque necesita saber construir cualquier
-  proveedor.
+  proveedor. **Entre las dos está la parada del tramo 1** (T043a → T043b), y esa dependencia de US2
+  sobre US1 es justo lo que hace que el corte ahí no rompa nada.
 - **Phase 5 (US3)**: depende de la fase 2 (T016–T023, la forma del consumo) y de US1 para poder
   verla con un proveedor que no informa de la escritura de caché.
 - **Phase 6 (US4)**: depende de US1, porque documenta el comportamiento de los tres adaptadores.
@@ -347,12 +388,14 @@ Task: "Resumen de derivacion en tests/integration/handoff/summarizer-providers.t
 
 ## Implementation Strategy
 
-### MVP primero (US1)
+### Tramo 1 · MVP (US1)
 
-1. Fase 1 (Setup) y fase 2 (Foundational), con su punto de control de refactor puro.
+1. Fase 1 (Setup) y fase 2 (Foundational), con su punto de control de refactor puro (T024).
 2. Fase 3 (US1).
 3. **PARAR Y VALIDAR**: quickstart §1 y §2 con los tres proveedores.
 4. Esto ya es entregable: una instancia puede elegir proveedor y atender clientes.
+5. **T043a cierra el tramo** y es donde se detiene el proceso por el límite de consumo de la
+   cuenta. El tramo 2 arranca en T043b, que comprueba que el punto de parada sigue en pie.
 
 ### Entrega incremental
 
