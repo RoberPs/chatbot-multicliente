@@ -59,7 +59,32 @@ revisar el registro. Es el fallo más grave de los tres porque pasa la puerta de
   ni hace reserva automática ante un corte. Una instancia, un proveedor, declarado en su entorno.
 - No cambia el modelo de transcripción de audio: tiene su propia variable y su propio proveedor, y
   queda fuera del alcance.
-- No cambia la tabla de precios ni su clave. No lleva migración de base de datos.
+- No cambia la tabla de precios ni su clave, y no sube la versión del formato de configuración del
+  negocio.
+
+## Clarifications
+
+### Session 2026-10-13
+
+- Q: Cuando la credencial es del proveedor correcto y está bien formada, pero el proveedor la
+  rechaza (revocada, caducada, sin saldo o sin permisos), ¿qué hace la instancia? → A: comprobación
+  al arrancar **no fatal**: la instancia arranca, y si el proveedor rechaza la credencial queda en
+  degradado declarado (solo contacto del negocio) con aviso crítico y reintento periódico. Si la
+  comprobación no concluye, no hay veredicto y se arranca con normalidad, igual que FR-030a.
+- Q: ¿Qué severidad tiene el aviso de que hubo consumo no medido? → A: crítico solo cuando el tope
+  de gasto está activado y el negocio está activo —entonces hay una protección que deja de poder
+  garantizarse—; en los demás casos, aviso normal.
+- Q: ¿Puede cumplirse el registro del consumo no medido sin tocar la base de datos? → A: no. Lleva
+  una migración de **solo añadir** que permite distinguir una respuesta no medida de una respuesta
+  de consumo cero. No sube `formatVersion`, porque el registro de consumo no es configuración del
+  negocio.
+- Q: ¿Las pruebas automáticas necesitan credenciales reales de los tres proveedores? → A: no. La
+  suite completa corre sin red y sin credenciales, con respuestas preparadas por proveedor. Las
+  credenciales reales solo las necesita la evaluación, que ya vive fuera de la suite y tiene coste.
+- Q: ¿Cómo muestra el panel un concepto del que el proveedor no informa, sin revelar quién es? →
+  A: distinguiendo «sin dato» de cero, con una nota genérica que dice que el modelo configurado no
+  informa de ese concepto y sin nombrar al proveedor; los totales no suman lo no informado como
+  cero.
 
 ## User Scenarios & Testing *(mandatory)*
 
@@ -128,6 +153,13 @@ apto y que el mensaje nombra la variable sin mostrar su valor.
 6. **Given** una máquina sin red, **When** el operador pide la validación con llamada real,
    **Then** el entorno sigue **apto** con un aviso de que no se pudo validar, distinguible del caso
    en que la validación no se pidió, y el despliegue no queda bloqueado por la falta de red.
+7. **Given** una instancia cuya credencial es del proveedor correcto pero el proveedor la rechaza
+   (revocada, caducada, sin saldo), **When** la instancia arranca, **Then** arranca sin entrar en
+   bucle de reinicio, queda en degradado declarado con solo el contacto del negocio, y el operador
+   tiene un aviso crítico. **And** cuando la credencial vuelve a ser aceptada, la instancia sale del
+   degradado por sí sola, sin intervención.
+8. **Given** una instancia que arranca sin red, **When** la comprobación del arranque no concluye,
+   **Then** la instancia arranca con normalidad, no queda degradada, y el hecho queda registrado.
 
 ---
 
@@ -148,11 +180,13 @@ registrado y qué avisos salen cuando faltan datos de consumo.
 1. **Given** una instancia con cualquiera de los tres proveedores, **When** el bot responde,
    **Then** quedan registrados los tokens de entrada y de salida de esa respuesta y su coste
    congelado con el precio vigente del modelo.
-2. **Given** un proveedor que no factura la escritura de caché, **When** el bot responde, **Then**
-   la escritura de caché se registra como cero y el panel no presenta ese cero como un ahorro.
+2. **Given** un proveedor que no informa de la escritura de caché, **When** el operador abre la
+   pantalla de consumo, **Then** ese concepto aparece como **sin dato**, no como cero, con una nota
+   que no nombra al proveedor, y los totales no lo suman como cero.
 3. **Given** una respuesta que llega sin ninguna información de consumo, **When** el bot la
-   entrega, **Then** la respuesta se entrega igual, el hecho queda registrado como consumo no
-   medido, y el operador recibe un aviso de que el tope de gasto no puede garantizarse.
+   entrega, **Then** la respuesta se entrega igual, queda registrada como **no medida** y
+   distinguible de una de consumo cero, y el operador recibe un aviso: **crítico** si el tope de
+   gasto está activado y el negocio está activo, normal en los demás casos.
 4. **Given** un operador que cambia el proveedor de una instancia a otro cuyo modelo no tiene
    precio registrado, **When** vuelve a arrancar, **Then** salta el aviso de «modelo sin precio»
    que ya existe y los clientes reciben solo el contacto del negocio, hasta que registre el precio.
@@ -212,6 +246,12 @@ proveedor declarado elegible, con su fecha, su modelo y su ajuste de esfuerzo.
 
 - **Proveedor declarado sin su credencial, pero con la de otro presente**: la instancia no arranca
   y el fallo nombra la variable que falta. No se usa la credencial del otro proveedor.
+- **Credencial revocada mientras la instancia está en marcha**: las respuestas empiezan a fallar por
+  autorización. El reintento periódico de FR-005b vuelve a comprobarla, la instancia pasa a
+  degradado declarado y el aviso crítico aparece sin necesidad de reiniciar.
+- **El proveedor rechaza la credencial al arrancar y sigue rechazándola**: la instancia se queda en
+  degradado indefinidamente, con el aviso crítico en pie. No reintenta tan a menudo como para que el
+  reintento se convierta en gasto, ni tan poco como para tardar horas en recuperarse sola.
 - **Entorno sin proveedor declarado y sin ninguna credencial**: se comporta exactamente como hoy un
   entorno sin credencial del modelo, incluida la regla de que el canal de mensajería la exige.
 - **Credencial de un proveedor no elegible**: no se reconoce su forma; se trata como credencial del
@@ -251,6 +291,17 @@ proveedor declarado elegible, con su fecha, su modelo y su ajuste de esfuerzo.
   ningún otro, ni aunque esté presente.
 - **FR-005**: Si falta la credencial del proveedor declarado, el sistema MUST fallar con la misma
   claridad con la que hoy falla al faltar la credencial del modelo, nombrando la variable.
+- **FR-005a**: Al arrancar, el sistema MUST comprobar contra el proveedor declarado que la
+  credencial es aceptada, con la petición más barata que el proveedor admita. Esa comprobación MUST
+  NOT ser fatal: la instancia arranca en cualquier caso y MUST NOT quedar en bucle de reinicio por
+  ella.
+- **FR-005b**: Si el proveedor **rechaza** la credencial al arrancar, la instancia MUST quedar en
+  degradado declarado —los clientes reciben solo el contacto del negocio, como con el modelo sin
+  precio—, MUST levantar un aviso crítico para el operador y MUST reintentar la comprobación
+  periódicamente, saliendo del degradado por sí sola cuando la credencial pase a ser aceptada.
+- **FR-005c**: Si la comprobación del arranque **no concluye** —no hay red, el proveedor no responde
+  o falla por algo que no es un rechazo de la credencial—, el sistema MUST arrancar con normalidad y
+  MUST NOT degradar la instancia ni dar la credencial por mala. El hecho MUST quedar registrado.
 - **FR-006**: La decisión de proveedor MUST quedar en un punto único del dominio. El panel de
   operador, los adaptadores de canal, el cálculo de si el bot puede atender y la información de
   estado de la instancia MUST NOT depender de qué proveedor hay detrás.
@@ -296,12 +347,22 @@ proveedor declarado elegible, con su fecha, su modelo y su ajuste de esfuerzo.
   respuesta con los tres proveedores.
 - **FR-023**: El medidor MUST NOT depender de los tipos ni de la forma de respuesta de ningún
   proveedor concreto.
-- **FR-024**: Donde el proveedor no informe de la escritura o de la lectura de caché, el sistema
-  MUST registrar cero en ese concepto, y el panel MUST NOT presentar ese cero como un ahorro
+- **FR-024**: Donde el proveedor no informe de la escritura o de la lectura de caché, el panel MUST
+  mostrar ese concepto como **sin dato**, distinguible de un cero medido, con una nota genérica que
+  diga que el modelo configurado no informa de él y que MUST NOT nombrar al proveedor. Los totales
+  MUST NOT sumar lo no informado como cero, y el panel MUST NOT presentarlo como un ahorro
   conseguido.
 - **FR-025**: Si una respuesta llega sin ninguna información de consumo, el sistema MUST entregarla
   al cliente, MUST registrar que hubo consumo no medido y MUST avisar al operador de que el tope de
   gasto no puede garantizarse.
+- **FR-025a**: Ese aviso MUST ser **crítico** cuando el tope de gasto está activado y el negocio
+  está activo, porque es entonces cuando hay una protección que deja de poder garantizarse. En los
+  demás casos MUST ser un aviso normal. Este aviso nace de una respuesta del bot, no de una
+  escritura del operador, así que MUST NOT revertir ninguna escritura ni impedir que el operador
+  siga trabajando: es una alarma, no un bloqueo.
+- **FR-025b**: El registro MUST permitir distinguir una respuesta **no medida** de una respuesta de
+  consumo **cero**. Esto MUST conseguirse con una migración de solo añadir, sin tocar ni reescribir
+  lo ya registrado.
 - **FR-026**: El precio MUST seguir registrándose por nombre de modelo, y el coste MUST seguir
   congelándose en el momento del consumo. El histórico MUST NOT recalcularse al cambiar de
   proveedor.
@@ -316,7 +377,9 @@ proveedor declarado elegible, con su fecha, su modelo y su ajuste de esfuerzo.
 - **FR-029**: La comprobación previa MUST poder validar la credencial contra el proveedor declarado
   con una llamada real, y esa validación MUST ser una petición explícita del operador, nunca el
   comportamiento por defecto: la comprobación MUST seguir siendo local y sin red si no se le pide
-  otra cosa.
+  otra cosa. Esto se refiere a la herramienta de comprobación previa, que es local por naturaleza;
+  la instancia en marcha sí comprueba su credencial siempre al arrancar (FR-005a), y las dos cosas
+  son independientes.
 - **FR-030**: Cuando la validación con llamada real es concluyente y el proveedor rechaza la
   credencial, el resultado MUST ser **no apto**.
 - **FR-030a**: Cuando se pide la validación con llamada real y no se puede concluir —no hay red, el
@@ -345,8 +408,12 @@ proveedor declarado elegible, con su fecha, su modelo y su ajuste de esfuerzo.
 - **FR-036a**: El ajuste de esfuerzo por defecto de cada proveedor MUST quedar escrito en la
   documentación de operación junto al resultado de evaluación que lo justifica, para que se sepa
   que el mismo ajuste del dominio no significa lo mismo en los tres proveedores.
-- **FR-037**: Esta feature MUST NOT llevar migración de base de datos ni cambiar la versión del
-  formato de configuración, porque no cambia ninguna configuración del negocio.
+- **FR-037**: Esta feature MUST NOT cambiar la versión del formato de configuración, porque no
+  cambia ninguna configuración del negocio. Su única migración MUST ser la de solo añadir que exige
+  FR-025b, sobre el registro de consumo, que no es configuración del negocio.
+- **FR-038**: La suite de pruebas MUST correr completa sin red y sin ninguna credencial real, con
+  respuestas preparadas por proveedor, y MUST cubrir así los tres proveedores. Solo la evaluación
+  con el modelo real MUST requerir credenciales reales, y MUST seguir viviendo fuera de la suite.
 
 ### Key Entities
 
@@ -391,6 +458,13 @@ proveedor declarado elegible, con su fecha, su modelo y su ajuste de esfuerzo.
   concreto solo la encuentra en el punto único de la costura y en su adaptador.
 - **SC-009**: La comprobación previa sigue terminando sin red y sin escribir nada cuando no se le
   pide la validación con llamada real.
+- **SC-010**: Una credencial que el proveedor rechaza deja de poder pasar inadvertida: el operador
+  tiene un aviso crítico desde el arranque, y ningún cliente recibe una respuesta degradada sin que
+  ese aviso exista.
+- **SC-011**: La suite de pruebas completa pasa en una máquina sin red y sin ninguna credencial
+  real, cubriendo los tres proveedores.
+- **SC-012**: Ningún concepto de consumo del que el proveedor no informa aparece en el panel como un
+  cero, y los totales nunca lo suman como cero.
 
 ## Assumptions
 
@@ -410,7 +484,14 @@ proveedor declarado elegible, con su fecha, su modelo y su ajuste de esfuerzo.
   proveedor. Su traducción por proveedor es asunto del adaptador. Lo que sí puede variar por
   proveedor es **qué posición es la de por defecto**, cuando la evaluación lo exija (FR-036a).
 - Los nombres de modelo de los tres proveedores no colisionan entre sí, y por eso la tabla de
-  precios puede seguir teniendo el nombre del modelo como clave, sin migración (FR-037).
+  precios puede seguir teniendo el nombre del modelo como clave y sin migración.
+- La única migración de la feature es la de FR-025b, sobre el registro de consumo. Al no ser
+  configuración del negocio, no obliga a subir la versión del formato ni a escribir un actualizador
+  (FR-037). Si en el plan resultase que sí toca configuración del negocio, esa decisión se cae y hay
+  que subir la versión del formato.
+- Los tres proveedores admiten alguna petición barata que sirva para saber si aceptan la credencial
+  sin generar una respuesta completa. Es lo que hacen posibles FR-005a y FR-031. Si algún proveedor
+  no la tuviera, su comprobación costaría una respuesta y habría que decidir si merece la pena.
 - La elección de proveedor sigue siendo del operador, nunca del negocio (Principio VI).
 - El detalle exacto de los parámetros equivalentes de cada proveedor se fija en la investigación del
   plan, no en esta spec. Aquí se fija **qué** comportamiento es obligatorio, no **cómo** lo consigue

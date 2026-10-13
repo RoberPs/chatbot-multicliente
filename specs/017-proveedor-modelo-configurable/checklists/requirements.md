@@ -52,6 +52,37 @@ valor por defecto defendible, que el usuario pidió expresamente decidir.
   El esfuerzo por defecto de cada proveedor queda escrito junto al resultado que lo justifica.
   Actualizados los escenarios de US5 y la asunción sobre el mando de esfuerzo.
 
+### Iteración 3 (2026-10-13) — `/speckit-clarify`, 5 preguntas
+
+Ningún ítem cambia de estado: 16/16 seguían y siguen en verde. Lo que cambia es el contenido.
+El barrido encontró cinco huecos con impacto real; el usuario pidió aplicar las recomendaciones sin
+preguntar una a una.
+
+1. **La spec cerraba solo la mitad del Problema 3.** FR-028 detecta credenciales de otro proveedor y
+   FR-029 deja la llamada real como opcional, así que una credencial **del proveedor correcto pero
+   rechazada** (revocada, caducada, sin saldo) reproducía el fallo original intacto. Añadidos
+   FR-005a, FR-005b y FR-005c: comprobación al arrancar **no fatal**, degradado declarado con aviso
+   crítico y reintento periódico, y arranque normal si no concluye. Escenarios US2.7 y US2.8, dos
+   casos límite y SC-010.
+2. **La severidad del aviso de consumo no medido estaba sin decidir** (se perdió al redactar).
+   FR-025a: crítico solo con el tope activado y el negocio activo, y explícitamente **alarma, no
+   bloqueo** —no revierte escrituras del operador, porque nace de una respuesta del bot—.
+3. **Contradicción propia detectada**: FR-025 exigía registrar el consumo no medido y FR-037 negaba
+   toda migración, lo que era imposible de cumplir a la vez. Resuelto en FR-025b y FR-037: hay una
+   migración de solo añadir, y **no** sube `formatVersion` porque el registro de consumo no es
+   configuración del negocio. Corregidos también el apartado «Lo que esta feature NO hace» y la
+   asunción correspondiente.
+4. **Las pruebas podían quedar inejecutables sin tres credenciales reales.** FR-038 y SC-011: la
+   suite entera corre sin red y sin credenciales, con respuestas preparadas por proveedor; las
+   credenciales reales solo las pide la evaluación, que ya vive fuera de la suite.
+5. **«El panel no presenta ese cero como un ahorro» no era verificable.** FR-024 reescrito: «sin
+   dato» distinguible de cero, nota genérica que no nombra al proveedor, y totales que no lo suman
+   como cero. Escenario US3.2 y SC-012.
+
+Nota de honestidad sobre el primer ítem del checklist: FR-025b nombra una migración de base de
+datos, que roza el detalle de implementación. Se mantiene porque es una restricción de producto del
+proyecto (migraciones de solo añadir, nunca editadas) y porque sin ella FR-025 no sería verificable.
+
 ### Decisiones cerradas con valor razonable (sin preguntar)
 
 Escritas en **Assumptions** y en los FR correspondientes:
