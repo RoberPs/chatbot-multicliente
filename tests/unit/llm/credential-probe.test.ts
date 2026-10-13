@@ -21,17 +21,24 @@ import { LLM_PROVIDERS, type LlmProvider } from '../../../src/llm/provider.js';
 /** Credencial de pruebas: ninguna es real, y ninguna puede aparecer en ninguna salida. */
 const CLAVE = 'sk-ant-secreto-que-no-puede-salir-en-ningun-sitio';
 
-function respondeCon(status: number): typeof globalThis.fetch {
+/** `fetch` doble que además guarda sus llamadas. */
+type FetchDoble = typeof globalThis.fetch & { mock: { calls: unknown[][] } };
+
+function respondeCon(status: number): FetchDoble {
   // Un 204 no admite cuerpo: `Response` lanza si se le da uno.
   const body = status === 204 || status === 205 || status === 304 ? null : '{}';
-  return vi.fn(async () => new Response(body, { status })) as unknown as typeof globalThis.fetch;
+  return vi.fn(async () => new Response(body, { status }));
 }
 
-function falla(error: Error): typeof globalThis.fetch {
+function falla(error: Error): FetchDoble {
   return vi.fn(async () => {
     throw error;
-  }) as unknown as typeof globalThis.fetch;
+  });
 }
+
+/** Dirección y opciones de la primera petición del doble. */
+const primeraPeticion = (f: FetchDoble): [string, RequestInit] =>
+  f.mock.calls[0] as [string, RequestInit];
 
 const veredicto = (
   provider: LlmProvider,
@@ -68,8 +75,7 @@ describe.each(LLM_PROVIDERS)('verifyCredential con %s', (provider) => {
   it('pide el listado de modelos con GET y lleva la credencial en su cabecera', async () => {
     const fetchImpl = respondeCon(200);
     await veredicto(provider, fetchImpl);
-    const [url, init] = (fetchImpl as unknown as { mock: { calls: unknown[][] } }).mock
-      .calls[0] as [string, RequestInit];
+    const [url, init] = primeraPeticion(fetchImpl);
     expect(url).toMatch(/^https:\/\//);
     expect(url).toContain('models');
     expect(init.method).toBe('GET');
@@ -106,10 +112,7 @@ describe('plazo y aborto', () => {
   it('pasa una señal de aborto a fetch', async () => {
     const fetchImpl = respondeCon(200);
     await verifyCredential('anthropic', CLAVE, { fetch: fetchImpl });
-    const [, init] = (fetchImpl as unknown as { mock: { calls: unknown[][] } }).mock.calls[0] as [
-      string,
-      RequestInit,
-    ];
+    const [, init] = primeraPeticion(fetchImpl);
     expect(init.signal).toBeInstanceOf(AbortSignal);
   });
 
@@ -126,7 +129,7 @@ describe('plazo y aborto', () => {
   it('una credencial vacía da inconclusive sin pedir nada', async () => {
     const fetchImpl = respondeCon(200);
     expect(await verifyCredential('anthropic', '  ', { fetch: fetchImpl })).toBe('inconclusive');
-    expect((fetchImpl as unknown as { mock: { calls: unknown[][] } }).mock.calls).toHaveLength(0);
+    expect(fetchImpl.mock.calls).toHaveLength(0);
   });
 });
 
@@ -134,11 +137,7 @@ describe('cabeceras propias de cada proveedor (R5)', () => {
   async function cabecerasDe(provider: LlmProvider): Promise<Record<string, string>> {
     const fetchImpl = respondeCon(200);
     await veredicto(provider, fetchImpl);
-    const [, init] = (fetchImpl as unknown as { mock: { calls: unknown[][] } }).mock.calls[0] as [
-      string,
-      RequestInit,
-    ];
-    return init.headers as Record<string, string>;
+    return primeraPeticion(fetchImpl)[1].headers as Record<string, string>;
   }
 
   it('Anthropic usa x-api-key y declara la versión de su API', async () => {

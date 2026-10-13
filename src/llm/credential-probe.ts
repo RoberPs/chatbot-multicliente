@@ -178,6 +178,8 @@ export function createCredentialWatcher(options: CredentialWatcherOptions): Cred
   let state: 'ok' | 'rejected' = 'ok';
   let timer: NodeJS.Timeout | null = null;
   let closed = false;
+  /** Tras un `await`, `closed` puede haber cambiado: se lee por función para no estrecharlo. */
+  const isClosed = () => closed;
 
   const stopRetry = () => {
     if (timer) clearInterval(timer);
@@ -200,7 +202,7 @@ export function createCredentialWatcher(options: CredentialWatcherOptions): Cred
       // La verificación no lanza, pero si alguien inyecta una que sí, no puede tumbar el proceso.
       verdict = 'inconclusive';
     }
-    if (closed) return verdict;
+    if (isClosed()) return verdict;
     if (verdict === 'rejected' && state === 'ok') {
       state = 'rejected';
       options.log?.(
