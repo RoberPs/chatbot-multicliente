@@ -776,6 +776,18 @@ fichero y **no lo muestra**; con `--rotate` lo cambia. Las instancias nuevas ya 
 | Desde la 013: `pnpm instance:check <entorno>` de **cada** instancia de la tanda, con el núcleo nuevo | `APTO` | **Parar** esa instancia hasta corregir su entorno (`trust_proxy_empty`, `database_tls_required`) |
 | Pasos de integración continua de la [2.5](#25-despliegue) (paso 11) | Ninguno bloquea | **Parar** si alguno bloquea ([11.4](#114-criterio-de-severidad-y-de-salida-a-producción)) |
 
+**Dos matices del guión, aprendidos en el despliegue de la 0.1.2 (2026-10-13).**
+
+- **`pnpm test:eval` no siempre aplica.** La tabla la pide en cada versión, pero mide la cadena de
+  respuesta del bot. Si la versión **no toca** `src/conversation`, `src/knowledge`, los prompts ni
+  el modelo —compruébalo con `git diff main..HEAD -- src/`—, la evaluación mediría exactamente lo
+  mismo que la versión anterior y cuesta dinero: se puede saltar **dejando escrito en el cierre de
+  la spec qué ficheros cambiaron**. Si toca cualquiera de esos sitios, no es opcional.
+- **No hay instancia de pruebas.** El §5.2 supone una instancia con datos ficticios que hoy no
+  existe: las dos del inventario son de cliente. Mientras siga así, su papel lo hace la **primera
+  tanda** del §5.3 —una sola instancia, verificada con `instance:versions` antes de seguir—, y la
+  vuelta atrás del §5.4 es la red de seguridad. Anotarlo en el cierre de cada versión.
+
 **Actualizar la imagen base.** El `Dockerfile` fija `node:22-slim` por el digest de su índice
 multiplataforma en `ARG NODE_IMAGE` (013). Para pasar a una base nueva (parche de seguridad de
 Node o de Debian):
@@ -1006,7 +1018,7 @@ Todas son de **núcleo**: genéricas, sin nombres de cliente ni de sector.
 
 ### 9.1 Specs ya realizadas
 
-Estado tomado del [README](../README.md) a 2026-10-10.
+Estado tomado del [README](../README.md) a 2026-10-13.
 
 | Nº | Feature | Estado | Qué aporta a la operación multicliente |
 |---|---|---|---|
@@ -1023,7 +1035,7 @@ Estado tomado del [README](../README.md) a 2026-10-10.
 | 011 | Diseño del chat web | Completada (2026-10-05) | No venía de ninguna propuesta de esta sección. Cada cliente tiene su chat con su imagen sin despliegue ni cambiar el fragmento: sección **Diseño del chat** del panel, contraste mínimo garantizado, aviso de asistente automático y salida a una persona siempre presentes, formato 2 del fichero de configuración con el diseño y sus imágenes ([sección 2.6](#26-configuración-del-negocio-en-el-panel-de-producción)) |
 | 012 | Protección frente a abuso y saturación | Completada (2026-10-06) | **Era la propuesta P8**: tope de gasto obligatorio en producción que falla cerrado, transcripción dentro del tope y tope diario de WhatsApp ([sección 4.1](#41-consumo-precios-y-tope-en-el-panel-010)); límites de derivación con reenvíos agrupados ([sección 4.2](#42-límites-de-derivación-012)); límites por dirección (/64) en las rutas públicas y pool de BD acotado; login con retardo en lugar de bloqueo; plazos en las llamadas salientes y reintentos de lotes; importación acotada; una sola regla de enlaces; registros sin datos y arranque que rechaza secretos débiles ([sección 5.0](#50-antes-de-la-primera-vez-una-vez-por-instancia)) |
 | 013 | Requisitos de despliegue seguro | Completada (2026-10-06) | **Era la propuesta P9**: `instance:check` da NO APTO en producción con `TRUST_PROXY` vacío y `https` y con URL de base de datos remotas sin `sslmode=verify-full`; `instance:db` se niega a conectar sin TLS verificado (`--sslrootcert`); TLS verificado en todas las conexiones con mensajes sin datos; `db:verify` con bases temporales cerradas a otros usuarios y limpieza de huérfanas; imagen con `HEALTHCHECK`, base fijada por digest y pnpm con hash; receta de producción con comprobaciones ([sección 2.5](#25-despliegue), [2.3](#23-crear-la-base-de-datos-pnpm-instancedb), [2.4](#24-completar-y-validar-pnpm-instancecheck), [5](#5-actualizar-el-núcleo) y [8](#8-copias-de-seguridad-guía-de-validación)) |
-| 014 | Modo oscuro del panel del operador | Completada (2026-10-10) | No venía de ninguna propuesta de esta sección: es una mejora de comodidad del panel, pensada además para comprobar que el núcleo se puede ampliar y actualizar con instancias ya desplegadas. El panel sigue la preferencia de color del sistema y ofrece un control de tres opciones —Automático, Claro, Oscuro— en la barra superior y en la pantalla de acceso; la elección vive en una cookie del navegador del operador, así que **no es configuración del negocio**: no viaja en el fichero de configuración, no entra en las copias y no cambia el esquema. El modo claro queda igual que antes y el chat web que ven los clientes finales no cambia nada ([sección 2.6](#26-configuración-del-negocio-en-el-panel-de-producción)) |
+| 014 | Modo oscuro del panel del operador | Completada (2026-10-13) | No venía de ninguna propuesta de esta sección: es una mejora de comodidad del panel, pensada además para comprobar que el núcleo se puede ampliar y actualizar con instancias ya desplegadas. El panel sigue la preferencia de color del sistema y ofrece un control de tres opciones —Automático, Claro, Oscuro— en la barra superior y en la pantalla de acceso; la elección vive en una cookie del navegador del operador, así que **no es configuración del negocio**: no viaja en el fichero de configuración, no entra en las copias y no cambia el esquema. El modo claro queda igual que antes y el chat web que ven los clientes finales no cambia nada ([sección 2.6](#26-configuración-del-negocio-en-el-panel-de-producción)). Desplegada como **0.1.2** el 2026-10-13 en las dos instancias, por tandas |
 | 016 | Resistencia a los cortes de la base de datos y verificación de copias por socket | Completada (2026-10-09) | No venía de ninguna propuesta de esta sección: es una **corrección** de dos fallos del núcleo que destapó la fase 9 del despliegue. Una instancia ya arrancada sobrevive a un corte de su base de datos sin reiniciarse y sigue respondiendo al cliente final con el teléfono de emergencia por los dos canales; `/health` gana el estado `db_unavailable` con **200**, que no es motivo de reinicio ([sección 5](#5-actualizar-el-núcleo)); `db:verify` funciona con las direcciones **sin nombre de servidor** del despliegue real y sus motivos de fallo distinguen dirección, conexión y creación ([sección 8](#8-copias-de-seguridad-guía-de-validación)); el chat web nunca se queda indicando espera; y dos comprobaciones del operador que la forma de dirección de producción silenciaba —calidad de la contraseña de la base de datos y prohibición del usuario `postgres`— vuelven a aplicarse ([sección 2.4](#24-completar-y-validar-pnpm-instancecheck)) |
 
 Todas están completadas. Quedan aplazadas la evaluación de audios de la 002 (T083), que se hace

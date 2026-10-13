@@ -17,7 +17,7 @@ Estados: especificada → planificada → en implementación → completada (o a
 | 011 | Diseño del chat web | Núcleo | Completada | `011-chat-design` | [spec](specs/011-chat-design/spec.md) · [plan](specs/011-chat-design/plan.md) · [tareas](specs/011-chat-design/tasks.md) | 2026-10-05  |
 | 012 | Protección frente a abuso y saturación | Núcleo | Completada | `012-abuse-protection` | [spec](specs/012-abuse-protection/spec.md) · [plan](specs/012-abuse-protection/plan.md) · [tareas](specs/012-abuse-protection/tasks.md) | 2026-10-06  |
 | 013 | Requisitos de despliegue seguro | Núcleo (operación) | Completada | `013-secure-deployment` | [spec](specs/013-secure-deployment/spec.md) · [plan](specs/013-secure-deployment/plan.md) · [tareas](specs/013-secure-deployment/tasks.md) | 2026-10-06  |
-| 014 | Modo oscuro del panel del operador | Núcleo | Completada (recorrido a mano y validación en producción pendientes) | `014-dark-mode-panel` | [spec](specs/014-dark-mode-panel/spec.md) · [plan](specs/014-dark-mode-panel/plan.md) · [tareas](specs/014-dark-mode-panel/tasks.md) | 2026-10-10  |
+| 014 | Modo oscuro del panel del operador | Núcleo | Completada | `014-dark-mode-panel` | [spec](specs/014-dark-mode-panel/spec.md) · [plan](specs/014-dark-mode-panel/plan.md) · [tareas](specs/014-dark-mode-panel/tasks.md) | 2026-10-13  |
 | 016 | Resistencia a los cortes de la base de datos y verificación de copias por socket | Núcleo (corrección) | Completada | `016-db-outage-resilience` | [spec](specs/016-db-outage-resilience/spec.md) · [plan](specs/016-db-outage-resilience/plan.md) · [tareas](specs/016-db-outage-resilience/tasks.md) | 2026-10-09  |
 
 ---
