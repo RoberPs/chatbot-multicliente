@@ -63,6 +63,20 @@ Hoy: `{ input, output, cacheWrite, cacheRead }`, todos `number`.
 **Cambio**: `cacheWrite` y `cacheRead` pasan a `number | null`, donde `null` significa **el
 proveedor no informa de este concepto** (FR-024), frente a `0`, que significa cero medido.
 
+**Regla crítica: `null` sale de la capacidad del proveedor, nunca de un campo ausente.** La
+distinción es por proveedor, no por respuesta:
+
+| Situación | Valor | Por qué |
+|---|---|---|
+| Gemini u OpenAI, escritura de caché | `null` | esos proveedores **nunca** informan del concepto |
+| Anthropic, respuesta que no escribió caché | **`0`** | Anthropic **sí** informa del concepto; esta respuesta no escribió nada, y eso es un cero medido |
+
+El adaptador de Anthropic hace hoy `u.cache_creation_input_tokens ?? 0` y **debe seguir
+haciéndolo**. Cambiarlo por `?? null` —la lectura literal de «null si no lo informa»— haría que una
+instancia de Anthropic sin escritura de caché mostrase «sin dato» donde hoy muestra `0`, afirmando
+en el panel que el modelo no informa de un dato del que sí informa. Es un cambio observable en
+producción y en la dirección contraria a FR-024.
+
 **Impacto**: `addTokenUsage` (`src/conversation/responder.ts`) tiene que sumar tratando `null` como
 «sin dato» y no como cero: la suma de `null` con `null` es `null`; la de `null` con un número es ese
 número, y el concepto pasa a estar parcialmente medido, que es el caso límite que la spec previó
@@ -82,21 +96,51 @@ distinguible de un consumo cero medido (`unmeasuredCalls == 0`).
 
 ## 2. Cambio en la base de datos
 
-### Migración `0009_unmeasured_usage.sql` — estrictamente aditiva
+### Migración `0009_unmeasured_usage.sql` — aditiva, con una relajación acotada
 
 ```text
+-- 1. Llamadas con respuesta que no informaron tokens (aditivo puro)
 ALTER TABLE model_usage
   ADD COLUMN unmeasured_calls smallint NOT NULL DEFAULT 0;
 
 ALTER TABLE model_usage
   ADD CONSTRAINT model_usage_unmeasured
   CHECK (unmeasured_calls >= 0 AND unmeasured_calls <= calls);
+
+-- 2. «No informado» deja de ser indistinguible de «cero medido»
+ALTER TABLE model_usage ALTER COLUMN cache_write_tokens DROP NOT NULL;
+ALTER TABLE model_usage ALTER COLUMN cache_read_tokens  DROP NOT NULL;
 ```
 
 **Por qué una columna y no `calls = 0`** (R11): la migración publicada `0006_usage.sql` tiene
 `CHECK (calls >= 1)`, y las migraciones publicadas no se editan nunca. Quitar ese `CHECK` para
 volver a ponerlo no es una migración de solo añadir y dejaría un `calls = 0` cuyo significado
 dependería de la fecha de la fila.
+
+**Por qué hay que quitar el `NOT NULL` de las dos columnas de caché**: sin eso, los tres estados que
+FR-024 exige distinguir **no son representables**. Las columnas eran `integer NOT NULL`, así que un
+«no informado» y un «cero medido» aterrizaban los dos como `0`, y la deducción que R15 encarga al
+panel —«si en el periodo no hay ni una fila que informe el concepto, sale sin dato»— era imposible
+de hacer. `unmeasured_calls` no sirve para esto: cuenta llamadas sin **ningún** dato de consumo, no
+distingue concepto por concepto.
+
+**Sobre la convención de «solo añadir»**: quitar un `NOT NULL` es una relajación, no una
+reescritura. No edita ninguna migración publicada, no toca ni una fila existente y no pierde ningún
+dato: toda fila anterior conserva su valor. Es la única excepción de la feature y está acotada a
+estas dos columnas.
+
+**Dos trampas de implementación que esto abre**:
+
+1. **El `CHECK` de tokens existente no hay que tocarlo.** `model_usage_tokens` comprueba
+   `cache_write_tokens >= 0`; con el valor a `NULL` la expresión da `NULL`, y un `CHECK` acepta todo
+   lo que no sea falso. Sigue valiendo tal cual.
+2. **El cálculo del coste sí hay que tocarlo, y si no se toca falla en silencio.** La sentencia de
+   `src/usage/meter.ts` suma `cacheWrite * precio + cacheRead * precio`. Con un `NULL` en medio, la
+   suma entera da `NULL`, `cost_pico` queda nulo mientras `currency` no lo queda, y eso **viola** la
+   restricción `model_usage_cost_currency`. La inserción fallaría, y como el medidor nunca lanza
+   —registra `usage_record_failed` y devuelve—, se perdería **todo** el registro de consumo de
+   Gemini y OpenAI sin que nadie se enterase. El coste debe tratar el nulo como cero
+   (`coalesce(…, 0)`) y **a la vez** persistir `NULL` en la columna del token.
 
 **Efecto en el histórico**: ninguno. Toda fila existente queda con `unmeasured_calls = 0`, que es
 exactamente lo que ocurrió: todas sus llamadas informaron tokens. El coste congelado no se toca
@@ -109,7 +153,16 @@ negocio, y no entra en la transferencia de configuración. No hay actualizador q
 
 `src/usage/summary.ts` suma hoy `calls`. Pasa a sumar también `unmeasured_calls`, y a decidir por
 periodo si un concepto de caché está **informado**, **no informado** o **parcialmente informado**,
-que es lo que el panel necesita para R15.
+que es lo que el panel necesita para R15. Ahora sí se puede deducir del dato:
+
+| En el periodo | Estado |
+|---|---|
+| Ninguna fila con el concepto no nulo | **no informado** → «sin dato» |
+| Todas las filas con el concepto no nulo | **informado** → la suma |
+| Unas sí y otras no | **parcialmente informado** → la suma más la marca de parcial |
+
+La suma ignora los nulos, como hace `sum()` de forma natural, así que un periodo parcial no
+subestima lo que sí se midió.
 
 ## 3. Estado en memoria
 

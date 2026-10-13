@@ -116,6 +116,48 @@ Cambios en las tareas (de 81 a **90**):
 - **Trazabilidad completa**: los **46 FR y los 12 SC** están ahora citados en al menos una tarea, y
   las 16 decisiones de investigación (R1–R16) también.
 
+### Iteración 5 (2026-10-13) — hueco de diseño en FR-024, decidido por el usuario
+
+Ningún ítem cambia de estado: 16/16 en verde. Salió al explicar qué significaba el «comportamiento
+idéntico» del punto de control (T024), no al cruzar identificadores, y por eso el `/speckit-analyze`
+no lo vio: no era una incoherencia entre los artefactos —los tres decían lo mismo— sino entre los
+artefactos y el código que ya existe.
+
+**El hueco**: FR-024 exige distinguir «cero medido» de «no informado», y R15 encargaba al panel
+deducirlo de las filas registradas. Pero `cache_write_tokens` y `cache_read_tokens` son
+`integer NOT NULL` desde la migración 0006, así que los dos estados aterrizaban como `0`,
+indistinguibles. **FR-024 y R15 no eran implementables con el modelo de datos escrito.**
+
+**Decisión del usuario: opción A.** La migración 0009 quita el `NOT NULL` de esas dos columnas.
+Es una relajación, no una reescritura —no edita nada publicado, no toca ninguna fila, no pierde
+datos— y queda como la única excepción de la feature a la convención de solo añadir. Se descartaron
+añadir columnas-bandera (aditivo puro pero más piezas que mantener coherentes) y deducir la
+capacidad del nombre del modelo (sin migración, pero mete una tabla de capacidades en la capa de
+presentación, que es casi lo que FR-006 y FR-008 prohíben).
+
+**Dos trampas que la decisión destapó**, las dos ya escritas en las tareas:
+
+- El cálculo del coste del medidor suma los cuatro conceptos. Con un `NULL` en medio la suma da
+  `NULL`, `cost_pico` queda nulo con `currency` no nulo, se viola `model_usage_cost_currency`, la
+  inserción falla y el medidor —que nunca lanza— se come el error: **se perdería todo el registro de
+  consumo de Gemini y OpenAI en silencio**. T022a lo cierra, T022b lo prueba.
+- El `CHECK` de tokens existente **no** hay que tocarlo: con el valor nulo la expresión da nulo y un
+  `CHECK` acepta todo lo que no sea falso. Anotado en T021a para que nadie lo «arregle».
+
+**Y la confusión de raíz, ahora explícita en los cinco documentos**: `null` significa «este
+proveedor no informa de este concepto» y sale de la tabla de capacidades; **no** significa «este
+campo venía ausente en esta respuesta». Anthropic omite el campo de escritura de caché cuando una
+respuesta no escribió nada, y el adaptador hace `?? 0`, que debe seguir igual. La lectura literal
+—`?? null`— habría hecho que una instancia de Anthropic mostrase «sin dato» donde hoy muestra `0`,
+afirmando en el panel algo falso sobre el proveedor. T030a prueba las dos direcciones.
+
+También se corrigió la redacción de T024 y de la cabecera de la fase 2: el «comportamiento
+idéntico» era demasiado absoluto y contradecía a T019. Lo exigible es que **nada observable cambie
+para una instancia de Anthropic**, lo cual se sostiene porque los estados nuevos solo son
+alcanzables con los proveedores que aún no existen.
+
+Tareas: de 90 a **94** (T021a, T022a, T022b, T030a).
+
 ### Decisiones cerradas con valor razonable (sin preguntar)
 
 Escritas en **Assumptions** y en los FR correspondientes:

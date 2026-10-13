@@ -34,10 +34,13 @@ que las bloquea.
 - **En `src/` no puede haber nombres ni lógica de sector o cliente.** Un proveedor de modelo no es
   un sector, pero el nombre de su variable de credencial **solo** puede aparecer en `src/llm/`
   (FR-006, SC-008), y eso lo vigila una prueba estática (T073).
-- **Una sola migración, estrictamente aditiva** (`0009_unmeasured_usage.sql`). Las migraciones
-  publicadas no se editan nunca. **`formatVersion` de `src/config-transfer/format.ts` NO sube** y no
-  hay actualizador nuevo: `model_usage` es registro de consumo, no configuración del negocio (R11,
-  FR-037).
+- **Una sola migración** (`0009_unmeasured_usage.sql`), con dos partes: una columna nueva, y la
+  **única excepción de la feature** a la convención de solo añadir —quitar el `NOT NULL` de las dos
+  columnas de caché, sin lo cual FR-024 no se puede cumplir—. Relaja, no reescribe: ninguna
+  migración publicada se edita, ninguna fila se toca y ningún dato se pierde (R11,
+  [data-model.md](data-model.md) §2). **`formatVersion` de `src/config-transfer/format.ts` NO sube**
+  y no hay actualizador nuevo: `model_usage` es registro de consumo, no configuración del negocio
+  (FR-037).
 - **Variables de entorno nuevas**: `LLM_PROVIDER`, `GEMINI_API_KEY`, `OPENAI_API_KEY`. Los entornos
   de las dos instancias desplegadas **no se tocan**: sin `LLM_PROVIDER` equivale a `anthropic`
   (FR-003), y `ANTHROPIC_API_KEY` conserva su nombre.
@@ -61,9 +64,16 @@ que las bloquea.
 
 ## Phase 2: Foundational (prerequisitos que bloquean todas las historias)
 
-**Purpose**: la costura única y la forma del consumo. **Al terminar esta fase el comportamiento
-tiene que ser idéntico al de hoy y la suite entera seguir en verde**: es refactor puro y es el
-punto de control más valioso de la feature.
+**Purpose**: la costura única y la forma del consumo. **Al terminar esta fase, nada de lo
+observable puede haber cambiado para una instancia de Anthropic** —mismas respuestas, mismos
+números en el panel, mismos avisos, mismo veredicto de `instance:check`— y la suite entera tiene
+que seguir en verde. Por dentro el código cambia bastante; por fuera, nadie nota nada.
+
+Eso es posible porque los estados nuevos —`null` en un concepto de caché y las llamadas no
+medidas— **solo son alcanzables con los proveedores que todavía no existen**. Es el punto de
+control más valioso de la feature: es el único momento en que la suite actual sirve de juez, porque
+describe el comportamiento de hoy. En cuanto haya tres adaptadores, un fallo ya no distingue entre
+«lo rompió el refactor» y «lo rompió el adaptador nuevo».
 
 **⚠️ CRÍTICO**: ninguna historia puede empezar antes de que esta fase esté completa.
 
@@ -87,15 +97,18 @@ punto de control más valioso de la feature.
 
 ### La forma del consumo (R11)
 
-- [ ] T016 Cambiar `TokenUsage` en `src/conversation/ports.ts` para que `cacheWrite` y `cacheRead` admitan `null` («el proveedor no informa»), distinto de `0` («cero medido»), según [data-model.md](data-model.md) §1
+- [ ] T016 Cambiar `TokenUsage` en `src/conversation/ports.ts` para que `cacheWrite` y `cacheRead` admitan `null` («el proveedor no informa del concepto»), distinto de `0` («cero medido»), según [data-model.md](data-model.md) §1. **El `null` sale de la tabla de capacidades del proveedor, NO de un campo ausente en una respuesta**: el adaptador de Anthropic hace hoy `?? 0` y **debe seguir haciéndolo**, porque Anthropic sí informa del concepto y una respuesta que no escribió caché es un cero medido
 - [ ] T017 Cambiar `addTokenUsage` en `src/conversation/responder.ts` para que sume tratando `null` como «sin dato» y no como cero: `null + null = null`, `null + n = n` con el concepto marcado como parcialmente medido
 - [ ] T018 Añadir `unmeasuredCalls` a `ResponseUsage` en `src/usage/types.ts`, precisando que `calls` son las llamadas **con respuesta** y manteniendo la invariante `unmeasuredCalls <= calls`
 - [ ] T019 Cambiar el acumulador de `src/conversation/responder.ts` para que cuente en `calls` toda llamada con respuesta, cuente en `unmeasuredCalls` las que no informaron tokens, y **escriba registro de consumo siempre que haya habido respuesta**, aunque ninguna llamada informara nada (FR-025)
 - [ ] T020 Quitar de `src/llm/token-usage.ts` el importe de tipos del SDK de Anthropic: pasa a recibir un `TokenUsage` ya normalizado, y la extracción de campos se va a cada adaptador (FR-022, FR-023)
-- [ ] T021 Crear la migración aditiva `src/db/migrations/0009_unmeasured_usage.sql` que añade `unmeasured_calls smallint not null default 0` a `model_usage` con `CHECK (unmeasured_calls >= 0 AND unmeasured_calls <= calls)`, y regenerar el snapshot de drizzle-kit (FR-025b)
-- [ ] T022 Cambiar la sentencia de inserción de `src/usage/meter.ts` para escribir `unmeasured_calls`
+- [ ] T021 Crear `src/db/migrations/0009_unmeasured_usage.sql` con las **dos** partes de [data-model.md](data-model.md) §2: añadir `unmeasured_calls smallint not null default 0` con `CHECK (unmeasured_calls >= 0 AND unmeasured_calls <= calls)`, y quitar el `NOT NULL` de `cache_write_tokens` y `cache_read_tokens`. Regenerar el snapshot de drizzle-kit y reflejar la nulabilidad en `src/db/schema.ts` (FR-024, FR-025b)
+- [ ] T021a Dejar escrito en el comentario de cabecera de la migración **por qué** se relaja el `NOT NULL`: sin eso, «no informado» y «cero medido» son indistinguibles y FR-024 no se puede cumplir. Es la única excepción de la feature a la convención de solo añadir, no reescribe nada y no pierde ningún dato. **No** se toca el `CHECK` de tokens existente: con el valor nulo la expresión da nulo y un `CHECK` acepta todo lo que no sea falso
+- [ ] T022 Cambiar la sentencia de inserción de `src/usage/meter.ts` para escribir `unmeasured_calls` y para persistir `NULL` en las columnas de caché cuando el proveedor no informe del concepto
+- [ ] T022a En esa misma sentencia, hacer que el cálculo del coste trate el nulo como cero (`coalesce(…, 0)`) **a la vez** que persiste el `NULL` en la columna del token. Si no se hace, la suma del coste da `NULL`, `cost_pico` queda nulo con `currency` no nulo, se viola `model_usage_cost_currency`, la inserción falla y el medidor —que nunca lanza— se come el error: **se perdería todo el registro de consumo de Gemini y OpenAI en silencio**
+- [ ] T022b [P] Añadir en `tests/integration/usage/cache-null.test.ts` el test de que una respuesta de un proveedor que no informa de la escritura de caché deja `NULL` en esa columna **y** un `cost_pico` no nulo con su moneda
 - [ ] T023 [P] Añadir en `tests/integration/usage/unmeasured.test.ts` el test de que una respuesta sin información de consumo deja una fila con `calls >= 1`, `unmeasured_calls >= 1` y tokens a 0, **distinguible** de una fila de consumo cero medido (SC-005)
-- [ ] T024 Comprobar que `pnpm lint && pnpm typecheck && pnpm test` pasa entero con el comportamiento **idéntico** al de antes de la feature. **Punto de control de refactor puro**: si algo cambió de comportamiento, está mal
+- [ ] T024 **Punto de control.** Ejecutar `pnpm lint && pnpm typecheck && pnpm test` y mirar el resultado **antes de escribir una sola línea de Gemini o de OpenAI**. Lo exigible: la suite entera en verde y **nada observable cambiado para una instancia de Anthropic**. Lo que sí cambia a propósito en esta fase —que se registre consumo aunque una llamada no informe tokens (T019), y que los conceptos de caché puedan ser nulos (T016, T021)— **no es alcanzable con Anthropic**, que informa de los cuatro conceptos, así que no debe producir ninguna diferencia visible. Si la produce, está mal
 
 **Checkpoint**: la costura existe, el consumo sabe distinguir «sin dato» de cero, y nada ha cambiado de comportamiento. Las historias pueden empezar.
 
@@ -119,7 +132,8 @@ derivación a una persona, y ninguna pantalla del panel nombrando al proveedor
 - [ ] T028 [P] [US1] Escribir en `tests/unit/llm/reply-schema.test.ts` los tests de los dialectos `gemini` y `openai`, y en particular que el dialecto `openai` promueve **todo** opcional a requerido admitiendo `null` y pone `additionalProperties: false` en cada objeto (R7)
 - [ ] T029 [P] [US1] Escribir en `tests/unit/llm/chat-model.test.ts` la batería **común a los tres proveedores**: respuesta válida, respuesta que no es JSON, respuesta que no valida con Zod, rechazo, plazo agotado y fallo del proveedor, comprobando que cada caso produce la causa del dominio que fija [contracts/llm-provider.md](contracts/llm-provider.md) §3.3 (FR-014, FR-015, FR-016)
 - [ ] T029a [P] [US1] Añadir en `tests/unit/llm/chat-model.test.ts` el test de que, en los tres proveedores, **abortar la señal del dominio corta la petición** y produce `timeout`, y que el adaptador **no reintenta por su cuenta**: una petición fallida deja exactamente el número de intentos que el dominio espera (FR-020)
-- [ ] T030 [P] [US1] Escribir en `tests/unit/llm/token-usage.test.ts` los tests de extracción de consumo por proveedor, incluido **que en Gemini `thoughtsTokenCount` se suma a los tokens de salida** y que en Anthropic y OpenAI **no** se suma dos veces (R11)
+- [ ] T030 [P] [US1] Escribir en `tests/unit/llm/token-usage.test.ts` los tests de extracción de consumo por proveedor, incluido **que en Gemini `thoughtsTokenCount` se suma a los tokens de salida** y que en Anthropic y OpenAI **no** se suma dos veces (R11, FR-022, FR-023)
+- [ ] T030a [P] [US1] Añadir en `tests/unit/llm/token-usage.test.ts` el test de la regla que más fácil es romper: una respuesta de **Anthropic** sin escritura de caché —campo ausente— registra **`0`**, no `null`, y por tanto el panel no dirá «sin dato» de un proveedor que sí informa. Y la contraria: Gemini y OpenAI registran `null` en ese concepto **siempre**, también cuando sí hubo lectura de caché (FR-024)
 - [ ] T031 [P] [US1] Escribir en `tests/integration/handoff/summarizer-providers.test.ts` el test de que el resumen de derivación funciona con los tres proveedores (FR-013a)
 
 ### Implementación de US1

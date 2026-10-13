@@ -9,10 +9,14 @@ Qué se registra y qué se muestra cuando el proveedor no informa de lo que el m
 
 | Estado | Significado | Cómo se representa |
 |---|---|---|
-| Medido | el proveedor informó un número | el número, y `unmeasured_calls` no crece |
-| Medido en cero | el proveedor informó explícitamente cero | `0`, con `unmeasured_calls` sin crecer |
-| **No informado** | el proveedor no informa de este concepto | `null` en `TokenUsage`; en la fila, el concepto queda a 0 pero sin fila que lo informe |
+| Medido | el proveedor informó un número | el número en la columna, y `unmeasured_calls` no crece |
+| Medido en cero | el proveedor informa del concepto, y en esta respuesta fue cero | **`0`** en la columna, con `unmeasured_calls` sin crecer |
+| **No informado** | el proveedor **no informa de este concepto nunca** | **`NULL`** en la columna (de ahí la relajación del `NOT NULL`, [data-model.md](data-model.md) §2) |
 | **No medido** | el proveedor no informó **nada** de esa llamada | `unmeasured_calls` crece y los tokens quedan a 0 |
+
+**El estado «no informado» es una propiedad del proveedor, no de la respuesta.** Anthropic omite el
+campo de escritura de caché cuando una respuesta no escribió nada: eso es **cero medido**, no «no
+informado». Solo Gemini y OpenAI producen `NULL` en ese concepto, porque no lo informan jamás.
 
 La distinción que importa: **cero medido** y **no informado** no pueden salir iguales en el panel
 (FR-024), y **consumo cero** y **no medido** no pueden salir iguales en el registro (FR-025b).
@@ -34,8 +38,14 @@ llamada con respuesta, aunque ninguna informara tokens.
 |---|---|
 | `calls` | llamadas con respuesta (≥ 1) |
 | `unmeasured_calls` | de esas, las que no informaron tokens (≥ 0, ≤ `calls`) |
-| `input_tokens`, `output_tokens`, `cache_*_tokens` | la suma de lo informado; 0 donde no hubo nada |
+| `input_tokens`, `output_tokens` | la suma de lo informado; 0 donde no hubo nada |
+| `cache_write_tokens`, `cache_read_tokens` | la suma de lo informado, `0` si el proveedor informa y fue cero, **`NULL` si el proveedor no informa del concepto** |
 | `cost_pico`, `currency` | el coste congelado con el precio vigente, como hoy |
+
+**El coste tiene que tratar el `NULL` como cero** (`coalesce`), y a la vez persistir `NULL` en la
+columna del token. Si no, la suma del coste da `NULL`, `cost_pico` queda nulo con `currency` no
+nulo, se viola `model_usage_cost_currency`, la inserción falla y el medidor —que nunca lanza— se
+come el error: se perdería **todo** el registro de consumo de Gemini y OpenAI sin que nadie lo note.
 
 **Coste de una llamada no medida**: 0, porque no hay tokens que valorar. Esto **no** es un coste
 real de 0 y por eso el aviso existe: lo que el panel dice es «hubo consumo que no se pudo valorar»,
@@ -67,10 +77,13 @@ Se calcula con `computeWarnings(state)` cada vez y no se guarda nunca, como todo
 
 | Caso en el periodo | Lo que se muestra |
 |---|---|
-| El concepto tiene al menos una fila que lo informa | el número |
-| Ninguna fila del periodo informa el concepto | **«sin dato»**, con nota genérica |
-| Unas filas lo informan y otras no | el número **más** la marca de parcial |
+| Todas las filas tienen el concepto no nulo | el número |
+| **Ninguna** fila tiene el concepto no nulo | **«sin dato»**, con nota genérica |
+| Unas filas sí y otras no | el número **más** la marca de parcial |
 | Hay `unmeasured_calls > 0` en el periodo | el recuento de respuestas no medidas, visible |
+
+La suma ignora los nulos, como hace `sum()` de forma natural, así que un periodo parcial no
+subestima lo que sí se midió.
 
 La nota genérica dice que **el modelo configurado** no informa de ese dato. **No** nombra al
 proveedor (FR-008).

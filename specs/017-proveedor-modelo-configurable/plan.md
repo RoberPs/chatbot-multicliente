@@ -43,8 +43,11 @@ Enfoque técnico (detalle en [research.md](research.md)):
    cada 5 minutos hasta salir sola.
 7. **Cero medido y «sin dato» dejan de ser lo mismo** (R11). `cacheWrite` no lo informan ni Gemini
    ni OpenAI. Y una respuesta sin información de consumo hoy **no deja registro ninguno**, que es un
-   cero silencioso justo donde vive el tope de gasto. Una migración estrictamente aditiva añade
-   `unmeasured_calls`, porque `calls = 0` lo prohíbe un `CHECK` ya publicado que no se puede editar.
+   cero silencioso justo donde vive el tope de gasto. La migración añade `unmeasured_calls` —no vale
+   `calls = 0`, que lo prohíbe un `CHECK` ya publicado y no editable— **y quita el `NOT NULL` de las
+   dos columnas de caché**, sin lo cual los tres estados que FR-024 exige distinguir no son
+   representables y la deducción del panel es imposible. Es la única excepción de la feature a la
+   convención de solo añadir: relaja, no reescribe.
 8. **Trampa de implementación cara de encontrar** (R11): en Gemini los tokens de razonamiento vienen
    **aparte** de los de salida. No sumarlos subestima el consumo y hace que el tope proteja menos de
    lo que cree.
@@ -57,8 +60,9 @@ Enfoque técnico (detalle en [research.md](research.md)):
 libphonenumber-js, `@anthropic-ai/sdk` (ya presente) y **dos dependencias nuevas**: `openai` y
 `@google/genai` (R16, versiones fijadas)
 
-**Storage**: PostgreSQL 16, una BD por instancia, sin `tenant_id`. Una migración aditiva
-(`0009_unmeasured_usage.sql`)
+**Storage**: PostgreSQL 16, una BD por instancia, sin `tenant_id`. Una migración
+(`0009_unmeasured_usage.sql`): aditiva, más la relajación del `NOT NULL` de las dos columnas de
+caché que FR-024 hace imprescindible
 
 **Testing**: Vitest — unitarias, de contrato (`fastify.inject`) e integración (Testcontainers).
 Dobles de proveedor en `tests/fixtures/llm/`, sin red ni credenciales (R13). `pnpm test:eval` con

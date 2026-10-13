@@ -78,12 +78,18 @@ adaptador que mire solo el estado lo tomará por una respuesta válida vacía.
 | Concepto | Obligatoriedad |
 |---|---|
 | `input` y `output` | **Siempre** que el proveedor informe. En Gemini, `output` incluye los tokens de razonamiento, que vienen aparte y hay que sumar |
-| `cacheRead` | número si el proveedor lo informa; `null` si no |
-| `cacheWrite` | número solo en `anthropic`; `null` en los otros dos |
+| `cacheRead` | número en los tres; los tres informan del concepto |
+| `cacheWrite` | número en `anthropic`, **también cuando la respuesta no escribió caché, donde es `0`**; `null` en los otros dos, que no informan del concepto nunca |
 | Respuesta sin ninguna información de consumo | `onUsage` **no** se llama, y el responder registra la llamada como no medida (FR-025) |
 
 `onUsage` se llama **una vez por llamada que informó tokens**, antes de devolver o lanzar, como ya
 exige el puerto hoy.
+
+**Regla que no se puede confundir**: `null` significa «este proveedor no informa de este concepto»,
+y sale de la tabla de capacidades. **No** significa «este campo venía ausente en esta respuesta».
+Anthropic omite el campo de escritura de caché cuando una respuesta no escribió nada, y eso es un
+**cero medido**: el adaptador hace hoy `?? 0` y debe seguir haciéndolo. Mapearlo a `null` haría que
+el panel dijese «sin dato» sobre un proveedor que sí informa.
 
 ## 4. Variables de entorno
 

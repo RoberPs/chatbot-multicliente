@@ -289,20 +289,44 @@ OpenAI el razonamiento ya va dentro de los tokens de salida, así que **no** se 
 **Decisión sobre `src/llm/token-usage.ts`**: deja de importar tipos del SDK de Anthropic (FR-023).
 Pasa a recibir un `TokenUsage` ya normalizado, y la extracción de los campos vive en cada adaptador.
 
+**`null` viene de la capacidad del proveedor, no de un campo ausente.** Anthropic **sí** informa de
+la escritura de caché; cuando una respuesta concreta no escribió nada, el campo llega ausente y el
+adaptador hace hoy `?? 0`. Eso debe seguir igual: es un **cero medido**. El `null` se reserva para
+Gemini y OpenAI, que no informan del concepto nunca. Si se cambiara ese `?? 0` por `?? null`, una
+instancia de Anthropic sin escritura de caché pasaría a mostrar «sin dato» donde hoy muestra `0`, y
+el panel afirmaría que el modelo no informa de un dato del que sí informa.
+
 **El estado «no medido» y la migración.** `ResponseUsage` ya tiene `calls`, que cuenta las llamadas
 que **informaron** tokens (`src/conversation/responder.ts:379`). La tentación es usar `calls = 0`
 como discriminador, y **no se puede**: la migración publicada `0006_usage.sql:28` tiene
 `CONSTRAINT model_usage_calls CHECK (calls >= 1)`, y las migraciones publicadas no se editan nunca.
 
-**Decisión**: una migración **estrictamente aditiva** que añade a `model_usage` una columna
-`unmeasured_calls smallint not null default 0`, con `CHECK (unmeasured_calls >= 0)`. El significado
-de `calls` se precisa sin cambiarlo: llamadas con respuesta. Para todo lo ya registrado,
-`unmeasured_calls = 0` y `calls` significa exactamente lo que significaba, así que **el histórico no
-se reinterpreta** (FR-026).
+**Decisión**: una migración con dos partes, detalladas en [data-model.md](data-model.md) §2.
 
-**Razón de no relajar la restricción existente**: quitar un `CHECK` publicado para volver a ponerlo
-no es una migración de solo añadir, y dejaría el histórico con un `calls = 0` cuyo significado
-depende de la fecha. La columna nueva es más barata de entender y de probar.
+1. **Aditiva**: una columna `unmeasured_calls smallint not null default 0` en `model_usage`. El
+   significado de `calls` se precisa sin cambiarlo: llamadas con respuesta. Para todo lo ya
+   registrado, `unmeasured_calls = 0` y `calls` significa exactamente lo que significaba, así que
+   **el histórico no se reinterpreta** (FR-026).
+2. **Relajación acotada**: quitar el `NOT NULL` de `cache_write_tokens` y `cache_read_tokens`.
+
+**Razón de no relajar el `CHECK (calls >= 1)`**: quitar un `CHECK` publicado para volver a ponerlo
+dejaría el histórico con un `calls = 0` cuyo significado depende de la fecha de la fila. La columna
+nueva es más barata de entender y de probar.
+
+**Razón de sí quitar el `NOT NULL` de las dos columnas de caché**: sin eso, los tres estados que
+FR-024 exige distinguir **no son representables**. Con `integer NOT NULL`, un «no informado» y un
+«cero medido» aterrizan los dos como `0`, y la deducción que R15 encarga al panel es imposible.
+`unmeasured_calls` no cubre este caso: cuenta llamadas sin **ningún** dato de consumo, no distingue
+concepto por concepto. Quitar un `NOT NULL` es una relajación, no una reescritura: no edita ninguna
+migración publicada, no toca ninguna fila y no pierde ningún dato. Es la única excepción de la
+feature a la convención de solo añadir, y está acotada a estas dos columnas.
+
+**Trampa que esto abre, y que hay que cerrar en el medidor**: la sentencia de inserción de
+`src/usage/meter.ts` calcula el coste sumando los cuatro conceptos por su precio. Con un `NULL` en
+medio, la suma entera da `NULL`, `cost_pico` queda nulo mientras `currency` no, y eso **viola** la
+restricción `model_usage_cost_currency`. La inserción fallaría y el medidor, que nunca lanza, se
+comería el error: **se perdería todo el registro de consumo de Gemini y OpenAI en silencio**. El
+coste tiene que tratar el nulo como cero y a la vez persistir `NULL` en la columna del token.
 
 **Sin subir `formatVersion`** (FR-037): `model_usage` es registro de consumo, no configuración del
 negocio. No entra en la transferencia de configuración, así que no hay actualizador que escribir. El
@@ -364,6 +388,14 @@ concepto sale como «sin dato».
 **Razón**: cumple FR-024 y FR-008 a la vez. El panel no necesita saber quién es el proveedor para
 saber que un dato no llegó, y deducirlo de lo registrado evita tener que pasar la identidad del
 proveedor a la capa de presentación, que es justo lo que FR-006 prohíbe.
+
+**Lo que hace posible esa deducción** es la segunda parte de la migración de R11: con las columnas
+de caché nulables, «no informado» es `NULL` y «cero medido» es `0`, y el periodo se clasifica
+contando filas con el concepto no nulo. Sin esa relajación, esta decisión no se podía implementar.
+
+**Alternativa descartada**: deducir la capacidad del nombre del modelo, que ya está en cada fila.
+No necesita migración, pero mete una tabla de capacidades por modelo en la capa de presentación, que
+es casi exactamente lo que FR-006 y FR-008 prohíben.
 
 ## R16 · SDK o `fetch` para los dos proveedores nuevos
 
