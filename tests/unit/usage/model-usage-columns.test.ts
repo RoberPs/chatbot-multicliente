@@ -15,6 +15,8 @@ const ALLOWED = [
   'purpose',
   'model',
   'calls',
+  // 017: llamadas con respuesta que no informaron tokens (un recuento, no identifica a nadie).
+  'unmeasured_calls',
   'input_tokens',
   'output_tokens',
   'cache_write_tokens',

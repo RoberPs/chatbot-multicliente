@@ -148,7 +148,7 @@ describe('consumo (010) con 50 000 registros en el mes', () => {
         channel: 'whatsapp',
         purpose: 'reply',
         model: TEST_LLM_MODEL,
-        usage: { calls: 1, tokens: tokens(1200, 300, 0, 800) },
+        usage: { calls: 1, unmeasuredCalls: 0, tokens: tokens(1200, 300, 0, 800) },
         at: now,
         timezone: 'Europe/Madrid',
       });

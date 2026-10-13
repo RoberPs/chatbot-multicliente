@@ -1,21 +1,21 @@
 /**
- * Tokens de una respuesta de Anthropic en la forma del dominio (010, R1). Los tokens de
- * razonamiento ya van dentro de `output_tokens`; la caché ausente o nula cuenta como 0.
+ * Aviso del consumo de una llamada al puerto que lo registra (010, R1).
+ *
+ * 017 (FR-022, FR-023): este módulo ya **no sabe de ningún proveedor**. Recibe un `TokenUsage` ya
+ * normalizado y la extracción de los campos vive en cada adaptador, que es el único que conoce la
+ * forma de la respuesta de su API.
  */
-import type Anthropic from '@anthropic-ai/sdk';
 import type { TokenUsage } from '../usage/types.js';
 
-/** Avisa a `onUsage` con los tokens de `response`, si el proveedor los informa. */
+/**
+ * Avisa a `onUsage` con `usage`, si el proveedor informó algo. Un `null` o `undefined` significa
+ * que esa llamada **no informó ningún token**: no se avisa, y el responder la cuenta como llamada
+ * no medida (FR-025).
+ */
 export function reportUsage(
-  response: Pick<Anthropic.Message, 'usage'>,
+  usage: TokenUsage | null | undefined,
   onUsage: ((usage: TokenUsage) => void) | undefined,
 ): void {
-  const u = response.usage as Anthropic.Usage | undefined;
-  if (!onUsage || !u) return;
-  onUsage({
-    input: u.input_tokens,
-    output: u.output_tokens,
-    cacheWrite: u.cache_creation_input_tokens ?? 0,
-    cacheRead: u.cache_read_input_tokens ?? 0,
-  });
+  if (!onUsage || !usage) return;
+  onUsage(usage);
 }

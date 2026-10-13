@@ -9,13 +9,19 @@ const PICO_PER_CENT = 10_000_000_000n;
 const MAX_PRICE_MICROS = 1_000_000_000_000n; // 1 000 000 por MTok
 const MAX_CAP_CENTS = 1_000_000_000; // 10 000 000 de la moneda
 
-/** Coste exacto de unos tokens con un precio, en billonésimas. */
+/**
+ * Coste exacto de unos tokens con un precio, en billonésimas.
+ *
+ * 017: un concepto **no informado** vale cero a efectos de coste —no hay tokens que valorar—, y
+ * eso no lo convierte en un cero medido: el `null` se conserva en la columna del token, que es lo
+ * que el panel lee para decir «sin dato» (FR-024).
+ */
 export function costPico(tokens: TokenUsage, price: ModelPrice): bigint {
   return (
     BigInt(tokens.input) * price.inputMicros +
     BigInt(tokens.output) * price.outputMicros +
-    BigInt(tokens.cacheWrite) * price.cacheWriteMicros +
-    BigInt(tokens.cacheRead) * price.cacheReadMicros
+    BigInt(tokens.cacheWrite ?? 0) * price.cacheWriteMicros +
+    BigInt(tokens.cacheRead ?? 0) * price.cacheReadMicros
   );
 }
 

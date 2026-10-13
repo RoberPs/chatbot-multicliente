@@ -1,4 +1,14 @@
-/** Consumo de una respuesta: suma de los intentos del responder (010, R2; FR-002, FR-004). */
+/**
+ * Consumo de una respuesta: suma de los intentos del responder (010, R2; FR-002, FR-004).
+ *
+ * 017 (FR-025) cambia una regla a propósito: una llamada **con respuesta** que no informó tokens
+ * ya no desaparece del registro. Antes dejaba la respuesta sin consumo ninguno, y eso es un cero
+ * silencioso justo donde vive el tope de gasto. Ahora cuenta en `calls` y en `unmeasuredCalls`.
+ *
+ * Lo que **no** ha cambiado: el plazo agotado y el fallo de la API no son respuestas, así que no
+ * cuentan. Y con un proveedor que informa de los cuatro conceptos —el caso de Anthropic, el único
+ * alcanzable hoy en producción— `unmeasuredCalls` es siempre 0 y nada se ve distinto.
+ */
 import { describe, expect, it } from 'vitest';
 import { ChatModelError } from '../../../src/conversation/ports.js';
 import { createResponder } from '../../../src/conversation/responder.js';
@@ -42,7 +52,11 @@ describe('response.usage', () => {
   it('una llamada: calls = 1 con sus tokens', async () => {
     const { response } = await respond([{ reply: GROUNDED, usage: tokens(1000, 200, 0, 800) }]);
     expect(response.template).toBeUndefined();
-    expect(response.usage).toEqual({ calls: 1, tokens: tokens(1000, 200, 0, 800) });
+    expect(response.usage).toEqual({
+      calls: 1,
+      unmeasuredCalls: 0,
+      tokens: tokens(1000, 200, 0, 800),
+    });
   });
 
   it('reintento del verificador: un solo consumo con calls = 2 y los tokens sumados', async () => {
@@ -52,20 +66,25 @@ describe('response.usage', () => {
     ]);
     expect(model.calls).toHaveLength(2);
     expect(response.groundingRejections).toBe(1);
-    expect(response.usage).toEqual({ calls: 2, tokens: tokens(2100, 350, 500, 500) });
+    expect(response.usage).toEqual({
+      calls: 2,
+      unmeasuredCalls: 0,
+      tokens: tokens(2100, 350, 500, 500),
+    });
   });
 
-  it('un intento que no informa tokens no cuenta', async () => {
+  it('un intento que no informa tokens cuenta como llamada no medida (017, FR-025)', async () => {
     const { response } = await respond([
       { reply: UNGROUNDED, usage: null },
       { reply: GROUNDED, usage: tokens(900, 100) },
     ]);
-    expect(response.usage).toEqual({ calls: 1, tokens: tokens(900, 100) });
+    expect(response.usage).toEqual({ calls: 2, unmeasuredCalls: 1, tokens: tokens(900, 100) });
   });
 
-  it('sin tokens en ningún intento, usage es undefined', async () => {
+  it('sin tokens en ningún intento hay registro, con los tokens a 0 (017, FR-025)', async () => {
     const { response } = await respond([GROUNDED]);
-    expect(response.usage).toBeUndefined();
+    // Distinguible de un consumo cero medido, donde `unmeasuredCalls` sería 0 (SC-005).
+    expect(response.usage).toEqual({ calls: 1, unmeasuredCalls: 1, tokens: tokens(0, 0) });
   });
 
   it('R-SAFE tras dos rechazos conserva el consumo de los dos intentos', async () => {
@@ -74,7 +93,7 @@ describe('response.usage', () => {
       { reply: reply('Abrimos a las 6:15.'), usage: tokens(1000, 220) },
     ]);
     expect(response.template).toBe('R-SAFE');
-    expect(response.usage).toEqual({ calls: 2, tokens: tokens(2000, 420) });
+    expect(response.usage).toEqual({ calls: 2, unmeasuredCalls: 0, tokens: tokens(2000, 420) });
   });
 
   it('R-ERR tras una respuesta descartada con tokens conserva el consumo', async () => {
@@ -82,7 +101,7 @@ describe('response.usage', () => {
       { error: new ChatModelError('invalid_output'), usage: tokens(1000, 4000) },
     ]);
     expect(response.template).toBe('R-ERR');
-    expect(response.usage).toEqual({ calls: 1, tokens: tokens(1000, 4000) });
+    expect(response.usage).toEqual({ calls: 1, unmeasuredCalls: 0, tokens: tokens(1000, 4000) });
   });
 
   it('R-ERR sin respuesta del proveedor no tiene consumo', async () => {
@@ -97,7 +116,7 @@ describe('response.usage', () => {
       { error: new ChatModelError('api_error', 500) },
     ]);
     expect(response.template).toBe('R-ERR');
-    expect(response.usage).toEqual({ calls: 1, tokens: tokens(1000, 200) });
+    expect(response.usage).toEqual({ calls: 1, unmeasuredCalls: 0, tokens: tokens(1000, 200) });
   });
 
   it('las plantillas sin modelo no tienen consumo', async () => {

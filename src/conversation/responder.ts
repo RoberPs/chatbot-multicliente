@@ -9,6 +9,7 @@ import type { HandoffStep } from '../handoff/types.js';
 import type { KnowledgeSnapshot } from '../knowledge/types.js';
 import {
   addTokenUsage,
+  ZERO_TOKENS,
   type CapReason,
   type ResponseUsage,
   type TokenUsage,
@@ -373,19 +374,57 @@ export function createResponder(deps: ResponderDeps) {
       const start = clock.now().getTime();
       const elapsed = () => clock.now().getTime() - start;
       // Consumo de la respuesta: un registro con la suma de los intentos (010, R2).
-      let usage: ResponseUsage | undefined;
-      const onUsage = (tokens: TokenUsage) => {
-        usage = usage
-          ? { calls: usage.calls + 1, tokens: addTokenUsage(usage.tokens, tokens) }
-          : { calls: 1, tokens: { ...tokens } };
+      //
+      // 017 (FR-025): hasta ahora, una llamada que respondía **sin informar tokens** no dejaba
+      // registro ninguno, y eso es un cero silencioso justo donde vive el tope de gasto. Ahora
+      // `calls` cuenta toda llamada con respuesta y `unmeasuredCalls` las que no informaron nada,
+      // así que el registro se escribe igual y el operador sabe que la suma es incompleta.
+      let calls = 0;
+      let unmeasuredCalls = 0;
+      let tokens: TokenUsage | undefined;
+      const onUsage = (reported: TokenUsage) => {
+        calls += 1;
+        tokens = tokens === undefined ? { ...reported } : addTokenUsage(tokens, reported);
       };
-      const withUsage = (response: Response): Response =>
-        usage ? { ...response, usage } : response;
+      const usageOf = (): ResponseUsage | undefined =>
+        calls === 0 ? undefined : { calls, unmeasuredCalls, tokens: tokens ?? ZERO_TOKENS };
+      const withUsage = (response: Response): Response => {
+        const usage = usageOf();
+        return usage ? { ...response, usage } : response;
+      };
+      /**
+       * Una llamada del proveedor con la que **hubo respuesta**. El rechazo y la respuesta que no
+       * valida también lo son: el proveedor contestó y pudo cobrar. El plazo agotado y el fallo de
+       * la API, no.
+       */
+      const responded = (error: unknown): boolean =>
+        error instanceof ChatModelError &&
+        (error.reason === 'refusal' || error.reason === 'invalid_output');
+      const countUnmeasured = () => {
+        calls += 1;
+        unmeasuredCalls += 1;
+      };
+      const callModel = async (feedback?: string): Promise<ModelReply> => {
+        // `calls` solo crece desde `onUsage`: si no ha crecido, esta llamada no informó tokens.
+        const before = calls;
+        try {
+          const reply = await chatModel.reply(context, {
+            signal: controller.signal,
+            feedback,
+            onUsage,
+          });
+          if (calls === before) countUnmeasured();
+          return reply;
+        } catch (error) {
+          if (calls === before && responded(error)) countUnmeasured();
+          throw error;
+        }
+      };
       try {
         let reply: ModelReply;
         let feedback: string | undefined;
         for (let attempt = 1; ; attempt++) {
-          reply = await chatModel.reply(context, { signal: controller.signal, feedback, onUsage });
+          reply = await callModel(feedback);
           const guard = groundingGuard(reply.body, allowed);
           if (guard.ok) break;
           groundingRejections += 1;

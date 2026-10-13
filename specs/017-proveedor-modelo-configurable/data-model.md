@@ -53,7 +53,7 @@ obliga a escribir y la que fija las pruebas:
 | Razonamiento interno | sí | sí (no siempre apagable) | según modelo |
 | Marca explícita de caché | sí | no | no |
 | Tokens de lectura de caché | sí | sí | sí |
-| Tokens de escritura de caché | sí | **no informado** | **no informado** |
+| Tokens de escritura de caché | sí | **no informado** | sí (corregido, ver R11) |
 | Señal propia de rechazo | sí | sí (bloqueo de seguridad) | sí (elemento de contenido) |
 
 ### `TokenUsage` (ampliado)
@@ -68,7 +68,8 @@ distinción es por proveedor, no por respuesta:
 
 | Situación | Valor | Por qué |
 |---|---|---|
-| Gemini u OpenAI, escritura de caché | `null` | esos proveedores **nunca** informan del concepto |
+| Gemini, escritura de caché | `null` | ese proveedor **nunca** informa del concepto |
+| OpenAI, escritura de caché | número | **corregido en la implementación**: `openai` 7.32.0 declara `input_tokens_details.cache_write_tokens`, así que sí informa (R11) |
 | Anthropic, respuesta que no escribió caché | **`0`** | Anthropic **sí** informa del concepto; esta respuesta no escribió nada, y eso es un cero medido |
 
 El adaptador de Anthropic hace hoy `u.cache_creation_input_tokens ?? 0` y **debe seguir

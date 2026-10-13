@@ -4,6 +4,7 @@
  */
 import Anthropic from '@anthropic-ai/sdk';
 import type { HandoffSummarizer } from '../handoff/ports.js';
+import { anthropicTokenUsage } from './anthropic-usage.js';
 import { summaryInstructions, summaryUserTurn } from './summary-prompt.js';
 import { reportUsage } from './token-usage.js';
 
@@ -42,7 +43,7 @@ export function createAnthropicSummarizer(opts: AnthropicSummarizerOptions): Han
         { signal, timeout: REQUEST_TIMEOUT_MS, maxRetries: 0 },
       );
       // Hay respuesta: sus tokens cuentan aunque se descarte después (010, R1).
-      reportUsage(response, onUsage);
+      reportUsage(anthropicTokenUsage(response.usage), onUsage);
       if (response.stop_reason !== 'end_turn') {
         throw new Error(`Resumen sin terminar: ${response.stop_reason ?? 'desconocido'}`);
       }

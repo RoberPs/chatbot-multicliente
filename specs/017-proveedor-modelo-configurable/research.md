@@ -279,7 +279,30 @@ sin sentido.
 | `input` | `usage.input_tokens` | `usage.input_tokens` | `usageMetadata.promptTokenCount` |
 | `output` | `usage.output_tokens` (incluye razonamiento) | `usage.output_tokens` (incluye `output_tokens_details.reasoning_tokens`) | `candidatesTokenCount` + `thoughtsTokenCount` |
 | `cacheRead` | `cache_read_input_tokens` | `input_tokens_details.cached_tokens` | `cachedContentTokenCount` |
-| `cacheWrite` | `cache_creation_input_tokens` | **no informado** | **no informado** |
+| `cacheWrite` | `cache_creation_input_tokens` | `input_tokens_details.cache_write_tokens` (ver corrección) | **no informado** |
+
+**Corrección comprobada contra el SDK instalado (2026-10-13, durante la implementación).** Esta
+tabla daba por hecho que OpenAI no informa de la escritura de caché, y **es falso** con `openai`
+7.32.0: `ResponseUsage.InputTokensDetails` declara `cache_write_tokens: number`, **no opcional**,
+junto a `cached_tokens`. Comprobado en
+`node_modules/openai/resources/responses/responses.d.ts`.
+
+Consecuencias, y van en la dirección de FR-024, no en contra:
+
+- **OpenAI informa de los cuatro conceptos**, igual que Anthropic. Su `cacheWrite` es un **número**,
+  nunca `null`. Escribir `null` ahí sería exactamente el error que FR-024 prohíbe, en su versión
+  espejo: el panel afirmaría que el modelo no informa de un dato del que sí informa.
+- **El `null` queda solo para Gemini**, y eso sí está confirmado contra su SDK:
+  `GenerateContentResponseUsageMetadata` (`@google/genai` 2.29.0) no tiene ningún campo de escritura
+  de caché; solo `cachedContentTokenCount`, que es lectura.
+- La fila «Tokens de escritura de caché» de la tabla de capacidades de
+  [data-model.md](data-model.md) §1 pasa a ser: `anthropic` sí, `openai` sí, `gemini` **no
+  informado**.
+- Lo que **no** cambia: la relajación del `NOT NULL` sigue siendo imprescindible, porque Gemini sola
+  ya exige representar los tres estados. La migración, el medidor y el panel no se tocan.
+
+Confirmado también de Gemini en el mismo repaso: `thoughtsTokenCount` va **aparte** de
+`candidatesTokenCount`, como avisaba esta sección.
 
 **Aviso de implementación para Gemini**: los tokens de razonamiento se informan **aparte** en
 `thoughtsTokenCount` y no están dentro de `candidatesTokenCount`. Sumarlos es obligatorio: si no, el

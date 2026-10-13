@@ -600,12 +600,19 @@ export const modelUsage = pgTable(
     channel: customerChannel('channel').notNull(),
     purpose: usagePurpose('purpose').notNull(),
     model: text('model').notNull(),
-    /** Llamadas al modelo que informaron tokens en esta respuesta (reintento del verificador). */
+    /**
+     * Llamadas al modelo **con respuesta** en esta respuesta (reintento del verificador). 017: el
+     * significado se precisa sin cambiar; hasta la 017 toda llamada con respuesta informaba tokens.
+     */
     calls: smallint('calls').notNull(),
+    /** De esas, las que no informaron ningún token (017, FR-025b). El histórico queda en 0. */
+    unmeasuredCalls: smallint('unmeasured_calls').notNull().default(0),
     inputTokens: integer('input_tokens').notNull(),
     outputTokens: integer('output_tokens').notNull(),
-    cacheWriteTokens: integer('cache_write_tokens').notNull(),
-    cacheReadTokens: integer('cache_read_tokens').notNull(),
+    /** Nulo = el proveedor no informa del concepto; `0` = cero medido (017, FR-024). */
+    cacheWriteTokens: integer('cache_write_tokens'),
+    /** Nulo = el proveedor no informa del concepto; `0` = cero medido (017, FR-024). */
+    cacheReadTokens: integer('cache_read_tokens'),
     /** Billonésimas (10⁻¹²) de `currency`; nulo = sin precio al registrar (FR-012). */
     costPico: bigint('cost_pico', { mode: 'bigint' }),
     currency: char('currency', { length: 3 }),
@@ -616,6 +623,10 @@ export const modelUsage = pgTable(
     index('model_usage_day_idx').on(t.day),
     check('model_usage_audio_ms', sql`${t.audioMs} is null or ${t.audioMs} >= 0`),
     check('model_usage_calls', sql`${t.calls} >= 1`),
+    check(
+      'model_usage_unmeasured',
+      sql`${t.unmeasuredCalls} >= 0 and ${t.unmeasuredCalls} <= ${t.calls}`,
+    ),
     check(
       'model_usage_tokens',
       sql`${t.inputTokens} >= 0 and ${t.outputTokens} >= 0 and ${t.cacheWriteTokens} >= 0 and ${t.cacheReadTokens} >= 0`,

@@ -5,17 +5,36 @@
  */
 import type { Channel } from '../conversation/channels.js';
 
-/** Tokens que informa el proveedor en una llamada, o la suma de varias. Enteros ≥ 0. */
+/**
+ * Tokens que informa el proveedor en una llamada, o la suma de varias. Enteros ≥ 0.
+ *
+ * 017 (FR-024): en los dos conceptos de caché, `null` significa **el proveedor no informa de este
+ * concepto**, que no es lo mismo que `0`, «cero medido».
+ *
+ * **El `null` sale de la tabla de capacidades del proveedor, nunca de un campo ausente en una
+ * respuesta.** Anthropic sí informa de la escritura de caché; cuando una respuesta concreta no
+ * escribió nada el campo llega ausente, y eso es un cero medido. Mapearlo a `null` haría que el
+ * panel dijese «sin dato» de un proveedor que sí informa, que es justo al contrario de lo que
+ * FR-024 pide.
+ */
 export interface TokenUsage {
   input: number;
   output: number;
-  cacheWrite: number;
-  cacheRead: number;
+  cacheWrite: number | null;
+  cacheRead: number | null;
 }
 
-/** Consumo de una respuesta: llamadas que informaron tokens y su suma (R2). */
+/**
+ * Consumo de una respuesta (R2; 017, FR-025).
+ *
+ * `calls` son las llamadas **con respuesta**, no las que informaron tokens: el significado se
+ * precisa sin cambiar, porque hasta la 017 toda llamada con respuesta informaba tokens y el
+ * histórico queda con `unmeasuredCalls = 0`, que es exactamente lo que ocurrió.
+ */
 export interface ResponseUsage {
   calls: number;
+  /** De esas, las que no informaron ningún token. Invariante: `unmeasuredCalls <= calls`. */
+  unmeasuredCalls: number;
   tokens: TokenUsage;
 }
 
@@ -125,11 +144,23 @@ export interface UsageSummary {
 
 export const ZERO_TOKENS: TokenUsage = { input: 0, output: 0, cacheWrite: 0, cacheRead: 0 };
 
+/**
+ * Suma de dos conceptos de caché tratando `null` como **sin dato**, no como cero (017, FR-024):
+ * `null + null` sigue siendo `null`, y `null + n` es `n`, con lo que el concepto queda
+ * **parcialmente medido**. Sumar el `null` como cero lo convertiría en un dato que nadie midió, y
+ * el total diría que es exacto cuando no lo es.
+ */
+function addCacheConcept(a: number | null, b: number | null): number | null {
+  if (a === null) return b;
+  if (b === null) return a;
+  return a + b;
+}
+
 export function addTokenUsage(a: TokenUsage, b: TokenUsage): TokenUsage {
   return {
     input: a.input + b.input,
     output: a.output + b.output,
-    cacheWrite: a.cacheWrite + b.cacheWrite,
-    cacheRead: a.cacheRead + b.cacheRead,
+    cacheWrite: addCacheConcept(a.cacheWrite, b.cacheWrite),
+    cacheRead: addCacheConcept(a.cacheRead, b.cacheRead),
   };
 }

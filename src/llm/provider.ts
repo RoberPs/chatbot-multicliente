@@ -79,7 +79,11 @@ const DESCRIPTORS: Readonly<Record<LlmProvider, ProviderDescriptor>> = {
 };
 
 export function providerDescriptor(provider: LlmProvider): ProviderDescriptor {
-  const descriptor = DESCRIPTORS[provider];
+  // La búsqueda se hace con el tipo abierto a propósito: si llega un valor que no es de la tabla
+  // —de un entorno, de un inventario—, el mensaje nombra los tres en lugar de dar `undefined`.
+  const descriptor: ProviderDescriptor | undefined = (
+    DESCRIPTORS as Partial<Record<string, ProviderDescriptor>>
+  )[provider];
   if (!descriptor) throw new Error(ineligibleMessage(provider));
   return descriptor;
 }

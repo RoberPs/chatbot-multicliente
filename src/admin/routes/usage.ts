@@ -80,8 +80,12 @@ const cellsOf = (row: UsageRow, currency: string): string[] => [
   count(row.summaries),
   count(row.tokens.input),
   count(row.tokens.output),
-  count(row.tokens.cacheWrite),
-  count(row.tokens.cacheRead),
+  // 017: aquí es donde «sin dato» tiene que dejar de parecerse a un cero (FR-024). Lo pinta T065,
+  // con su nota genérica y sus totales marcados como incompletos; hasta entonces un concepto no
+  // informado sale como 0, y por eso el entorno de desarrollo se queda en un proveedor que informa
+  // de los cuatro conceptos.
+  count(row.tokens.cacheWrite ?? 0),
+  count(row.tokens.cacheRead ?? 0),
   costText(row, currency),
 ];
 

@@ -646,12 +646,15 @@ export function createHandoffService(deps: HandoffServiceDeps): HandoffService {
             logContext,
             ...(deps.summaryBudgetMs === undefined ? {} : { budgetMs: deps.summaryBudgetMs }),
             onUsage(usage) {
+              // Aquí solo se cuentan llamadas que informaron tokens, porque es lo único que este
+              // puerto comunica: `unmeasuredCalls` es 0 por construcción (017, FR-025).
               summaryUsage = summaryUsage
                 ? {
                     calls: summaryUsage.calls + 1,
+                    unmeasuredCalls: 0,
                     tokens: addTokenUsage(summaryUsage.tokens, usage),
                   }
-                : { calls: 1, tokens: usage };
+                : { calls: 1, unmeasuredCalls: 0, tokens: usage };
             },
           });
       await recordSummaryUsage(summaryUsage, input.channel, snapshot.business.timezone, logContext);

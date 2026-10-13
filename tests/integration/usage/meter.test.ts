@@ -28,7 +28,7 @@ const input = (overrides: Partial<UsageRecordInput> = {}): UsageRecordInput => (
   channel: 'whatsapp',
   purpose: 'reply',
   model: MODEL,
-  usage: { calls: 1, tokens: tokens(1200, 300, 500, 2000) },
+  usage: { calls: 1, unmeasuredCalls: 0, tokens: tokens(1200, 300, 500, 2000) },
   at: new Date('2026-09-24T08:00:00Z'),
   timezone: 'Europe/Madrid',
   ...overrides,
@@ -73,7 +73,7 @@ describe('UsageMeter.record', () => {
 
   it('con precio: coste = costPico y moneda de usage_settings', async () => {
     await setPrice(PRICE);
-    const record = input({ usage: { calls: 2, tokens: tokens(1200, 300, 500, 2000) } });
+    const record = input({ usage: { calls: 2, unmeasuredCalls: 0, tokens: tokens(1200, 300, 500, 2000) } });
     await meter().record(record);
 
     const [row] = await rows();

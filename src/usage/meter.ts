@@ -49,13 +49,25 @@ export function createUsageMeter(deps: UsageMeterDeps): UsageMeter {
   const { db, activityLog } = deps;
   return {
     async record(input, logContext) {
-      const { calls, tokens } = input.usage;
+      const { calls, unmeasuredCalls, tokens } = input.usage;
       try {
         // R5: una sola sentencia lee el precio vigente y la moneda y guarda el coste congelado.
         // El producto es `bigint` porque los precios lo son (billonésimas, R4).
+        //
+        // 017 (FR-024) — las dos mitades de la misma línea, y hacen falta las dos:
+        //
+        // a) En la **columna del token** se persiste el `NULL` tal cual, porque es lo que distingue
+        //    «el proveedor no informa del concepto» de «informa y fue cero».
+        // b) En el **cálculo del coste** el nulo cuenta como cero (`coalesce`), porque no hay
+        //    tokens que valorar.
+        //
+        // Si se olvidara (b), la suma entera daría NULL, `cost_pico` quedaría nulo con `currency`
+        // no nulo, se violaría `model_usage_cost_currency`, la inserción fallaría y el medidor
+        // —que nunca lanza— se comería el error: se perdería **todo** el registro de consumo de los
+        // proveedores que no informan de la escritura de caché, en silencio.
         const result = await db.execute(sql`
           insert into model_usage (
-            at, day, channel, purpose, model, calls,
+            at, day, channel, purpose, model, calls, unmeasured_calls,
             input_tokens, output_tokens, cache_write_tokens, cache_read_tokens,
             cost_pico, currency
           )
@@ -66,6 +78,7 @@ export function createUsageMeter(deps: UsageMeterDeps): UsageMeter {
             ${input.purpose}::usage_purpose,
             ${input.model},
             ${calls}::smallint,
+            ${unmeasuredCalls}::smallint,
             ${tokens.input}::integer,
             ${tokens.output}::integer,
             ${tokens.cacheWrite}::integer,
@@ -73,8 +86,8 @@ export function createUsageMeter(deps: UsageMeterDeps): UsageMeter {
             case when p.model is null then null else
               ${tokens.input}::bigint * p.input_micros_per_mtok
               + ${tokens.output}::bigint * p.output_micros_per_mtok
-              + ${tokens.cacheWrite}::bigint * p.cache_write_micros_per_mtok
-              + ${tokens.cacheRead}::bigint * p.cache_read_micros_per_mtok
+              + coalesce(${tokens.cacheWrite}::bigint, 0) * p.cache_write_micros_per_mtok
+              + coalesce(${tokens.cacheRead}::bigint, 0) * p.cache_read_micros_per_mtok
             end,
             case when p.model is null then null else s.currency end
           from usage_settings s

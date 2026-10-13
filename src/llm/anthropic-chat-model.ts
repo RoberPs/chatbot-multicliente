@@ -5,6 +5,7 @@
 import Anthropic from '@anthropic-ai/sdk';
 import { ChatModelError, type ChatModel } from '../conversation/ports.js';
 import { modelReplySchema, type ModelReply, type ReplyContext } from '../conversation/types.js';
+import { anthropicTokenUsage } from './anthropic-usage.js';
 import { buildPrompt } from './prompt.js';
 import { replyJsonSchema } from './reply-schema.js';
 import { reportUsage } from './token-usage.js';
@@ -54,7 +55,7 @@ export function createAnthropicChatModel(opts: AnthropicChatModelOptions): ChatM
       }
 
       // Hay respuesta: sus tokens cuentan aunque se descarte después (010, R1).
-      reportUsage(response, onUsage);
+      reportUsage(anthropicTokenUsage(response.usage), onUsage);
       if (response.stop_reason === 'refusal') throw new ChatModelError('refusal');
       if (response.stop_reason !== 'end_turn') throw new ChatModelError('invalid_output');
       const text = response.content
