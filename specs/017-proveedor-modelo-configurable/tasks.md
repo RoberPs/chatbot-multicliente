@@ -1,0 +1,343 @@
+---
+
+description: "Lista de tareas de la feature 017: proveedor del modelo configurable por instancia"
+---
+
+# Tasks: Proveedor del modelo configurable por instancia
+
+**Input**: documentos de diseño de `/specs/017-proveedor-modelo-configurable/`
+
+**Prerequisites**: [plan.md](plan.md), [spec.md](spec.md), [research.md](research.md) (R1–R16),
+[data-model.md](data-model.md), [contracts/](contracts/), [quickstart.md](quickstart.md)
+
+**Ámbito**: núcleo (afecta a todas las instancias).
+
+**Tests**: sí. La spec los exige por escrito (FR-038, SC-002, SC-011) y la constitución los exige
+para los Principios IV y V antes de cerrar cualquier feature que afecte a la conversación. Se
+necesitan `unit`, `contract` e `integration` (Testcontainers) **y** `eval`, esta última
+**obligatoria y por proveedor** (FR-035). Dentro de cada fase, **los tests se escriben primero y
+deben fallar antes de implementar**.
+
+**Organización**: por historia de usuario, en orden de prioridad: US1 y US2 (P1), US3 y US4 (P2),
+US5 (P3). Lo que comparten todas —la costura del proveedor y la forma del consumo— va en la fase 2,
+que las bloquea.
+
+## Formato: `[ID] [P?] [Story] Descripción`
+
+- **[P]**: se puede hacer en paralelo (ficheros distintos, sin dependencias pendientes)
+- **[Story]**: historia a la que pertenece (US1…US5)
+- Cada tarea indica la ruta exacta del fichero
+
+## Convenciones del proyecto que afectan a todas las tareas
+
+- Specs, comentarios, mensajes y textos, en español.
+- **En `src/` no puede haber nombres ni lógica de sector o cliente.** Un proveedor de modelo no es
+  un sector, pero el nombre de su variable de credencial **solo** puede aparecer en `src/llm/`
+  (FR-006, SC-008), y eso lo vigila una prueba estática (T073).
+- **Una sola migración, estrictamente aditiva** (`0009_unmeasured_usage.sql`). Las migraciones
+  publicadas no se editan nunca. **`formatVersion` de `src/config-transfer/format.ts` NO sube** y no
+  hay actualizador nuevo: `model_usage` es registro de consumo, no configuración del negocio (R11,
+  FR-037).
+- **Variables de entorno nuevas**: `LLM_PROVIDER`, `GEMINI_API_KEY`, `OPENAI_API_KEY`. Los entornos
+  de las dos instancias desplegadas **no se tocan**: sin `LLM_PROVIDER` equivale a `anthropic`
+  (FR-003), y `ANTHROPIC_API_KEY` conserva su nombre.
+- **Ninguna credencial, ni entera ni parcial, en ningún mensaje, registro o salida** (FR-032,
+  SC-004).
+- Ningún test hace red ni lee una credencial real (FR-038). Las credenciales reales solo se usan en
+  `pnpm test:eval` y en los recorridos a mano del quickstart.
+- Se despliega como **0.1.3**.
+
+---
+
+## Phase 1: Setup
+
+**Purpose**: dependencias y sitio para los dobles.
+
+- [ ] T001 Comprobar el emisor del certificado de `registry.npmjs.org` antes de instalar nada, con el comando de [quickstart.md](quickstart.md) §0; si el emisor es Avast, pedir al usuario que desactive su análisis HTTPS antes de seguir
+- [ ] T002 Añadir `openai` y `@google/genai` a `package.json` con versión fijada (sin rango) y actualizar `pnpm-lock.yaml` (R16)
+- [ ] T003 [P] Crear `tests/fixtures/llm/` con el README corto que explique que los dobles reproducen la forma **real** de cada API y por qué eso importa (R13)
+
+---
+
+## Phase 2: Foundational (prerequisitos que bloquean todas las historias)
+
+**Purpose**: la costura única y la forma del consumo. **Al terminar esta fase el comportamiento
+tiene que ser idéntico al de hoy y la suite entera seguir en verde**: es refactor puro y es el
+punto de control más valioso de la feature.
+
+**⚠️ CRÍTICO**: ninguna historia puede empezar antes de que esta fase esté completa.
+
+### La costura (R1)
+
+- [ ] T004 Crear `src/llm/provider.ts` con el tipo cerrado `LlmProvider`, la lista `LLM_PROVIDERS` y la tabla `ProviderDescriptor` (variable de credencial y si `LLM_MODEL` es obligatoria), según [contracts/llm-provider.md](contracts/llm-provider.md) §1
+- [ ] T005 [P] Escribir en `tests/unit/llm/provider.test.ts` los tests del clasificador `classifyKeyShape`: `sk-ant-` → anthropic, `sk-proj-` y `sk-` → openai, `AIza` y `AQ.` → gemini, forma desconocida → `null`, **y el caso de orden** que comprueba que una clave `sk-ant-…` no se clasifica como openai (R3)
+- [ ] T006 Implementar `classifyKeyShape` en `src/llm/provider.ts` con una única tabla de patrones, evaluando `sk-ant-` **antes** de `sk-`, y devolviendo `null` ante cualquier forma que no reconozca (R3, regla C4)
+- [ ] T007 Crear `src/llm/reply-schema.ts` moviendo `replyJsonSchema()` desde `src/llm/anthropic-chat-model.ts`, con el dialecto `anthropic` idéntico al actual (limpieza de `$schema`, `maxLength`, `minLength`, `default`)
+- [ ] T008 [P] Añadir en `tests/unit/llm/reply-schema.test.ts` un test de regresión que fije que el dialecto `anthropic` produce **exactamente** el mismo esquema que hoy
+- [ ] T009 Añadir a `src/llm/provider.ts` las fábricas `createChatModel(provider, opts)` y `createSummarizer(provider, opts)`, de momento solo con `anthropic`, devolviendo los adaptadores que ya existen
+
+### Entorno (R2)
+
+- [ ] T010 Añadir a `src/config/env.ts` el esquema de `LLM_PROVIDER` (los tres valores; ausente ⇒ `anthropic`), las variables `GEMINI_API_KEY` y `OPENAI_API_KEY`, y la regla de que `LLM_MODEL` es obligatoria salvo con `anthropic`, que conserva su valor por defecto
+- [ ] T011 Cambiar en `src/config/env.ts` las reglas que hoy exigen `ANTHROPIC_API_KEY` (el canal de WhatsApp y `EMERGENCY_CONTACT_PHONE`) para que exijan **la credencial del proveedor declarado**, nombrando su variable (FR-005)
+- [ ] T012 [P] Añadir en `tests/unit/config/env.test.ts` los tests de: entorno sin `LLM_PROVIDER` que sigue funcionando igual (FR-003), proveedor no elegible con mensaje que nombra los tres (FR-002), credencial del proveedor declarado ausente aunque haya otra presente (FR-004, FR-005), y `LLM_MODEL` ausente con proveedor distinto de `anthropic`
+- [ ] T013 Cambiar `src/config/secret-rules.ts` para que las reglas de calidad se apliquen a la variable de credencial del **proveedor declarado**, cualquiera que sea su nombre (FR-011)
+- [ ] T014 Cambiar `src/provisioning/fingerprint.ts` para que las tres variables de credencial se huellen con la misma clase, de modo que la reutilización del mismo secreto entre instancias se detecte aunque cada una declare un proveedor distinto (FR-012)
+- [ ] T015 [P] Añadir en `tests/unit/provisioning/fingerprint.test.ts` el test de dos instancias con proveedores distintos y la misma credencial, que debe seguir detectándose como secreto reutilizado
+
+### La forma del consumo (R11)
+
+- [ ] T016 Cambiar `TokenUsage` en `src/conversation/ports.ts` para que `cacheWrite` y `cacheRead` admitan `null` («el proveedor no informa»), distinto de `0` («cero medido»), según [data-model.md](data-model.md) §1
+- [ ] T017 Cambiar `addTokenUsage` en `src/conversation/responder.ts` para que sume tratando `null` como «sin dato» y no como cero: `null + null = null`, `null + n = n` con el concepto marcado como parcialmente medido
+- [ ] T018 Añadir `unmeasuredCalls` a `ResponseUsage` en `src/usage/types.ts`, precisando que `calls` son las llamadas **con respuesta** y manteniendo la invariante `unmeasuredCalls <= calls`
+- [ ] T019 Cambiar el acumulador de `src/conversation/responder.ts` para que cuente en `calls` toda llamada con respuesta, cuente en `unmeasuredCalls` las que no informaron tokens, y **escriba registro de consumo siempre que haya habido respuesta**, aunque ninguna llamada informara nada (FR-025)
+- [ ] T020 Quitar de `src/llm/token-usage.ts` el importe de tipos del SDK de Anthropic: pasa a recibir un `TokenUsage` ya normalizado, y la extracción de campos se va a cada adaptador (FR-023)
+- [ ] T021 Crear la migración aditiva `src/db/migrations/0009_unmeasured_usage.sql` que añade `unmeasured_calls smallint not null default 0` a `model_usage` con `CHECK (unmeasured_calls >= 0 AND unmeasured_calls <= calls)`, y regenerar el snapshot de drizzle-kit
+- [ ] T022 Cambiar la sentencia de inserción de `src/usage/meter.ts` para escribir `unmeasured_calls`
+- [ ] T023 [P] Añadir en `tests/integration/usage/unmeasured.test.ts` el test de que una respuesta sin información de consumo deja una fila con `calls >= 1`, `unmeasured_calls >= 1` y tokens a 0, **distinguible** de una fila de consumo cero medido
+- [ ] T024 Comprobar que `pnpm lint && pnpm typecheck && pnpm test` pasa entero con el comportamiento **idéntico** al de antes de la feature. **Punto de control de refactor puro**: si algo cambió de comportamiento, está mal
+
+**Checkpoint**: la costura existe, el consumo sabe distinguir «sin dato» de cero, y nada ha cambiado de comportamiento. Las historias pueden empezar.
+
+---
+
+## Phase 3: User Story 1 - Dar de alta una instancia con el proveedor elegido (Priority: P1) 🎯 MVP
+
+**Goal**: una instancia atiende clientes con cualquiera de los tres proveedores cambiando solo su
+fichero de entorno, y nada revela quién hay detrás.
+
+**Independent Test**: levantar una instancia con cada valor de `LLM_PROVIDER` y mantener una
+conversación completa por el chat web: mismo dato registrado, misma falta de dato reconocida, misma
+derivación a una persona, y ninguna pantalla del panel nombrando al proveedor
+([quickstart.md](quickstart.md) §2).
+
+### Tests de US1 ⚠️ primero, y deben fallar
+
+- [ ] T025 [P] [US1] Crear el doble de Gemini en `tests/fixtures/llm/gemini-double.ts`, con la forma real de su respuesta: `usageMetadata` con `promptTokenCount`, `candidatesTokenCount`, `thoughtsTokenCount` y `cachedContentTokenCount`, y sus señales de bloqueo por seguridad
+- [ ] T026 [P] [US1] Crear el doble de OpenAI en `tests/fixtures/llm/openai-double.ts`, con la forma real: `usage` con `input_tokens`, `output_tokens`, `input_tokens_details.cached_tokens` y `output_tokens_details.reasoning_tokens`, y **un rechazo como elemento de contenido con el estado en `completed`** (R10)
+- [ ] T027 [P] [US1] Crear el doble de Anthropic en `tests/fixtures/llm/anthropic-double.ts` extrayendo lo que ya usan los tests actuales, para que los tres compartan forma de uso
+- [ ] T028 [P] [US1] Escribir en `tests/unit/llm/reply-schema.test.ts` los tests de los dialectos `gemini` y `openai`, y en particular que el dialecto `openai` promueve **todo** opcional a requerido admitiendo `null` y pone `additionalProperties: false` en cada objeto (R7)
+- [ ] T029 [P] [US1] Escribir en `tests/unit/llm/chat-model.test.ts` la batería **común a los tres proveedores**: respuesta válida, respuesta que no es JSON, respuesta que no valida con Zod, rechazo, plazo agotado y fallo del proveedor, comprobando que cada caso produce la causa del dominio que fija [contracts/llm-provider.md](contracts/llm-provider.md) §3.3
+- [ ] T030 [P] [US1] Escribir en `tests/unit/llm/token-usage.test.ts` los tests de extracción de consumo por proveedor, incluido **que en Gemini `thoughtsTokenCount` se suma a los tokens de salida** y que en Anthropic y OpenAI **no** se suma dos veces (R11)
+- [ ] T031 [P] [US1] Escribir en `tests/integration/handoff/summarizer-providers.test.ts` el test de que el resumen de derivación funciona con los tres proveedores (FR-013a)
+
+### Implementación de US1
+
+- [ ] T032 [US1] Añadir a `src/llm/reply-schema.ts` el dialecto `gemini` (misma limpieza que anthropic) y el dialecto `openai` (limpieza más promoción de opcionales a requeridos admitiendo `null`, más `additionalProperties: false`)
+- [ ] T033 [US1] Crear `src/llm/gemini-chat-model.ts`: esquema en `generationConfig.responseFormat.text`, esfuerzo como nivel de razonamiento, extracción de consumo con la suma de los tokens de razonamiento, y traducción de sus bloqueos de seguridad a `refusal` (R7, R8, R10, R11)
+- [ ] T034 [US1] Crear `src/llm/openai-chat-model.ts`: esquema en `text.format` con modo estricto, esfuerzo como esfuerzo de razonamiento, **normalización de los `null` recibidos a «ausente»** antes de pasar el objeto a Zod para que los valores por defecto del dominio se apliquen igual, y detección del rechazo **por el tipo del elemento de contenido, no por el estado** (R7, R10)
+- [ ] T035 [US1] Implementar en `src/llm/openai-chat-model.ts` la degradación declarada del esfuerzo: si el proveedor rechaza el parámetro por no admitirlo, dejar **una** línea en el registro, reintentar **una** vez sin él y recordar la decisión para el resto de la vida del proceso (FR-017, R8)
+- [ ] T036 [P] [US1] Crear `src/llm/gemini-summarizer.ts` con el puerto `HandoffSummarizer` y su esquema de un solo campo obligatorio (R12)
+- [ ] T037 [P] [US1] Crear `src/llm/openai-summarizer.ts` con el puerto `HandoffSummarizer`; su esquema no sufre el problema del modo estricto porque su único campo es obligatorio (R12)
+- [ ] T038 [US1] Completar las fábricas de `src/llm/provider.ts` con los tres proveedores en los **dos** puertos, y hacer que un proveedor no elegible falle antes de construir nada, con los tres nombres en el mensaje (regla C5)
+- [ ] T039 [US1] Cambiar `src/bot.ts` para construir los dos puertos por fábrica con el proveedor declarado, y ajustar el aviso de arranque que hoy nombra `ANTHROPIC_API_KEY` para que nombre la variable del proveedor declarado
+- [ ] T040 [US1] Cambiar `src/cli/bot-chat.ts` para que `pnpm bot:chat` funcione con cualquier proveedor
+- [ ] T041 [P] [US1] Quitar el nombre de la variable de Anthropic de `src/webchat/availability.ts` y `src/channels/web/api.ts`, sustituyéndolo por el predicado genérico «hay credencial del modelo configurada»
+- [ ] T042 [P] [US1] Quitar el nombre de la variable de Anthropic de `src/admin/fastify-types.ts`, `src/admin/routes/playground.ts`, `src/admin/routes/web-chat.ts` y `src/admin/views/playground.eta` (FR-008)
+- [ ] T043 [P] [US1] Añadir en `tests/contract/admin/no-provider-leak.test.ts` el test de que ninguna pantalla del panel ni la información de estado publicada por red nombran al proveedor (FR-007, FR-008, SC-006)
+
+**Checkpoint**: US1 completa. El bot responde con los tres proveedores, deriva con los tres, y el panel no delata a ninguno.
+
+---
+
+## Phase 4: User Story 2 - La comprobación previa descubre una credencial que no corresponde (Priority: P1)
+
+**Goal**: una credencial que no corresponde al proveedor declarado se detecta antes de desplegar; y
+una credencial que el proveedor rechaza degrada la instancia en vez de fallar en silencio.
+
+**Independent Test**: pasar la comprobación sobre entornos preparados con credenciales cruzadas y
+comprobar que el resultado es no apto con el mensaje correcto y sin mostrar el valor; y arrancar una
+instancia con una credencial rechazada y comprobar que arranca degradada, avisa y se recupera sola
+([quickstart.md](quickstart.md) §3 y §4).
+
+### Tests de US2 ⚠️ primero, y deben fallar
+
+- [ ] T044 [P] [US2] Escribir en `tests/unit/provisioning/secrets.test.ts` los tests de severidad: credencial de otro proveedor elegible → `llm_key_other_provider` como **error**; forma no reconocida → `llm_key_format` como **aviso**; y la **regresión del fallo actual**, que hoy deja pasar una credencial de otro proveedor con un simple aviso
+- [ ] T045 [P] [US2] Escribir en `tests/unit/provisioning/check.test.ts` los tests de la tabla de decisión completa de [contracts/credential-verification.md](contracts/credential-verification.md) §4, incluido que `llm_key_unverified` («no se pudo comprobar») es **distinguible** de no haber pedido la validación (FR-030a)
+- [ ] T046 [P] [US2] Escribir en `tests/unit/llm/credential-probe.test.ts` los tests de clasificación del veredicto: 2xx → `accepted`, 401 y 403 → `rejected`, 5xx, fallo de red y plazo agotado → `inconclusive`
+- [ ] T047 [P] [US2] Escribir en `tests/integration/llm/credential-degraded.test.ts` el test del ciclo completo: credencial rechazada al arrancar → arranca, queda degradada, aviso crítico, y al pasar a aceptada sale del degradado sola, con **una** línea de registro al entrar y **una** al salir
+- [ ] T048 [P] [US2] Escribir el test de que ningún mensaje de la comprobación ni del registro contiene ningún carácter de ninguna credencial (FR-032, SC-004)
+
+### Implementación de US2
+
+- [ ] T049 [US2] Añadir a `src/provisioning/messages.ts` los códigos y textos de `llm_key_other_provider`, `llm_key_unused`, `llm_key_rejected` y `llm_key_unverified`, con mensaje, detalle y acción, sin mostrar valores
+- [ ] T050 [US2] Cambiar `src/provisioning/secrets.ts` para usar `classifyKeyShape`: emitir `llm_key_other_provider` como **`'error'`** cuando la credencial encaja con otro proveedor elegible, y dejar `llm_key_format` como aviso para la forma no reconocida (R4)
+- [ ] T051 [US2] Cambiar `src/provisioning/check.ts` para contemplar las tres variables de credencial en lugar de solo `ANTHROPIC_API_KEY`, y emitir `llm_key_unused` por cada credencial de otro proveedor elegible presente y sin usar (FR-033)
+- [ ] T052 [US2] Crear `src/llm/credential-probe.ts` con `verifyCredential(provider, apiKey, opts)`, la petición `GET` al listado de modelos de cada proveedor, las cabeceras propias de cada uno, plazo de 5 s, y la clasificación de [contracts/credential-verification.md](contracts/credential-verification.md) §1
+- [ ] T053 [US2] Verificar proveedor a proveedor que una credencial inválida devuelve 401 o 403, y fijarlo con prueba. **Si algún proveedor devolviera 2xx sin credencial válida**, usar para él la petición de generación más pequeña posible y anotar el coste en [research.md](research.md) R5
+- [ ] T054 [US2] Añadir la bandera `--validar-credencial` a `pnpm instance:check` en `src/cli/instance.ts` y `src/provisioning/check.ts`, **opt-in**: sin ella la comprobación sigue siendo local y sin red (FR-029, SC-009)
+- [ ] T055 [US2] Añadir a `src/llm/credential-probe.ts` el vigilante de dos estados con la forma de `src/db/outage.ts`: reintento cada 5 min mientras la credencial esté rechazada, una línea al entrar en degradado y una al salir, nunca una por petición (R6)
+- [ ] T056 [US2] Añadir a `src/usage/protection.ts` el estado de credencial rechazada, que degrada a «solo contacto del negocio» por el mismo camino que el modelo sin precio, y su aviso **crítico** en `computeWarnings` (FR-005b)
+- [ ] T057 [US2] Lanzar la comprobación del arranque desde `src/bot.ts` **sin bloquear**: `rejected` → degradado; `inconclusive` → arranca normal con una línea de registro; nunca fatal, nunca bucle de reinicio (FR-005a, FR-005c)
+- [ ] T058 [US2] Cambiar `src/provisioning/generate.ts` para que `pnpm instance:new` acepte el proveedor y emita la variable de credencial correspondiente en el entorno generado (FR-010)
+- [ ] T059 [US2] Registrar el proveedor declarado de cada instancia en el inventario (`src/provisioning/inventory.ts` y las órdenes que lo leen), **sin** registrar ninguna credencial (FR-009)
+
+**Checkpoint**: US2 completa. El agujero está cerrado por los dos lados: antes de desplegar y en el arranque.
+
+---
+
+## Phase 5: User Story 3 - El consumo y el tope de gasto siguen midiendo (Priority: P2)
+
+**Goal**: el operador ve el consumo con cualquier proveedor, y lo que el proveedor no informa se
+dice en lugar de darse por cero.
+
+**Independent Test**: con los dobles, comprobar qué queda registrado y qué avisos salen; y en el
+panel, que «sin dato» no se parece a un cero ([quickstart.md](quickstart.md) §5).
+
+### Tests de US3 ⚠️ primero, y deben fallar
+
+- [ ] T060 [P] [US3] Escribir en `tests/unit/usage/summary.test.ts` los tests de los tres estados por concepto —informado, no informado y parcialmente informado— y de que los totales **no** suman lo no informado como cero (FR-024, SC-012)
+- [ ] T061 [P] [US3] Escribir en `tests/unit/usage/protection.test.ts` los tests de severidad del aviso de consumo no medido: **crítico** con el tope activado y el negocio activo, normal en los demás casos, y **que nunca revierte ninguna escritura del operador** (FR-025a)
+- [ ] T062 [P] [US3] Escribir en `tests/contract/admin/usage-no-data.test.ts` el test de que la pantalla de consumo muestra «sin dato» y no `0`, con una nota que **no** nombra al proveedor
+
+### Implementación de US3
+
+- [ ] T063 [US3] Cambiar `src/usage/summary.ts` para agregar `unmeasured_calls` y decidir por periodo si cada concepto de caché está informado, no informado o parcialmente informado, deduciéndolo de lo registrado y **no** del nombre del proveedor (R15)
+- [ ] T064 [US3] Añadir a `src/usage/protection.ts` el aviso de consumo no medido con la severidad de FR-025a, calculado con `computeWarnings` y nunca guardado
+- [ ] T065 [US3] Cambiar `src/admin/views/usage.eta` para mostrar «sin dato» distinguible del cero, con la nota genérica, el recuento de respuestas no medidas, y los totales que incluyen un hueco marcados como incompletos
+- [ ] T066 [US3] Comprobar que el aviso de «modelo sin precio» y su degradación a solo contacto del negocio siguen funcionando igual al cambiar de proveedor, sin recalcular el histórico (FR-026, FR-027)
+
+**Checkpoint**: US3 completa. El tope de gasto protege lo que puede y el operador sabe cuándo la suma es incompleta.
+
+---
+
+## Phase 6: User Story 4 - Las diferencias entre proveedores están declaradas (Priority: P2)
+
+**Goal**: cada diferencia entre proveedores está escrita y tiene prueba, en lugar de aparecer como
+un comportamiento raro.
+
+**Independent Test**: para cada fila de la tabla de capacidades y cada proveedor, existe una prueba
+que fija el comportamiento declarado.
+
+- [ ] T067 [US4] Escribir la tabla de capacidades por proveedor en `docs/operacion-multicliente.md`, con las siete filas de [data-model.md](data-model.md) §1 y qué se conserva, qué se traduce y qué se degrada (FR-021)
+- [ ] T068 [P] [US4] Añadir en `tests/unit/llm/capabilities.test.ts` una prueba por fila de esa tabla y por proveedor, de modo que la documentación y el código no puedan separarse
+- [ ] T069 [US4] Comprobar que la degradación declarada del esfuerzo deja constancia en el arranque en los tres proveedores, y que el valor no se rechaza ni se silencia (FR-017)
+
+**Checkpoint**: US4 completa. Nada de lo que varía entre proveedores está sin escribir.
+
+---
+
+## Phase 7: User Story 5 - Ningún proveedor elegible sin evaluación (Priority: P3)
+
+**Goal**: ningún proveedor queda disponible para los clientes sin haber pasado la evaluación con el
+modelo real.
+
+**Independent Test**: existe un resultado de evaluación anotado por cada proveedor elegible, con su
+modelo, su esfuerzo y su fecha.
+
+- [ ] T070 [US5] Parametrizar `pnpm test:eval` por `LLM_PROVIDER` y `LLM_MODEL` para poder correrla por proveedor sin tocar código (R14)
+- [ ] T071 [US5] Correr la evaluación **una vez por proveedor** con el esfuerzo por defecto y anotar en `docs/operacion-multicliente.md` proveedor, modelo, esfuerzo, fecha y veredicto. **Cuesta dinero y está fuera de `pnpm test` a propósito**
+- [ ] T072 [US5] Para cada proveedor que no alcance el criterio: darle un `LLM_EFFORT` por defecto propio, razonado y escrito, y **reevaluar**. Si tras el ajuste sigue sin alcanzarlo, **no declararlo elegible** en esta versión y escribir por qué (FR-036, FR-036a)
+
+**Checkpoint**: US5 completa. Lo que se ofrece está medido.
+
+---
+
+## Phase 8: Polish y asuntos transversales
+
+- [ ] T073 Añadir la prueba estática en `tests/unit/llm/seam.test.ts` que recorre `src/`, excluye `src/llm/`, y falla si encuentra el nombre de una variable de credencial de proveedor o un importe de un SDK de proveedor (reglas C1 y C2, SC-008)
+- [ ] T074 Migrar los 28 ficheros de `tests/` que nombran `ANTHROPIC_API_KEY` para que usen los dobles y las fábricas, sin perder ninguna cobertura existente
+- [ ] T075 [P] Actualizar `.env.example` con `LLM_PROVIDER`, las tres variables de credencial y la nueva obligatoriedad de `LLM_MODEL`, con comentarios en español
+- [ ] T076 [P] Actualizar `docs/operacion-multicliente.md`: la tabla de specs realizadas (§9.1, con su fecha), **la anotación de que la 017 adelanta a P7 con su razón (§9.2)**, la propuesta que cubre marcada como hecha, y las secciones de operación que cambien —alta de instancia, comprobación previa y pantalla de consumo—
+- [ ] T077 [P] Anotar en `docs/plan-despliegue-produccion.md` §6 que la decisión del 2026-10-12 queda implementada en la 017
+- [ ] T078 **Avisar al usuario antes** y luego actualizar `README.md` con el estado de la feature 017
+- [ ] T079 Subir `package.json` a **0.1.3**
+- [ ] T080 Recorrer [quickstart.md](quickstart.md) completo, §1 a §6, y anotar el resultado real de cada apartado, sin redondear
+- [ ] T081 Pasar la puerta de calidad entera: `pnpm lint && pnpm typecheck && pnpm test` y la evaluación por proveedor, y **contar al usuario el resultado real** antes de dar la feature por cerrada
+
+---
+
+## Dependencies y orden de ejecución
+
+### Dependencias entre fases
+
+- **Phase 1 (Setup)**: sin dependencias. T001 **antes** de T002, siempre.
+- **Phase 2 (Foundational)**: depende de Setup. **Bloquea todas las historias.** Su punto de control
+  (T024) no es opcional: es lo que garantiza que el refactor no cambió nada.
+- **Phase 3 (US1)** y **Phase 4 (US2)**: las dos dependen de la fase 2. US2 depende además de T038
+  (las fábricas completas), porque la comprobación del arranque necesita saber construir cualquier
+  proveedor.
+- **Phase 5 (US3)**: depende de la fase 2 (T016–T023, la forma del consumo) y de US1 para poder
+  verla con un proveedor que no informa de la escritura de caché.
+- **Phase 6 (US4)**: depende de US1, porque documenta el comportamiento de los tres adaptadores.
+- **Phase 7 (US5)**: depende de US1. Es la última porque cuesta dinero y porque un cambio posterior
+  en los adaptadores invalidaría su resultado.
+- **Phase 8 (Polish)**: T073 y T074 dependen de que US1 y US2 hayan terminado de limpiar. T079,
+  T080 y T081 son los últimos de todo.
+
+### Dentro de cada historia
+
+- Los tests se escriben primero y deben fallar antes de implementar.
+- Dialectos del esquema antes de los adaptadores que los usan.
+- Adaptadores antes de las fábricas completas.
+- Fábricas completas antes de la comprobación del arranque.
+
+### Oportunidades de paralelismo
+
+- **Fase 2**: T005, T008, T012 y T015 son ficheros distintos y van en paralelo. T016–T023 son una
+  cadena: `TokenUsage` → `addTokenUsage` → `ResponseUsage` → acumulador → migración → medidor.
+- **Fase 3**: los tres dobles (T025, T026, T027) en paralelo; los cinco ficheros de test (T028–T031)
+  en paralelo; los dos resumidores nuevos (T036, T037) en paralelo; las dos limpiezas (T041, T042)
+  en paralelo. Los dos adaptadores de conversación (T033, T034) **no** van en paralelo con T032,
+  que es su dependencia.
+- **Fase 4**: los cinco ficheros de test (T044–T048) en paralelo. La implementación es
+  mayoritariamente secuencial porque T050, T051 y T054 tocan los mismos dos ficheros.
+- **Fase 5**: los tres tests (T060–T062) en paralelo.
+- **Fase 8**: T075, T076 y T077 en paralelo; T078 exige avisar antes.
+
+---
+
+## Parallel Example: fase 3 (US1)
+
+```bash
+# Los tres dobles, a la vez:
+Task: "Doble de Gemini en tests/fixtures/llm/gemini-double.ts"
+Task: "Doble de OpenAI en tests/fixtures/llm/openai-double.ts"
+Task: "Doble de Anthropic en tests/fixtures/llm/anthropic-double.ts"
+
+# Los tests, a la vez (y deben fallar):
+Task: "Dialectos del esquema en tests/unit/llm/reply-schema.test.ts"
+Task: "Bateria comun de los tres proveedores en tests/unit/llm/chat-model.test.ts"
+Task: "Extraccion de consumo en tests/unit/llm/token-usage.test.ts"
+Task: "Resumen de derivacion en tests/integration/handoff/summarizer-providers.test.ts"
+```
+
+---
+
+## Implementation Strategy
+
+### MVP primero (US1)
+
+1. Fase 1 (Setup) y fase 2 (Foundational), con su punto de control de refactor puro.
+2. Fase 3 (US1).
+3. **PARAR Y VALIDAR**: quickstart §1 y §2 con los tres proveedores.
+4. Esto ya es entregable: una instancia puede elegir proveedor y atender clientes.
+
+### Entrega incremental
+
+1. Setup + Foundational → la costura existe y nada cambió.
+2. US1 → elegir proveedor funciona. **MVP.**
+3. US2 → el agujero de la credencial queda cerrado por los dos lados.
+4. US3 → el consumo deja de mentir con ceros.
+5. US4 → las diferencias quedan escritas y probadas.
+6. US5 → se mide lo que se ofrece, y se retira lo que no da la talla.
+
+### Riesgo de orden que conviene no invertir
+
+**US2 depende de US1**, aunque las dos sean P1. La comprobación del arranque necesita poder
+construir cualquier proveedor, así que las fábricas completas (T038) van antes. Y **US5 va al
+final** porque cuesta dinero: cualquier cambio en los adaptadores después de evaluar obliga a
+evaluar otra vez.
+
+---
+
+## Notes
+
+- `[P]` = ficheros distintos, sin dependencias pendientes.
+- La etiqueta `[Story]` traza cada tarea a su historia.
+- Confirmar que los tests fallan antes de implementar.
+- Hacer commit por tarea o por grupo lógico.
+- **No lanzar dos corridas de pruebas a la vez**: la suite levanta su propio PostgreSQL y en máquina
+  cargada el test del corte va justo de tiempo. La suite entera tarda unos 32 min.
+- **El push a `origin` no se hace en esta feature**: se hace al final del proyecto, y solo
+  pidiéndolo.
