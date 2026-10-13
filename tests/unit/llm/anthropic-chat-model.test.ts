@@ -1,10 +1,8 @@
 import Anthropic from '@anthropic-ai/sdk';
 import { describe, expect, it, vi } from 'vitest';
 import { ChatModelError } from '../../../src/conversation/ports.js';
-import {
-  createAnthropicChatModel,
-  replyJsonSchema,
-} from '../../../src/llm/anthropic-chat-model.js';
+import { createAnthropicChatModel } from '../../../src/llm/anthropic-chat-model.js';
+import { replyJsonSchema } from '../../../src/llm/reply-schema.js';
 import { replyContext } from '../../helpers/snapshot.js';
 
 const validReply = {
@@ -71,7 +69,7 @@ describe('ChatModel de Anthropic', () => {
     expect(params.thinking).toEqual({ type: 'adaptive' });
     expect(params.output_config).toEqual({
       effort: 'medium',
-      format: { type: 'json_schema', schema: replyJsonSchema() },
+      format: { type: 'json_schema', schema: replyJsonSchema('anthropic') },
     });
     expect(params.stream).toBeUndefined();
     const system = params.system as Anthropic.TextBlockParam[];
@@ -84,7 +82,7 @@ describe('ChatModel de Anthropic', () => {
   });
 
   it('el JSON Schema no lleva restricciones de longitud y cierra los objetos', () => {
-    const schema = replyJsonSchema();
+    const schema = replyJsonSchema('anthropic');
     expect(JSON.stringify(schema)).not.toContain('maxLength');
     expect(JSON.stringify(schema)).not.toContain('"default"');
     expect(schema).not.toHaveProperty('$schema');
@@ -92,7 +90,7 @@ describe('ChatModel de Anthropic', () => {
   });
 
   it('los campos de la derivación están en el esquema pero no son obligatorios', () => {
-    const schema = replyJsonSchema() as { properties: object; required: string[] };
+    const schema = replyJsonSchema('anthropic') as { properties: object; required: string[] };
     for (const field of Object.keys(handoffDefaults)) {
       expect(schema.properties).toHaveProperty(field);
       expect(schema.required).not.toContain(field);

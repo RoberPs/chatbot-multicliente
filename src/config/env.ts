@@ -2,6 +2,13 @@ import { isAbsolute } from 'node:path';
 import { parsePhoneNumberFromString } from 'libphonenumber-js';
 import { z } from 'zod';
 import { isValidTimezone } from '../knowledge/schemas/common.js';
+import {
+  ineligibleMessage,
+  keyVariableOf,
+  LLM_PROVIDERS,
+  providerDescriptor,
+  type LlmProvider,
+} from '../llm/provider.js';
 import type { ProtectionConfig } from '../usage/protection.js';
 import { checkSecrets, secretFindingText } from './secret-rules.js';
 
@@ -111,8 +118,20 @@ const envSchema = z.object({
   WHATSAPP_VERIFY_TOKEN: optionalText,
   WHATSAPP_GRAPH_VERSION: optionalText,
   EMERGENCY_CONTACT_PHONE: optionalText,
+  /**
+   * Proveedor del modelo de la instancia (017, FR-001). Ausente equivale a `anthropic`, que es lo
+   * que hace que los entornos ya desplegados sigan funcionando sin tocarlos (FR-003).
+   */
+  LLM_PROVIDER: optionalText.pipe(
+    z.enum(LLM_PROVIDERS as unknown as [LlmProvider, ...LlmProvider[]], {
+      error: (issue) => ineligibleMessage(issue.input),
+    }).default('anthropic'),
+  ),
   ANTHROPIC_API_KEY: optionalText,
-  LLM_MODEL: optionalText.transform((v) => v ?? 'claude-sonnet-5-5'),
+  GEMINI_API_KEY: optionalText,
+  OPENAI_API_KEY: optionalText,
+  /** Obligatoria salvo con `anthropic`, que conserva su valor por defecto (R2); ver `botSchema`. */
+  LLM_MODEL: optionalText,
   LLM_EFFORT: optionalText.pipe(
     z
       .enum(['low', 'medium', 'high'], { error: 'LLM_EFFORT debe ser low, medium o high' })
@@ -331,6 +350,27 @@ const botSchema = envSchema.transform((raw, ctx) => {
     });
   }
 
+  // El proveedor declarado decide **qué** variable lleva la credencial del modelo (017, FR-005).
+  // Las de los otros proveedores, si estuvieran presentes, no se usan nunca como respaldo
+  // (FR-004): la comprobación previa las avisa, y aquí ni se miran.
+  const llmProvider = raw.LLM_PROVIDER;
+  const llmKeyVariable = keyVariableOf(llmProvider);
+  const llmApiKey = raw[llmKeyVariable as 'ANTHROPIC_API_KEY' | 'GEMINI_API_KEY' | 'OPENAI_API_KEY'];
+
+  // `LLM_MODEL` es obligatoria salvo con el proveedor que conserva su valor por defecto (R2).
+  const descriptor = providerDescriptor(llmProvider);
+  let llmModel = raw.LLM_MODEL;
+  if (llmModel === undefined) {
+    if (descriptor.modelRequired) {
+      ctx.addIssue({
+        code: 'custom',
+        message: `LLM_MODEL es obligatoria con LLM_PROVIDER=${llmProvider}`,
+        params: { rule: 'llm_model_required', variables: ['LLM_MODEL'] },
+      });
+    }
+    llmModel = descriptor.defaultModel;
+  }
+
   let emergencyContactPhone: string | null = null;
   if (raw.EMERGENCY_CONTACT_PHONE !== undefined) {
     emergencyContactPhone = toE164(raw.EMERGENCY_CONTACT_PHONE);
@@ -341,20 +381,20 @@ const botSchema = envSchema.transform((raw, ctx) => {
         params: { rule: 'emergency_phone_invalid', variables: ['EMERGENCY_CONTACT_PHONE'] },
       });
     }
-  } else if (raw.ANTHROPIC_API_KEY !== undefined || whatsapp) {
+  } else if (llmApiKey !== undefined || whatsapp) {
     // Con bot, todos los canales necesitan una salida a una persona (research R11).
     ctx.addIssue({
       code: 'custom',
-      message: 'EMERGENCY_CONTACT_PHONE es obligatoria con ANTHROPIC_API_KEY',
+      message: `EMERGENCY_CONTACT_PHONE es obligatoria con ${llmKeyVariable}`,
       params: { rule: 'emergency_phone_required', variables: ['EMERGENCY_CONTACT_PHONE'] },
     });
   }
 
-  if (whatsapp && raw.ANTHROPIC_API_KEY === undefined) {
+  if (whatsapp && llmApiKey === undefined) {
     ctx.addIssue({
       code: 'custom',
-      message: 'ANTHROPIC_API_KEY es obligatoria con el canal de WhatsApp',
-      params: { rule: 'llm_key_required', variables: ['ANTHROPIC_API_KEY'] },
+      message: `${llmKeyVariable} es obligatoria con el canal de WhatsApp`,
+      params: { rule: 'llm_key_required', variables: [llmKeyVariable] },
     });
   }
 
@@ -412,6 +452,10 @@ const botSchema = envSchema.transform((raw, ctx) => {
   return {
     ...raw,
     BACKUP_VERIFY_URL: raw.BACKUP_VERIFY_URL ?? raw.DATABASE_URL,
+    // Resuelto: el resto del programa lee el modelo y la credencial sin saber de quién son.
+    LLM_MODEL: llmModel ?? '',
+    llmKeyVariable,
+    llmApiKey,
     whatsapp,
     emergencyContactPhone,
     audioTranscription,

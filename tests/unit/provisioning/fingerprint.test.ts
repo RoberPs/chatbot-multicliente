@@ -44,6 +44,38 @@ describe('huellas (research R4)', () => {
     expect(session?.value).toBe(backup?.value);
   });
 
+  /**
+   * 017 (FR-012). La pista que esto protege: alguien copia el fichero de entorno de una instancia,
+   * cambia el proveedor y pega la misma credencial en la variable del nuevo. Si la huella
+   * dependiera del nombre de la variable, el inventario dejaría de ver el secreto compartido justo
+   * cuando más fácil es cometer ese error.
+   */
+  it('la misma credencial en dos proveedores distintos sigue siendo el mismo secreto', () => {
+    const credencial = `sk-ant-${'0123456789abcdef'.repeat(4)}`;
+    const anthropic = productionEnv('demo-01');
+    const gemini = productionEnv('demo-02', {
+      LLM_PROVIDER: 'gemini',
+      LLM_MODEL: 'gemini-de-prueba',
+      GEMINI_API_KEY: credencial,
+    });
+    delete gemini.ANTHROPIC_API_KEY;
+    const mia = envFingerprints({ ...anthropic, ANTHROPIC_API_KEY: credencial }, TEST_INVENTORY_KEY, TODAY).find(
+      (f) => f.variable === 'ANTHROPIC_API_KEY',
+    );
+    const suya = envFingerprints(gemini, TEST_INVENTORY_KEY, TODAY).find(
+      (f) => f.variable === 'GEMINI_API_KEY',
+    );
+    expect(mia?.class).toBe('secret');
+    expect(suya?.class).toBe('secret');
+    expect(mia?.value).toBe(suya?.value);
+  });
+
+  it('las tres variables de credencial se huellan', () => {
+    for (const variable of ['ANTHROPIC_API_KEY', 'GEMINI_API_KEY', 'OPENAI_API_KEY']) {
+      expect(SECRET_VARIABLES).toContain(variable);
+    }
+  });
+
   it('normalización por variable', () => {
     expect(normalize('SESSION_SECRET', ' ABCDEF ')).toBe('abcdef');
     expect(normalize('BACKUP_KEYS_PREVIOUS', 'ABC')).toBe('abc');

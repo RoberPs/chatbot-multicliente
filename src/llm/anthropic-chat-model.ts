@@ -3,10 +3,10 @@
  * Salida estructurada con el JSON Schema de `modelReplySchema`, revalidada con Zod.
  */
 import Anthropic from '@anthropic-ai/sdk';
-import { z } from 'zod';
 import { ChatModelError, type ChatModel } from '../conversation/ports.js';
 import { modelReplySchema, type ModelReply, type ReplyContext } from '../conversation/types.js';
 import { buildPrompt } from './prompt.js';
+import { replyJsonSchema } from './reply-schema.js';
 import { reportUsage } from './token-usage.js';
 
 export type Effort = 'low' | 'medium' | 'high';
@@ -23,32 +23,11 @@ const MAX_TOKENS = 4000;
 const REQUEST_TIMEOUT_MS = 12_000;
 const MAX_RETRIES = 1;
 
-/**
- * JSON Schema para `output_config.format`. Las restricciones de longitud no se admiten en
- * salida estructurada: se quitan aquí y las comprueba Zod al recibir la respuesta. Los campos de
- * la derivación (005) son opcionales en la respuesta: si faltan, Zod pone su valor por defecto.
- */
-export function replyJsonSchema(): Record<string, unknown> {
-  const schema = z.toJSONSchema(modelReplySchema, { io: 'input' }) as Record<string, unknown>;
-  const clean = (node: unknown): unknown => {
-    if (Array.isArray(node)) return node.map(clean);
-    if (node === null || typeof node !== 'object') return node;
-    const out: Record<string, unknown> = {};
-    for (const [key, value] of Object.entries(node)) {
-      if (['$schema', 'maxLength', 'minLength', 'default'].includes(key)) continue;
-      out[key] = clean(value);
-    }
-    if (out.type === 'object') out.additionalProperties = false;
-    return out;
-  };
-  return clean(schema) as Record<string, unknown>;
-}
-
 export function createAnthropicChatModel(opts: AnthropicChatModelOptions): ChatModel {
   const client =
     opts.client ??
     new Anthropic({ apiKey: opts.apiKey, timeout: REQUEST_TIMEOUT_MS, maxRetries: MAX_RETRIES });
-  const schema = replyJsonSchema();
+  const schema = replyJsonSchema('anthropic');
 
   return {
     async reply(context: ReplyContext, { signal, feedback, onUsage }): Promise<ModelReply> {

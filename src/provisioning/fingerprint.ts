@@ -5,6 +5,7 @@
  */
 import { createHmac, timingSafeEqual } from 'node:crypto';
 import { parseDatabaseUrlParts } from '../config/database-url.js';
+import { LLM_KEY_VARIABLES } from '../llm/provider.js';
 import type { EnvMap } from './env-file.js';
 
 export const FINGERPRINT_CLASSES = [
@@ -109,19 +110,27 @@ const HEX_VARIABLES = new Set([
   'HEALTH_SECRET',
 ]);
 
-/** Variables secretas que se huellan tal cual (recortadas). */
-export const SECRET_VARIABLES = [
+/**
+ * Variables secretas que se huellan tal cual (recortadas).
+ *
+ * 017 (FR-012): las **tres** credenciales de modelo se huellan con la misma clase `secret`, y la
+ * comparación entre instancias cruza por clase y valor, no por nombre de variable. Así, dos
+ * instancias que declaran proveedores distintos y comparten la credencial siguen apareciendo como
+ * secreto reutilizado: la pista de que alguien copió un entorno no se pierde al cambiar de
+ * proveedor.
+ */
+export const SECRET_VARIABLES: readonly string[] = [
   'SESSION_SECRET',
   'BACKUP_KEY',
   'HEALTH_SECRET',
   'OPERATOR_PASSWORD_HASH',
-  'ANTHROPIC_API_KEY',
+  ...LLM_KEY_VARIABLES,
   'WHATSAPP_ACCESS_TOKEN',
   'WHATSAPP_APP_SECRET',
   'WHATSAPP_VERIFY_TOKEN',
   'STT_API_KEY',
   'SMTP_URL',
-] as const;
+];
 
 /** Valor normalizado de una variable del inventario para calcular su huella. */
 export function normalize(variable: string, value: string): string {

@@ -88,9 +88,9 @@ para no confundirlos con las 9 fases internas de esta lista: un tramo agrupa var
 
 **Purpose**: dependencias y sitio para los dobles.
 
-- [ ] T001 Comprobar el emisor del certificado de `registry.npmjs.org` antes de instalar nada, con el comando de [quickstart.md](quickstart.md) §0; si el emisor es Avast, pedir al usuario que desactive su análisis HTTPS antes de seguir
-- [ ] T002 Añadir `openai` y `@google/genai` a `package.json` con versión fijada (sin rango) y actualizar `pnpm-lock.yaml` (R16)
-- [ ] T003 [P] Crear `tests/fixtures/llm/` con el README corto que explique que los dobles reproducen la forma **real** de cada API y por qué eso importa (R13)
+- [X] T001 Comprobar el emisor del certificado de `registry.npmjs.org` antes de instalar nada, con el comando de [quickstart.md](quickstart.md) §0; si el emisor es Avast, pedir al usuario que desactive su análisis HTTPS antes de seguir
+- [X] T002 Añadir `openai` y `@google/genai` a `package.json` con versión fijada (sin rango) y actualizar `pnpm-lock.yaml` (R16)
+- [X] T003 [P] Crear `tests/fixtures/llm/` con el README corto que explique que los dobles reproducen la forma **real** de cada API y por qué eso importa (R13)
 
 ---
 
@@ -111,21 +111,21 @@ describe el comportamiento de hoy. En cuanto haya tres adaptadores, un fallo ya 
 
 ### La costura (R1)
 
-- [ ] T004 Crear `src/llm/provider.ts` con el tipo cerrado `LlmProvider`, la lista `LLM_PROVIDERS` y la tabla `ProviderDescriptor` (variable de credencial y si `LLM_MODEL` es obligatoria), según [contracts/llm-provider.md](contracts/llm-provider.md) §1
-- [ ] T005 [P] Escribir en `tests/unit/llm/provider.test.ts` los tests del clasificador `classifyKeyShape`: `sk-ant-` → anthropic, `sk-proj-` y `sk-` → openai, `AIza` y `AQ.` → gemini, forma desconocida → `null`, **y el caso de orden** que comprueba que una clave `sk-ant-…` no se clasifica como openai (R3)
-- [ ] T006 Implementar `classifyKeyShape` en `src/llm/provider.ts` con una única tabla de patrones, evaluando `sk-ant-` **antes** de `sk-`, y devolviendo `null` ante cualquier forma que no reconozca (FR-028, R3, regla C4)
-- [ ] T007 Crear `src/llm/reply-schema.ts` moviendo `replyJsonSchema()` desde `src/llm/anthropic-chat-model.ts`, con el dialecto `anthropic` idéntico al actual (limpieza de `$schema`, `maxLength`, `minLength`, `default`)
-- [ ] T008 [P] Añadir en `tests/unit/llm/reply-schema.test.ts` un test de regresión que fije que el dialecto `anthropic` produce **exactamente** el mismo esquema que hoy
-- [ ] T009 Añadir a `src/llm/provider.ts` las fábricas `createChatModel(provider, opts)` y `createSummarizer(provider, opts)`, de momento solo con `anthropic`, devolviendo los adaptadores que ya existen (FR-013)
+- [X] T004 Crear `src/llm/provider.ts` con el tipo cerrado `LlmProvider`, la lista `LLM_PROVIDERS` y la tabla `ProviderDescriptor` (variable de credencial y si `LLM_MODEL` es obligatoria), según [contracts/llm-provider.md](contracts/llm-provider.md) §1
+- [X] T005 [P] Escribir en `tests/unit/llm/provider.test.ts` los tests del clasificador `classifyKeyShape`: `sk-ant-` → anthropic, `sk-proj-` y `sk-` → openai, `AIza` y `AQ.` → gemini, forma desconocida → `null`, **y el caso de orden** que comprueba que una clave `sk-ant-…` no se clasifica como openai (R3)
+- [X] T006 Implementar `classifyKeyShape` en `src/llm/provider.ts` con una única tabla de patrones, evaluando `sk-ant-` **antes** de `sk-`, y devolviendo `null` ante cualquier forma que no reconozca (FR-028, R3, regla C4)
+- [X] T007 Crear `src/llm/reply-schema.ts` moviendo `replyJsonSchema()` desde `src/llm/anthropic-chat-model.ts`, con el dialecto `anthropic` idéntico al actual (limpieza de `$schema`, `maxLength`, `minLength`, `default`)
+- [X] T008 [P] Añadir en `tests/unit/llm/reply-schema.test.ts` un test de regresión que fije que el dialecto `anthropic` produce **exactamente** el mismo esquema que hoy
+- [X] T009 Añadir a `src/llm/provider.ts` las fábricas `createChatModel(provider, opts)` y `createSummarizer(provider, opts)`, de momento solo con `anthropic`, devolviendo los adaptadores que ya existen (FR-013)
 
 ### Entorno (R2)
 
-- [ ] T010 Añadir a `src/config/env.ts` el esquema de `LLM_PROVIDER` (los tres valores; ausente ⇒ `anthropic`), las variables `GEMINI_API_KEY` y `OPENAI_API_KEY`, y la regla de que `LLM_MODEL` es obligatoria salvo con `anthropic`, que conserva su valor por defecto (FR-001, FR-003)
-- [ ] T011 Cambiar en `src/config/env.ts` las reglas que hoy exigen `ANTHROPIC_API_KEY` (el canal de WhatsApp y `EMERGENCY_CONTACT_PHONE`) para que exijan **la credencial del proveedor declarado**, nombrando su variable (FR-005)
-- [ ] T012 [P] Añadir en `tests/unit/config/env.test.ts` los tests de: entorno sin `LLM_PROVIDER` que sigue funcionando igual (FR-003), proveedor no elegible con mensaje que nombra los tres (FR-002), credencial del proveedor declarado ausente aunque haya otra presente (FR-004, FR-005), y `LLM_MODEL` ausente con proveedor distinto de `anthropic`
-- [ ] T013 Cambiar `src/config/secret-rules.ts` para que las reglas de calidad se apliquen a la variable de credencial del **proveedor declarado**, cualquiera que sea su nombre (FR-011)
-- [ ] T014 Cambiar `src/provisioning/fingerprint.ts` para que las tres variables de credencial se huellen con la misma clase, de modo que la reutilización del mismo secreto entre instancias se detecte aunque cada una declare un proveedor distinto (FR-012)
-- [ ] T015 [P] Añadir en `tests/unit/provisioning/fingerprint.test.ts` el test de dos instancias con proveedores distintos y la misma credencial, que debe seguir detectándose como secreto reutilizado
+- [X] T010 Añadir a `src/config/env.ts` el esquema de `LLM_PROVIDER` (los tres valores; ausente ⇒ `anthropic`), las variables `GEMINI_API_KEY` y `OPENAI_API_KEY`, y la regla de que `LLM_MODEL` es obligatoria salvo con `anthropic`, que conserva su valor por defecto (FR-001, FR-003)
+- [X] T011 Cambiar en `src/config/env.ts` las reglas que hoy exigen `ANTHROPIC_API_KEY` (el canal de WhatsApp y `EMERGENCY_CONTACT_PHONE`) para que exijan **la credencial del proveedor declarado**, nombrando su variable (FR-005)
+- [X] T012 [P] Añadir en `tests/unit/config/env.test.ts` los tests de: entorno sin `LLM_PROVIDER` que sigue funcionando igual (FR-003), proveedor no elegible con mensaje que nombra los tres (FR-002), credencial del proveedor declarado ausente aunque haya otra presente (FR-004, FR-005), y `LLM_MODEL` ausente con proveedor distinto de `anthropic`
+- [X] T013 Cambiar `src/config/secret-rules.ts` para que las reglas de calidad se apliquen a la variable de credencial del **proveedor declarado**, cualquiera que sea su nombre (FR-011)
+- [X] T014 Cambiar `src/provisioning/fingerprint.ts` para que las tres variables de credencial se huellen con la misma clase, de modo que la reutilización del mismo secreto entre instancias se detecte aunque cada una declare un proveedor distinto (FR-012)
+- [X] T015 [P] Añadir en `tests/unit/provisioning/fingerprint.test.ts` el test de dos instancias con proveedores distintos y la misma credencial, que debe seguir detectándose como secreto reutilizado
 
 ### La forma del consumo (R11)
 

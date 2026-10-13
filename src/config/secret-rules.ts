@@ -4,6 +4,7 @@
  * instance:check` y la generación de secretos de la 007; el valor examinado nunca sale de este
  * módulo: las incidencias solo nombran variables y reglas.
  */
+import { LLM_KEY_MINIMUMS, LLM_KEY_VARIABLES } from '../llm/provider.js';
 import { parseUrlLoose } from './database-url.js';
 
 export type SecretRule =
@@ -20,7 +21,7 @@ export interface SecretFinding {
  * Variables secretas, en el orden en que se comparan: de dos repetidas, la incidencia es de la
  * segunda. De `DATABASE_URL` y `SMTP_URL` se examina la contraseña.
  */
-export const SECRET_VARIABLES = [
+export const SECRET_VARIABLES: readonly string[] = [
   'SESSION_SECRET',
   'BACKUP_KEY',
   'BACKUP_KEYS_PREVIOUS',
@@ -28,11 +29,13 @@ export const SECRET_VARIABLES = [
   'WHATSAPP_ACCESS_TOKEN',
   'WHATSAPP_APP_SECRET',
   'WHATSAPP_VERIFY_TOKEN',
-  'ANTHROPIC_API_KEY',
+  // 017 (FR-011): las tres credenciales de modelo, salgan de donde salgan los nombres. La regla se
+  // aplica a la del proveedor declarado sin que este módulo sepa cuál es, y a las demás si están.
+  ...LLM_KEY_VARIABLES,
   'STT_API_KEY',
   'DATABASE_URL',
   'SMTP_URL',
-] as const;
+];
 
 /** Claves de 32 bytes en hexadecimal. */
 const HEX_VARIABLES = new Set([
@@ -48,7 +51,10 @@ export const SECRET_MINIMUMS: Record<string, { length: number; distinct?: number
   WHATSAPP_VERIFY_TOKEN: { length: 32, distinct: 10 },
   WHATSAPP_APP_SECRET: { length: 32 },
   WHATSAPP_ACCESS_TOKEN: { length: 40 },
-  ANTHROPIC_API_KEY: { length: 40 },
+  // Una entrada por credencial de modelo, con el mínimo que declara su proveedor (017, FR-011).
+  ...Object.fromEntries(
+    Object.entries(LLM_KEY_MINIMUMS).map(([variable, length]) => [variable, { length }]),
+  ),
   STT_API_KEY: { length: 20 },
   DATABASE_URL: { length: 16 },
   SMTP_URL: { length: 16 },

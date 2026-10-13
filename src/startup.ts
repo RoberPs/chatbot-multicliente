@@ -48,7 +48,9 @@ function logWeakSecrets(env: Env, logger: LoggerLike): void {
   if (env.NODE_ENV === 'production') return;
   const source = Object.fromEntries(
     SECRET_VARIABLES.map((variable) => {
-      const value: unknown = env[variable];
+      // 017: la lista de variables secretas la compone la costura del proveedor, así que es de
+      // cadenas y no de claves literales de `Env`.
+      const value: unknown = (env as Record<string, unknown>)[variable];
       return [variable, Array.isArray(value) ? value.join(',') : (value as string | undefined)];
     }),
   );
