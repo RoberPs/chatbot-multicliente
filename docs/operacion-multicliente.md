@@ -679,6 +679,73 @@ nuevas, peticiones sin aviso, avisos y avisos retenidos). Valen desde el siguien
   (`ejemplo[.]com`).
 - Como los precios, estos límites no viajan en la exportación de la configuración.
 
+### 4.3 Proveedor del modelo: qué cambia entre los tres (017)
+
+Cada instancia elige su proveedor en su propio fichero de entorno —`LLM_PROVIDER` con
+`anthropic`, `gemini` u `openai`— y nada más. No hay una imagen distinta por proveedor, y el
+panel, los canales y la conversación no saben quién hay detrás.
+
+- **Sin `LLM_PROVIDER` la instancia es de Anthropic**, que es lo que ya eran. Los entornos de las
+  instancias desplegadas **no se tocan** al actualizar.
+- `LLM_MODEL` es **obligatoria** con Gemini y con OpenAI. Con Anthropic conserva su valor por
+  defecto. Un nombre de modelo equivocado se parece mucho a un fallo del proveedor, así que es
+  mejor que lo declare el entorno que inventar un valor por defecto que envejezca en el código.
+- La credencial va en la variable **de su proveedor**: `ANTHROPIC_API_KEY`, `GEMINI_API_KEY` u
+  `OPENAI_API_KEY`. Las de los demás proveedores **no** se usan como respaldo: manda el declarado,
+  y si su credencial no está, la instancia no arranca.
+- El proveedor elegido queda anotado en el inventario (`pnpm instance:list`, columna
+  `PROVEEDOR`). La credencial, nunca. Un inventario anterior a la 017 muestra `—` hasta el primer
+  `pnpm instance:sync`.
+
+#### Qué conserva, qué traduce y qué no tiene cada uno
+
+Esta tabla **no es informativa**: está declarada en `src/llm/capabilities.ts` y
+`tests/unit/llm/capabilities.test.ts` la compara con lo que hacen los tres adaptadores **y** con
+este texto, celda a celda. Si alguien cambia un adaptador y no actualiza las dos, la suite falla.
+
+| Capacidad | `anthropic` | `gemini` | `openai` |
+|---|---|---|---|
+| Esquema de salida obligado | sí (tolerante) | sí (tolerante) | sí (modo estricto) |
+| Mando de esfuerzo | sí | sí | según modelo |
+| Razonamiento interno | sí | sí (no siempre apagable) | según modelo |
+| Marca explícita de caché | sí | no | no |
+| Tokens de lectura de caché | sí | sí | sí |
+| Tokens de escritura de caché | sí | no | sí |
+| Señal propia de rechazo | sí (motivo de parada) | sí (bloqueo de seguridad) | sí (elemento de contenido) |
+
+Fila por fila, y qué pasa en cada caso:
+
+1. **Esquema de salida obligado.** Los tres obligan a que la respuesta tenga la forma del esquema
+   del dominio, y los tres la revalidan después con Zod: el esquema sigue siendo la única puerta.
+   El modo estricto de OpenAI **no admite propiedades opcionales**, así que su adaptador las
+   promueve a obligatorias admitiendo `null` y normaliza los nulos a «ausente» a la vuelta, para
+   que los valores por defecto del dominio se apliquen igual. Se **traduce**; el dominio no se
+   toca.
+2. **Mando de esfuerzo.** `LLM_EFFORT` se traduce directo en los tres. En OpenAI depende del
+   modelo: si el modelo configurado no admite el parámetro, el adaptador **no lo silencia** —deja
+   una línea en el registro, reintenta una vez sin él y recuerda la decisión para el resto de la
+   vida del proceso—. Esto es **degradación declarada**, no un ajuste ignorado.
+3. **Razonamiento interno.** Se usa donde existe y se prescinde de él donde no, sin que cambie la
+   forma de la respuesta. En Gemini algunos modelos **no lo apagan del todo**, y en OpenAI depende
+   del modelo. Por eso `LLM_EFFORT=medium` no significa lo mismo en los tres y por eso la
+   evaluación es obligatoria por proveedor.
+4. **Marca explícita de caché.** Solo Anthropic la tiene y se **conserva**. Gemini y OpenAI usan su
+   caché automática y no se marca nada. La caché explícita de Gemini **se descartó a propósito**:
+   obligaría a mantener un contenido en caché con vida propia en el proveedor, que se
+   desincronizaría de la información del negocio, porque el prompt del sistema se lee en cada
+   respuesta sin caché por decisión del producto. Que nadie la añada de buena fe.
+5. **Tokens de lectura de caché.** Los tres los informan.
+6. **Tokens de escritura de caché.** Gemini **no informa del concepto**, nunca. En el panel sale
+   «sin dato», que no es `0`: un cero afirmaría que el modelo midió y que no hubo nada. Anthropic y
+   OpenAI sí informan, así que una respuesta que no escribió caché sale `0`, que es un cero medido.
+   La pantalla de consumo lo deduce de lo registrado, no del nombre del proveedor.
+7. **Señal propia de rechazo.** Cada uno la señala a su manera y las tres acaban en la **misma**
+   causa del dominio, `refusal`. Gemini tiene además dos: el bloqueo del prompt y el del candidato.
+
+Lo que **no** cambia con el proveedor: las cuatro causas de fallo del dominio, el plazo y los dos
+intentos por respuesta —que comparten un único presupuesto, porque la política de reintentos de
+los SDK está desactivada—, el registro de consumo, el tope de gasto y la salida a una persona.
+
 ---
 
 ## 5. Actualizar el núcleo

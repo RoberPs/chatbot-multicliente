@@ -234,12 +234,14 @@ y no hay motivo para suponer que significa lo mismo en los otros dos.
 | Proveedor | Mecanismo | Qué informa |
 |---|---|---|
 | Anthropic | `cache_control: { type: 'ephemeral' }` explícito en los bloques de sistema | escritura y lectura, por separado |
-| OpenAI | caché automática, sin marcar nada en la petición | solo lectura (`cached_tokens`) |
+| OpenAI | caché automática, sin marcar nada en la petición | lectura y escritura (`cached_tokens` y `cache_write_tokens`; **corregido**, ver R11) |
 | Gemini | implícita (automática) y explícita (contenido en caché) | solo lectura (`cachedContentTokenCount`) |
 
 **Decisión**: se conserva la marca explícita en Anthropic. En OpenAI y Gemini no se marca nada —no
 hay nada que marcar— y se usa la caché automática. La **escritura** de caché queda como **no
-informada** en esos dos, que es el caso de FR-024: en el panel sale «sin dato», no cero.
+informada** solo en **Gemini**, que es el caso de FR-024: en el panel sale «sin dato», no cero.
+(Esta sección decía «en esos dos»; es falso para OpenAI, que sí la informa. Comprobado contra el SDK
+instalado durante la implementación, R11.)
 
 **Razón de no usar la caché explícita de Gemini**: obliga a gestionar el ciclo de vida de un objeto
 de caché en el proveedor (crearlo, renovarlo, borrarlo), con su propio coste de almacenamiento. El

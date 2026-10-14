@@ -105,6 +105,12 @@ export function createBot({ env, db, logger, clock = systemClock }: CreateBotOpt
     apiKey: env.llmApiKey,
     model: env.LLM_MODEL,
     effort: env.LLM_EFFORT,
+    // FR-017: la degradación declarada del esfuerzo deja constancia en el registro de la
+    // instancia, no en la salida estándar. Es lo que la hace encontrable cuando el operador se
+    // pregunta por qué su LLM_EFFORT no parece hacer nada.
+    log: (message) => {
+      logger.warn({ channel: 'bot' }, message);
+    },
   });
   // Derivación al negocio (005): vías según lo que la instancia puede enviar (R16).
   const templateLanguage = env.WHATSAPP_TEMPLATE_LANG;

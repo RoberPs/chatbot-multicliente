@@ -267,9 +267,9 @@ un comportamiento raro.
 **Independent Test**: para cada fila de la tabla de capacidades y cada proveedor, existe una prueba
 que fija el comportamiento declarado.
 
-- [ ] T067 [US4] Escribir la tabla de capacidades por proveedor en `docs/operacion-multicliente.md`, con las siete filas de [data-model.md](data-model.md) §1 y qué se conserva, qué se traduce y qué se degrada (FR-021)
-- [ ] T068 [P] [US4] Añadir en `tests/unit/llm/capabilities.test.ts` una prueba por fila de esa tabla y por proveedor, de modo que la documentación y el código no puedan separarse
-- [ ] T069 [US4] Comprobar que la degradación declarada del esfuerzo deja constancia en el arranque en los tres proveedores, y que el valor no se rechaza ni se silencia, y que el razonamiento interno se usa donde existe y se prescinde de él donde no, sin que eso cambie la forma de la respuesta (FR-017, FR-018)
+- [X] T067 [US4] Escribir la tabla de capacidades por proveedor en `docs/operacion-multicliente.md`, con las siete filas de [data-model.md](data-model.md) §1 y qué se conserva, qué se traduce y qué se degrada (FR-021)
+- [X] T068 [P] [US4] Añadir en `tests/unit/llm/capabilities.test.ts` una prueba por fila de esa tabla y por proveedor, de modo que la documentación y el código no puedan separarse
+- [X] T069 [US4] Comprobar que la degradación declarada del esfuerzo deja constancia en el arranque en los tres proveedores, y que el valor no se rechaza ni se silencia, y que el razonamiento interno se usa donde existe y se prescinde de él donde no, sin que eso cambie la forma de la respuesta (FR-017, FR-018)
 
 **Checkpoint**: US4 completa. Nada de lo que varía entre proveedores está sin escribir.
 

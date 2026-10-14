@@ -19,6 +19,13 @@ export interface ChatModelFactoryOptions {
   model: string;
   effort: Effort;
   client?: unknown;
+  /**
+   * Destino de las líneas que un adaptador deja por su cuenta; hoy, solo la de la degradación
+   * declarada del esfuerzo (FR-017). Va por la fábrica para que acabe en el registro de la
+   * instancia: una constancia que solo sale por `console.warn` no la lee nadie en producción, y
+   * FR-017 pide que el ajuste **no se silencie**.
+   */
+  log?: (message: string) => void;
 }
 
 export interface SummarizerFactoryOptions {
@@ -54,6 +61,7 @@ export function createChatModel(provider: LlmProvider, opts: ChatModelFactoryOpt
         model: opts.model,
         effort: opts.effort,
         client: opts.client,
+        ...(opts.log === undefined ? {} : { log: opts.log }),
       });
   }
 }
