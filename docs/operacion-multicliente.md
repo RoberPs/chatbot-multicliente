@@ -98,8 +98,12 @@ En una terminal (no redirijas la salida: muestra secretos una sola vez):
 
 ```bash
 pnpm instance:new --id cliente-x --client "Nombre del cliente" --url https://cliente-x.tudominio.com \
-  --timezone Europe/Madrid --region ES --currency EUR --emergency-phone "+34 600 000 000" [--whatsapp]
+  --timezone Europe/Madrid --region ES --currency EUR --emergency-phone "+34 600 000 000"   [--provider anthropic|gemini|openai] [--whatsapp]
 ```
+
+- **`--provider` (017)**: proveedor del modelo de esta instancia. Sin él, `anthropic`. El entorno
+  generado declara `LLM_PROVIDER` y deja pendiente **la variable de credencial de ese proveedor**,
+  no las tres. El proveedor queda anotado en el inventario; la credencial, nunca.
 
 - Parte siempre de `.env.example` y genera **secretos nuevos**: `SESSION_SECRET`, `BACKUP_KEY`,
   `HEALTH_SECRET` (secreto de salud de la 009, distinto de los otros dos; no se muestra),
@@ -109,7 +113,7 @@ pnpm instance:new --id cliente-x --client "Nombre del cliente" --url https://cli
   usuario, y nunca sobrescribe un fichero. Dentro del repositorio solo acepta rutas excluidas por
   `git`.
 - Deja vacías y marcadas con `# PENDIENTE:` las variables de terceros: `DATABASE_URL` (siguiente
-  paso), `ANTHROPIC_API_KEY`, `WHATSAPP_*` y `SMTP_*`.
+  paso), la credencial del proveedor elegido, `WHATSAPP_*` y `SMTP_*`.
 - Registra la instancia en el inventario en estado "en alta". Rechaza un `id` o una URL ya usados,
   también por instancias dadas de baja.
 
@@ -164,9 +168,10 @@ cada base de datos.
 
 ### 2.4 Completar y validar: `pnpm instance:check`
 
-1. Completa en el fichero los valores `PENDIENTE`: **clave de Anthropic propia** del cliente (en un
-   workspace propio con límite de gasto), **WhatsApp** (las cinco variables o ninguna) y el correo
-   de avisos (`SMTP_URL` y `SMTP_FROM`, o ninguna).
+1. Completa en el fichero los valores `PENDIENTE`: **la credencial propia del cliente para el
+   proveedor declarado en `LLM_PROVIDER`** (en una cuenta o workspace propios, con límite de
+   gasto), **WhatsApp** (las cinco variables o ninguna) y el correo de avisos (`SMTP_URL` y
+   `SMTP_FROM`, o ninguna). Con `gemini` o con `openai`, **`LLM_MODEL` es obligatoria**.
 2. Revisa el resto de valores con la tabla de abajo (`TRUST_PROXY`, audios…).
 3. Valida:
 
@@ -186,6 +191,37 @@ cada base de datos.
    datos remota sin `sslmode=verify-full` (`database_tls_required`); en una instancia de pruebas
    (`testing`) son advertencias. No escribe nada. Código de salida 0 apto, 1 no apto: se puede usar
    como paso de despliegue.
+
+   **Desde la 017**, la comprobación conoce los tres proveedores:
+
+   | Caso | Código | Efecto |
+   |---|---|---|
+   | La credencial encaja con el patrón de **otro** proveedor elegible | `llm_key_other_provider` | **error → NO APTO** |
+   | La forma de la credencial no se reconoce | `llm_key_format` | advertencia (los proveedores cambian de formato; rechazar lo desconocido bloquearía despliegues legítimos) |
+   | Hay credenciales de otros proveedores puestas y sin usar | `llm_key_unused` | advertencia |
+
+   Ese primer caso es **el agujero que la 017 existe para cerrar**: antes, una credencial de otro
+   proveedor pasaba con una simple advertencia y la instancia fallaba después delante de cada
+   cliente, sin ningún error en las comprobaciones.
+
+4. **Opcional, y solo si quieres**: comprobar la credencial contra el proveedor.
+
+   ```bash
+   pnpm instance:check <fichero> --validar-credencial
+   ```
+
+   Es **opt-in**: sin la bandera, `instance:check` sigue siendo local y **no hace red**. Con ella
+   hace una petición al listado de modelos del proveedor, que **no genera tokens** ni cuesta
+   consumo, con un plazo de 5 s:
+
+   | Veredicto | Código | Efecto |
+   |---|---|---|
+   | La acepta | — | nada que decir |
+   | La rechaza (401/403) | `llm_key_rejected` | **error → NO APTO** |
+   | No se pudo comprobar (red, 5xx, plazo) | `llm_key_unverified` | advertencia, **sigue apto** |
+
+   «No se comprobó» y «no se pudo comprobar» no son lo mismo: sin la bandera no se emite nada.
+   Tampoco escribe nada, ni en el entorno ni en el inventario.
 
 Pasa también por `instance:check` cualquier cambio posterior del entorno.
 
@@ -659,6 +695,30 @@ Qué ocurre con el tope activo:
   «Precios de transcripción».
 - Nada de esto viaja en la exportación de la configuración (008); sí entra en las copias.
 
+#### «Sin dato» no es cero (017)
+
+Desde la 017 la pantalla de **Consumo** distingue tres estados en cada concepto de caché, y los
+deduce de lo registrado, **nunca** del nombre del proveedor:
+
+| Lo que se ve | Qué significa |
+|---|---|
+| un número | el modelo informó de ese dato en todo el periodo |
+| `N (parcial)` | unas respuestas lo informaron y otras no (un cambio de proveedor a mitad de mes, por ejemplo). La suma es de lo que sí se midió: no subestima nada |
+| **«sin dato»** | el modelo **no informa de ese concepto**. No es `0`: un cero afirmaría que se midió y que no hubo nada |
+
+Hoy el único caso de «sin dato» es la **escritura en caché** con Gemini. Anthropic y OpenAI
+informan de los cuatro conceptos, así que con ellos un `0` es un cero medido.
+
+Además, si hubo respuestas cuyo consumo el modelo **no informó**, la pantalla lo dice junto a las
+respuestas con modelo (`2 (2 llamadas sin medir)`) y en una nota. El coste estimado **no valora**
+ese consumo: lo que la pantalla afirma es «hubo consumo que no se pudo valorar», no «fue gratis».
+Si además el tope de gasto está activado y el negocio está activo, sale un aviso **crítico**,
+porque el tope no se puede garantizar. Es una **alarma, no un bloqueo**: nunca impide al operador
+guardar nada ni activar el negocio.
+
+La nota dice «el modelo configurado», nunca el nombre del proveedor: ninguna pantalla del panel lo
+delata.
+
 ### 4.2 Límites de derivación (012)
 
 Cada instancia limita lo que un cliente final puede hacer llegar al negocio. Se ajustan en
@@ -1085,7 +1145,7 @@ Todas son de **núcleo**: genéricas, sin nombres de cliente ni de sector.
 
 ### 9.1 Specs ya realizadas
 
-Estado tomado del [README](../README.md) a 2026-10-13.
+Estado tomado del [README](../README.md) a 2026-10-14.
 
 | Nº | Feature | Estado | Qué aporta a la operación multicliente |
 |---|---|---|---|
@@ -1103,6 +1163,7 @@ Estado tomado del [README](../README.md) a 2026-10-13.
 | 012 | Protección frente a abuso y saturación | Completada (2026-10-06) | **Era la propuesta P8**: tope de gasto obligatorio en producción que falla cerrado, transcripción dentro del tope y tope diario de WhatsApp ([sección 4.1](#41-consumo-precios-y-tope-en-el-panel-010)); límites de derivación con reenvíos agrupados ([sección 4.2](#42-límites-de-derivación-012)); límites por dirección (/64) en las rutas públicas y pool de BD acotado; login con retardo en lugar de bloqueo; plazos en las llamadas salientes y reintentos de lotes; importación acotada; una sola regla de enlaces; registros sin datos y arranque que rechaza secretos débiles ([sección 5.0](#50-antes-de-la-primera-vez-una-vez-por-instancia)) |
 | 013 | Requisitos de despliegue seguro | Completada (2026-10-06) | **Era la propuesta P9**: `instance:check` da NO APTO en producción con `TRUST_PROXY` vacío y `https` y con URL de base de datos remotas sin `sslmode=verify-full`; `instance:db` se niega a conectar sin TLS verificado (`--sslrootcert`); TLS verificado en todas las conexiones con mensajes sin datos; `db:verify` con bases temporales cerradas a otros usuarios y limpieza de huérfanas; imagen con `HEALTHCHECK`, base fijada por digest y pnpm con hash; receta de producción con comprobaciones ([sección 2.5](#25-despliegue), [2.3](#23-crear-la-base-de-datos-pnpm-instancedb), [2.4](#24-completar-y-validar-pnpm-instancecheck), [5](#5-actualizar-el-núcleo) y [8](#8-copias-de-seguridad-guía-de-validación)) |
 | 014 | Modo oscuro del panel del operador | Completada (2026-10-13) | No venía de ninguna propuesta de esta sección: es una mejora de comodidad del panel, pensada además para comprobar que el núcleo se puede ampliar y actualizar con instancias ya desplegadas. El panel sigue la preferencia de color del sistema y ofrece un control de tres opciones —Automático, Claro, Oscuro— en la barra superior y en la pantalla de acceso; la elección vive en una cookie del navegador del operador, así que **no es configuración del negocio**: no viaja en el fichero de configuración, no entra en las copias y no cambia el esquema. El modo claro queda igual que antes y el chat web que ven los clientes finales no cambia nada ([sección 2.6](#26-configuración-del-negocio-en-el-panel-de-producción)). Desplegada como **0.1.2** el 2026-10-13 en las dos instancias, por tandas |
+| 017 | Proveedor del modelo configurable por instancia | Completada (2026-10-14) | No venía de ninguna propuesta de esta sección: implementa la decisión del 2026-10-08, ampliada el 2026-10-12, anotada en [plan-despliegue-produccion.md](plan-despliegue-produccion.md) §6. Cada instancia elige `anthropic`, `gemini` u `openai` en su fichero de entorno, sin imagen distinta y sin que el panel, los canales ni la conversación sepan quién hay detrás; sin `LLM_PROVIDER` la instancia es de Anthropic, así que **los entornos desplegados no se tocan**. Cierra además el agujero de la credencial equivocada por los dos lados: `instance:check` la rechaza antes de desplegar y el arranque degrada la instancia con un aviso crítico, se recupera sola y nunca es fatal ([sección 2.4](#24-completar-y-validar-pnpm-instancecheck)). El consumo deja de dar por cero lo que el modelo no informa ([sección 4.1](#41-consumo-precios-y-tope-en-el-panel-010)) y las diferencias entre proveedores están escritas y con prueba ([sección 4.3](#43-proveedor-del-modelo-qué-cambia-entre-los-tres-017)) |
 | 016 | Resistencia a los cortes de la base de datos y verificación de copias por socket | Completada (2026-10-09) | No venía de ninguna propuesta de esta sección: es una **corrección** de dos fallos del núcleo que destapó la fase 9 del despliegue. Una instancia ya arrancada sobrevive a un corte de su base de datos sin reiniciarse y sigue respondiendo al cliente final con el teléfono de emergencia por los dos canales; `/health` gana el estado `db_unavailable` con **200**, que no es motivo de reinicio ([sección 5](#5-actualizar-el-núcleo)); `db:verify` funciona con las direcciones **sin nombre de servidor** del despliegue real y sus motivos de fallo distinguen dirección, conexión y creación ([sección 8](#8-copias-de-seguridad-guía-de-validación)); el chat web nunca se queda indicando espera; y dos comprobaciones del operador que la forma de dirección de producción silenciaba —calidad de la contraseña de la base de datos y prohibición del usuario `postgres`— vuelven a aplicarse ([sección 2.4](#24-completar-y-validar-pnpm-instancecheck)) |
 
 Todas están completadas. Quedan aplazadas la evaluación de audios de la 002 (T083), que se hace
@@ -1127,6 +1188,20 @@ orden de las pendientes).
 Ni la 014 ni la 016 cambian este orden, y **ninguna propuesta pasa a hecha por ellas**: la 016 es
 una corrección de dos fallos del núcleo descubiertos en la fase 9 del despliegue y la 014 una mejora
 de comodidad del panel. Las pendientes siguen siendo P7 y P5, en ese orden.
+
+**La 017 se adelantó a P7, y conviene saber por qué.** Tampoco cierra ninguna propuesta de esta
+cola: sale de una decisión del despliegue, no de esta sección. Se hizo antes que P7 por dos
+razones, decididas con las dos sobre la mesa:
+
+1. **Había un fallo abierto, no solo una mejora pendiente.** Una credencial de otro proveedor
+   pasaba `instance:check` con una simple advertencia y la instancia fallaba después delante de
+   cada cliente, sin rastro en ninguna comprobación. P7 hace visible algo que hoy funciona; la 017
+   arreglaba algo que hoy no.
+2. **El coste de esperar crecía.** El nombre de la variable de credencial estaba en 15 ficheros de
+   `src/` y 28 de pruebas; cada feature nueva lo multiplicaba. Y pasar un cliente a otro proveedor
+   era una petición ya sobre la mesa (instancia 2), bloqueada hasta que existiera la costura.
+
+P7 sigue siendo la siguiente, y P5 después. La 017 no cambia ese orden.
 
 | Orden | Id | Propuesta | Prioridad | Depende de | Cuándo |
 |---|---|---|---|---|---|

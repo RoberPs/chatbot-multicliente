@@ -1125,8 +1125,27 @@ tener presente:
 >   instancias.
 
 
-Se planteó dar a la instancia 2 una `GEMINI_API_KEY`. **No se puede hoy**: el núcleo solo habla con
-la API de Anthropic. Se despliega con dos claves de Anthropic y se hace después una **spec de
+> **IMPLEMENTADO en la feature 017** (rama `017-proveedor-modelo-configurable`). Todo lo que sigue
+> en este apartado describe el estado del 2026-10-08 y se conserva como registro de la decisión, no
+> como descripción del código de hoy. Lo que cambió:
+>
+> - `LLM_PROVIDER` elige entre `anthropic`, `gemini` y `openai`, con una variable de credencial por
+>   proveedor. **Ausente equivale a `anthropic`**, así que los entornos de las dos instancias
+>   desplegadas no se tocan.
+> - La «trampa a evitar» de más abajo **está cerrada por los dos lados**: `pnpm instance:check`
+>   emite ahora `llm_key_other_provider` como **error** —el entorno queda NO APTO— y el arranque
+>   comprueba la credencial contra el proveedor, deja la instancia **degradada** con un aviso
+>   crítico si la rechaza, y sale del degradado sola cuando vuelve a servir. Nunca es fatal.
+> - La costura está en `src/llm/`, y una prueba estática (`tests/unit/llm/seam.test.ts`) impide que
+>   el nombre de una variable de credencial o el importe de un SDK vuelvan a salir de ahí.
+> - Qué conserva, traduce o no tiene cada proveedor está en la tabla de capacidades de
+>   [operacion-multicliente.md](operacion-multicliente.md) §4.3, atada al código por una prueba.
+> - **Lo que esto NO cambia**: las dos instancias de producción siguen con Anthropic y sus
+>   entornos no se tocan. Pasar la instancia 2 a Gemini sigue siendo una decisión aparte, y exige
+>   antes la evaluación de ese proveedor (`pnpm test:eval`, que cuesta dinero).
+
+Se planteó dar a la instancia 2 una `GEMINI_API_KEY`. **No se podía el 2026-10-08**: el núcleo solo
+hablaba con la API de Anthropic. Se despliega con dos claves de Anthropic y se hace después una **spec de
 núcleo** que añada el proveedor; entonces la instancia 2 se pasa a Gemini con una actualización, lo
 que además sirve de prueba del ciclo de ampliación de la fase 11.
 

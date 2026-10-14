@@ -4,7 +4,15 @@
  * acción que lo corrige, en español. Los mensajes solo reciben nombres de variable, ids, rutas,
  * servidor/puerto/nombre/usuario de una base de datos y fechas; nunca un valor secreto (FR-007).
  */
-import { LLM_PROVIDERS } from '../llm/provider.js';
+import { LLM_KEY_VARIABLES, LLM_PROVIDERS } from '../llm/provider.js';
+
+/**
+ * 017 (regla C1, SC-008): fuera de `src/llm/` nadie nombra una variable de credencial de un
+ * proveedor concreto. Los textos que hablan de ella se generan desde la tabla, así que añadir un
+ * proveedor cuarto no deja aquí ningún texto que actualizar a mano.
+ */
+const llmKeyEntries = <T,>(build: (variable: string) => T): Record<string, T> =>
+  Object.fromEntries(LLM_KEY_VARIABLES.map((variable) => [variable, build(variable)]));
 
 /** Datos que puede llevar un mensaje. Ninguno es un valor de una variable secreta. */
 export interface MessageContext {
@@ -140,8 +148,8 @@ const MISSING_ACTIONS: Record<string, string> = {
   PUBLIC_BASE_URL: 'Indica la URL pública https de la instancia, sin ruta.',
   EMERGENCY_CONTACT_PHONE: 'Indica un teléfono de emergencia en formato E.164 (+34...).',
   NODE_ENV: 'Indica NODE_ENV=production.',
-  ANTHROPIC_API_KEY: 'Añade la clave del modelo de lenguaje de la instancia.',
   STT_API_KEY: 'Añade la clave de la API de transcripción o pon AUDIO_TRANSCRIPTION=off.',
+  ...llmKeyEntries(() => 'Añade la clave del modelo de lenguaje de la instancia.'),
 };
 
 /** Cómo sustituir un secreto débil, según su tipo (012). */
@@ -164,11 +172,11 @@ function secretAction(c: MessageContext): string {
 }
 
 const PENDING: Record<string, { message: string; detail?: string; action: string }> = {
-  ANTHROPIC_API_KEY: {
-    message: 'ANTHROPIC_API_KEY está vacía: la instancia no tendrá bot (solo panel).',
+  ...llmKeyEntries((variable) => ({
+    message: `${variable} está vacía: la instancia no tendrá bot (solo panel).`,
     detail: 'está vacía: la instancia no tendrá bot (solo panel).',
     action: 'Complétala con la clave del modelo de lenguaje de esta instancia.',
-  },
+  })),
   SMTP_URL: {
     message: 'SMTP_URL y SMTP_FROM están vacías: no habrá avisos de derivación por email.',
     action: 'Complétalas si el negocio quiere avisos por email.',
@@ -210,7 +218,8 @@ export const CHECK_CATALOG: Record<CheckCode, CatalogEntry> = {
     action: () => 'Indica las dos o deja las dos vacías.',
   },
   llm_key_required: {
-    message: () => 'ANTHROPIC_API_KEY es obligatoria con el canal de WhatsApp.',
+    // 017 (regla C1): la variable la pone el contexto, que es la del proveedor declarado.
+    message: (c) => `${v(c)} es obligatoria con el canal de WhatsApp.`,
     detail: () => 'es obligatoria con el canal de WhatsApp.',
     action: () => 'Añade la clave del modelo de lenguaje de esta instancia.',
   },

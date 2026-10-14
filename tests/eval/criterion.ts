@@ -1,6 +1,6 @@
 /**
  * Suite de un criterio de éxito: pasa por el modelo real las preguntas de los tres sectores
- * que miden ese criterio y acumula el resultado por categoría. Se omite sin ANTHROPIC_API_KEY.
+ * que miden ese criterio y acumula el resultado por categoría. Se omite sin la credencial del proveedor declarado.
  */
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { clinicQuestions } from '../fixtures/eval/clinic.questions.js';

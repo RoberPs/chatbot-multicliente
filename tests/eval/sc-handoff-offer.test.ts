@@ -2,7 +2,7 @@
  * SC-007 de la 005: con vías de aviso, toda consulta sin dato registrado (y toda gestión que no
  * se hace por este medio) termina en la OFERTA de derivación (objetivo 100 %), y la respuesta
  * del cliente a la oferta se clasifica bien: aceptar deriva (o pide los datos) y rechazar o
- * cambiar de tema no. Modelo real, vías falsas; se omite sin ANTHROPIC_API_KEY.
+ * cambiar de tema no. Modelo real, vías falsas; se omite sin la credencial del proveedor declarado.
  * `pnpm test:eval`.
  */
 import type { EvalAnswer, EvalQuestion, SectorQuestions } from './harness.js';

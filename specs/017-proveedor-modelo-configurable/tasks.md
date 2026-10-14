@@ -283,7 +283,7 @@ modelo real.
 **Independent Test**: existe un resultado de evaluación anotado por cada proveedor elegible, con su
 modelo, su esfuerzo y su fecha.
 
-- [ ] T070 [US5] Parametrizar `pnpm test:eval` por `LLM_PROVIDER` y `LLM_MODEL` para poder correrla por proveedor sin tocar código (R14)
+- [X] T070 [US5] Parametrizar `pnpm test:eval` por `LLM_PROVIDER` y `LLM_MODEL` para poder correrla por proveedor sin tocar código (R14)
 - [ ] T071 [US5] Correr la evaluación **una vez por proveedor** con el esfuerzo por defecto y anotar en `docs/operacion-multicliente.md` proveedor, modelo, esfuerzo, fecha y veredicto (SC-007). **Cuesta dinero y está fuera de `pnpm test` a propósito**
 - [ ] T072 [US5] Para cada proveedor que no alcance el criterio: darle un `LLM_EFFORT` por defecto propio, razonado y escrito, y **reevaluar**. Si tras el ajuste sigue sin alcanzarlo, **no declararlo elegible** en esta versión y escribir por qué (FR-036, FR-036a)
 
@@ -293,11 +293,11 @@ modelo, su esfuerzo y su fecha.
 
 ## Phase 8: Polish y asuntos transversales
 
-- [ ] T073 Añadir la prueba estática en `tests/unit/llm/seam.test.ts` que recorre `src/`, excluye `src/llm/`, y falla si encuentra el nombre de una variable de credencial de proveedor o un importe de un SDK de proveedor (reglas C1 y C2, SC-008)
-- [ ] T074 Migrar los 28 ficheros de `tests/` que nombran `ANTHROPIC_API_KEY` para que usen los dobles y las fábricas, sin perder ninguna cobertura existente
-- [ ] T075 [P] Actualizar `.env.example` con `LLM_PROVIDER`, las tres variables de credencial y la nueva obligatoriedad de `LLM_MODEL`, con comentarios en español
-- [ ] T076 [P] Actualizar `docs/operacion-multicliente.md`: la tabla de specs realizadas (§9.1, con su fecha), **la anotación de que la 017 adelanta a P7 con su razón (§9.2)**, la propuesta que cubre marcada como hecha, y las secciones de operación que cambien —alta de instancia, comprobación previa y pantalla de consumo—
-- [ ] T077 [P] Anotar en `docs/plan-despliegue-produccion.md` §6 que la decisión del 2026-10-12 queda implementada en la 017
+- [X] T073 Añadir la prueba estática en `tests/unit/llm/seam.test.ts` que recorre `src/`, excluye `src/llm/`, y falla si encuentra el nombre de una variable de credencial de proveedor o un importe de un SDK de proveedor (reglas C1 y C2, SC-008)
+- [X] T074 Migrar los 28 ficheros de `tests/` que nombran `ANTHROPIC_API_KEY` para que usen los dobles y las fábricas, sin perder ninguna cobertura existente
+- [X] T075 [P] Actualizar `.env.example` con `LLM_PROVIDER`, las tres variables de credencial y la nueva obligatoriedad de `LLM_MODEL`, con comentarios en español
+- [X] T076 [P] Actualizar `docs/operacion-multicliente.md`: la tabla de specs realizadas (§9.1, con su fecha), **la anotación de que la 017 adelanta a P7 con su razón (§9.2)**, la propuesta que cubre marcada como hecha, y las secciones de operación que cambien —alta de instancia, comprobación previa y pantalla de consumo—
+- [X] T077 [P] Anotar en `docs/plan-despliegue-produccion.md` §6 que la decisión del 2026-10-12 queda implementada en la 017
 - [ ] T078 **Avisar al usuario antes** y luego actualizar `README.md` con el estado de la feature 017
 - [ ] T079 Subir `package.json` a **0.1.3**
 - [ ] T080 Recorrer [quickstart.md](quickstart.md) completo, §1 a §6, y anotar el resultado real de cada apartado, sin redondear. El §2 es el que verifica SC-001: una instancia atiende con cualquier proveedor cambiando solo su fichero de entorno

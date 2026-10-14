@@ -83,14 +83,14 @@ export function secretQuality(variable: string, value: string): QualityFinding[]
   }
   if (rule !== null) add('weak_secret');
 
-  // 017 (FR-028, R4). Antes esto comprobaba a mano `!startsWith('sk-ant-')` sobre una sola
-  // variable y lo emitía como **aviso**, así que una clave de Gemini en `ANTHROPIC_API_KEY`
-  // **pasaba** la comprobación y la instancia fallaba después delante de cada cliente. Ese es el
-  // agujero que la feature existe para cerrar.
+  // 017 (FR-028, R4). Antes esto comprobaba a mano un prefijo concreto sobre una sola variable y
+  // lo emitía como **aviso**, así que una credencial de otro proveedor **pasaba** la comprobación
+  // y la instancia fallaba después delante de cada cliente. Ese es el agujero que la feature
+  // existe para cerrar.
   //
   // La pregunta que se hace ahora no necesita saber cuál es el proveedor declarado: «¿este valor
-  // va en esta variable?». Una clave de Anthropic en `GEMINI_API_KEY` está mal puesta diga lo que
-  // diga `LLM_PROVIDER`.
+  // va en esta variable?». Una credencial en la variable de otro proveedor está mal puesta diga
+  // lo que diga `LLM_PROVIDER`.
   const owner = providerOfKeyVariable(variable);
   if (owner !== null) {
     const shape = classifyKeyShape(trimmed);

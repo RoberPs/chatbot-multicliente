@@ -5,22 +5,32 @@
  * "identifica cliente y motivo" (umbral 90 %) y "sin datos no dados" (umbral 100 %).
  *
  * También SC-001 de la 005: una petición de persona en mitad de otra gestión deriva igual (con
- * vías falsas termina en R-HANDOFF-OK o R-HANDOFF-ASK). Se omite sin ANTHROPIC_API_KEY.
+ * vías falsas termina en R-HANDOFF-OK o R-HANDOFF-ASK). Se omite sin la credencial del proveedor
+ * declarado (017, R14).
  */
 import { afterAll, describe, expect, it } from 'vitest';
 import { summaryIsGrounded, SUMMARY_MAX_CHARS } from '../../src/handoff/summary.js';
-import { createAnthropicSummarizer } from '../../src/llm/anthropic-summarizer.js';
+import { createSummarizer } from '../../src/llm/factory.js';
 import { handoffConversations } from '../fixtures/eval/handoff-conversations.js';
 import { describeCriterion } from './criterion.js';
-import { hasApiKey, type SectorQuestions } from './harness.js';
+import {
+  evalApiKey,
+  evalModel,
+  evalProvider,
+  hasApiKey,
+  type SectorQuestions,
+} from './harness.js';
 import { printReport, record } from './report.js';
 
 const manual: string[] = [];
 
 describe.skipIf(!hasApiKey)('SC-003 (005): resumen del motivo de la derivación', () => {
-  const summarizer = createAnthropicSummarizer({
-    apiKey: process.env.ANTHROPIC_API_KEY,
-    model: process.env.LLM_MODEL?.trim() || 'claude-sonnet-5-5',
+  // 017 (R12, FR-013a): el resumen se evalúa con el **mismo** proveedor que la conversación. Si se
+  // quedara en Anthropic, una corrida de Gemini conversaría bien y no mediría nada de lo que pasa
+  // justo al derivar a una persona, que es lo que protege el Principio V.
+  const summarizer = createSummarizer(evalProvider, {
+    apiKey: evalApiKey,
+    model: evalModel,
   });
 
   afterAll(() => {

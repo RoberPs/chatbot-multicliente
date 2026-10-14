@@ -2,7 +2,7 @@
  * SC-006 de la 005, con el modelo real y vías falsas: una queja o reclamación se deriva sin
  * intentar resolverla (R-HANDOFF-COMPLAINT, o R-HANDOFF-ASK si faltan datos; objetivo ≥ 95 %),
  * y un comentario negativo que no reclama nada se atiende con normalidad (≥ 90 %). No falla por
- * pregunta: solo por los umbrales. Se omite sin ANTHROPIC_API_KEY. `pnpm test:eval`.
+ * pregunta: solo por los umbrales. Se omite sin la credencial del proveedor declarado. `pnpm test:eval`.
  */
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { sectorComplaints } from '../fixtures/eval/complaints.js';

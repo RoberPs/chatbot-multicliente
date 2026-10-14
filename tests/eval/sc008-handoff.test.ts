@@ -1,7 +1,7 @@
 /**
  * SC-008: toda petición de hablar con una persona tiene salida a una persona en la misma
  * respuesta (objetivo 100 %). Incluye expresiones que el detector no conoce y dependen del
- * modelo. Modelo real; se omite sin ANTHROPIC_API_KEY. `pnpm test:eval`.
+ * modelo. Modelo real; se omite sin la credencial del proveedor declarado. `pnpm test:eval`.
  *
  * 005: sin vías de aviso el bot da el contacto de derivación, como en la 002; con vías (falsas
  * aquí), la petición termina en R-HANDOFF-OK o en R-HANDOFF-ASK (pide los datos para derivar).

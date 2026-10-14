@@ -1,7 +1,13 @@
 /**
  * Arnés de la suite `eval` (research R12): carga un negocio de ejemplo, pasa cada pregunta por
- * la cadena real (recepción → procesador → modelo de Anthropic) con un canal falso y comprueba
- * la respuesta. Requiere ANTHROPIC_API_KEY; sin ella la suite se omite.
+ * la cadena real (recepción → procesador → modelo del proveedor declarado) con un canal falso y
+ * comprueba la respuesta.
+ *
+ * 017 (R14, T070): la suite está **parametrizada por proveedor**. `LLM_PROVIDER` elige quién
+ * contesta y `LLM_MODEL` con qué modelo; sin la credencial del proveedor declarado, o sin
+ * `LLM_MODEL` donde es obligatoria, la suite se omite con el motivo dicho en voz alta. El modelo
+ * **no se fija en el repositorio** fuera de Anthropic: los catálogos de Gemini y de OpenAI se
+ * mueven rápido y un nombre escrito aquí quedaría obsoleto entre features.
  *
  * `EVAL_CHANNEL=web` (004, SC-002) envía las preguntas por el canal web, con el chat activado
  * en la BD de la evaluación; por defecto, `whatsapp`.
@@ -24,7 +30,9 @@ import type { InboundEvent } from '../../src/conversation/types.js';
 import { webChatSettings } from '../../src/db/schema.js';
 import { activateBusiness } from '../../src/knowledge/services/business-status.js';
 import { createKnowledgeReader } from '../../src/knowledge/snapshot.js';
-import { createAnthropicChatModel, type Effort } from '../../src/llm/anthropic-chat-model.js';
+import type { Effort } from '../../src/llm/anthropic-chat-model.js';
+import { createChatModel } from '../../src/llm/factory.js';
+import { isLlmProvider, providerDescriptor, type LlmProvider } from '../../src/llm/provider.js';
 import { createWhisperSpeechToText } from '../../src/speech/whisper.js';
 import { loadFixture } from '../fixtures/load.js';
 import type { BusinessFixture } from '../fixtures/types.js';
@@ -40,8 +48,51 @@ import { recordLatency } from './report.js';
 
 loadDotEnvIfPresent();
 
-export const hasApiKey = Boolean(process.env.ANTHROPIC_API_KEY?.trim());
+/**
+ * Proveedor con el que se evalúa (017, R14). Ausente equivale a `anthropic`, igual que en el
+ * entorno de una instancia (FR-003): una corrida sin declarar nada sigue siendo la de siempre.
+ */
+export const evalProvider: LlmProvider = (() => {
+  const raw = process.env.LLM_PROVIDER?.trim() ?? '';
+  if (raw === '') return 'anthropic';
+  if (!isLlmProvider(raw)) {
+    throw new Error(`LLM_PROVIDER no es un proveedor elegible para la evaluación: ${raw}`);
+  }
+  return raw;
+})();
+
+const descriptor = providerDescriptor(evalProvider);
+
+/** Credencial del proveedor declarado; nunca la de otro, ni como respaldo. */
+export const evalApiKey = process.env[descriptor.keyVariable]?.trim() ?? '';
+
+/**
+ * Modelo de la corrida. Fuera de Anthropic lo declara el entorno y no hay valor por defecto: un
+ * nombre de modelo equivocado se parece mucho a un fallo del proveedor, y eso invalidaría la
+ * evaluación sin que se notara (R2, R14).
+ */
+export const evalModel = process.env.LLM_MODEL?.trim() || (descriptor.defaultModel ?? '');
+
+export const evalEffort = (process.env.LLM_EFFORT?.trim() || 'medium') as Effort;
+
+/** Por qué se omite la suite, o `null` si se puede correr. Se dice en voz alta, no en silencio. */
+export const evalSkipReason: string | null =
+  evalApiKey === ''
+    ? `falta ${descriptor.keyVariable}, la credencial de ${evalProvider}`
+    : evalModel === ''
+      ? `falta LLM_MODEL, obligatoria con ${evalProvider}`
+      : null;
+
+export const hasApiKey = evalSkipReason === null;
 export const hasSttKey = Boolean(process.env.STT_API_KEY?.trim());
+
+/** Cabecera de la corrida, para anotar el resultado (T071: proveedor, modelo, esfuerzo). */
+export const evalHeader = (): string =>
+  `proveedor ${evalProvider} · modelo ${evalModel || '(sin declarar)'} · esfuerzo ${evalEffort}`;
+
+if (evalSkipReason !== null) {
+  console.warn(`Evaluación omitida: ${evalSkipReason}.`);
+}
 
 /** Canal por el que se hacen las preguntas (SC-002 de la 004). */
 export const evalChannel: Extract<Channel, 'whatsapp' | 'web'> =
@@ -266,10 +317,10 @@ export async function createSectorRunner(
     });
   }
   const reader = createKnowledgeReader(t.db);
-  const chatModel = createAnthropicChatModel({
-    apiKey: process.env.ANTHROPIC_API_KEY,
-    model: process.env.LLM_MODEL?.trim() || 'claude-sonnet-5-5',
-    effort: (process.env.LLM_EFFORT?.trim() || 'medium') as Effort,
+  const chatModel = createChatModel(evalProvider, {
+    apiKey: evalApiKey,
+    model: evalModel,
+    effort: evalEffort,
   });
   const contactLine = `Para hablar con una persona de ${String(sector.fixture.business.name)}`;
   const audio = opts.audio ?? false;

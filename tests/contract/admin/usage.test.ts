@@ -611,7 +611,8 @@ describe('Consumo (/admin/usage)', () => {
     });
   });
 
-  describe('sin bot (sin ANTHROPIC_API_KEY)', () => {
+  // 017: «sin bot» es «sin la credencial del proveedor declarado», no la de uno concreto.
+  describe('sin bot (sin credencial del modelo)', () => {
     it('tablas vacías con el aviso, y precios y ajustes siguen editables', async () => {
       await resetDb(t.db);
       app = await buildTestApp(t.db, undefined, null, { LLM_MODEL: TEST_LLM_MODEL });

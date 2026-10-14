@@ -187,7 +187,7 @@ function coherence(env: EnvMap, profile: Profile, out: Findings): void {
     if (!present(env[variable])) out.error('missing', { variable });
   }
   // 017 (FR-005): con bot hay que tener salida a una persona, y «hay bot» es «hay credencial del
-  // proveedor declarado», no «hay ANTHROPIC_API_KEY».
+  // proveedor declarado», no «hay la credencial de un proveedor concreto».
   if (present(llmKeyOf(env).value) && !present(env.EMERGENCY_CONTACT_PHONE)) {
     out.error('missing', { variable: 'EMERGENCY_CONTACT_PHONE' });
   }

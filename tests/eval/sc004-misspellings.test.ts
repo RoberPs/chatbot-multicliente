@@ -2,7 +2,7 @@
  * SC-004: al menos el 90 % de las preguntas con faltas o lenguaje coloquial obtiene la misma
  * respuesta que su versión bien escrita, y el resto pide reformular; nunca un dato erróneo.
  * Usa las `variants` de las preguntas de horario, ubicación y precios (US1, US2).
- * Modelo real; se omite sin ANTHROPIC_API_KEY. `pnpm test:eval`.
+ * Modelo real; se omite sin la credencial del proveedor declarado. `pnpm test:eval`.
  */
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { sectors } from './criterion.js';
