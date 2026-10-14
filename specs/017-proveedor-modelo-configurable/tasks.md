@@ -305,6 +305,64 @@ modelo, su esfuerzo y su fecha.
 
 ---
 
+## Estado real de la puerta de calidad (2026-10-14)
+
+**T043a y T081 siguen SIN MARCAR, y no es un descuido.** Su condición es `pnpm test` entero en
+verde, y no lo está. Lo que hay, medido y sin redondear:
+
+| | |
+|---|---|
+| `pnpm lint` | **limpio** |
+| `pnpm typecheck` | **limpio** |
+| `pnpm test` | **3 fallos · 3557 pasadas · 3 omitidas** (3563), 292 ficheros, 1 fallido, 31,7 min |
+
+Los 3 fallos están **todos** en `tests/integration/db/outage.test.ts` y **son previos a esta
+feature**:
+
+- Se reproducen **idénticos** en `fcb8d50`, el commit con el que se reanudó el tramo 2, y también
+  con el cambio de `protection.ts` de la fase 5 revertido. No los ha traído la 017.
+- Es **un** fallo con dos en cascada: tras recuperarse la base de datos, un `POST` del chat web
+  devuelve **200** («no disponible» con el contacto del negocio) donde el test exige **202**. Al
+  fallar ese `expect`, el `startServer()` de la línea siguiente no se ejecuta, así que los dos
+  tests posteriores mueren al intentar parar un servidor ya parado.
+- El código **falla cerrado y da el contacto**, que es lo que exige el Principio V. La causa raíz
+  no está pinchada; la hipótesis es la misma clase que el fallo de saturación ya observado en esta
+  máquina: presupuestos de 2 s que con Docker por medio se agotan.
+- **No se ha tocado el test de la 016 para que la puerta pase.** Eso sería maquillar el resultado.
+
+La corrida anterior dio 5 fallos. Los otros 2 **sí** eran de esta feature —la columna `PROVEEDOR`
+de `instance:list` y los campos nuevos de la fila de consumo rompían aserciones existentes— y están
+arreglados en `ecff89d`.
+
+### Pendiente de decidir sobre la BD de desarrollo
+
+`/health` responde `degraded` en local, y no por el código: la BD de desarrollo **aplicó una versión
+distinta del fichero `0009_unmeasured_usage.sql`** (se aplicó durante el tramo 1 y después T021a le
+añadió el comentario de cabecera). `sameSchema` compara índice, etiqueta **y hash**; los dos
+primeros coinciden y el hash no:
+
+```
+esperado por el repositorio: 6313029b505498581c57d4d7a4ab7bf1c761f19ad3aa29e21211e88bee8444a1
+aplicado en la BD de dev   : 4c4e4c289586bd1ea6dfb32f35739dc1fce658996edd10cbd6f84794abc98b52
+```
+
+**El esquema aplicado es el correcto**, verificado columna a columna: `unmeasured_calls smallint NOT
+NULL default 0`, su `CHECK (unmeasured_calls >= 0 AND unmeasured_calls <= calls)` y las dos columnas
+de caché ya nulables. Lo que cambió entre versiones fue el comentario, no la estructura.
+
+**No afecta a producción**: allí corre la 0.1.2 con 8 migraciones y la 0009 nunca se ha desplegado;
+cuando se despliegue, la BD la aplicará desde el fichero actual.
+
+Opciones, **sin decidir** (no se toca la BD del usuario sin que lo pida):
+
+1. Actualizar el hash de esa fila de `drizzle.__drizzle_migrations`. Conserva los datos, es
+   reversible y es lo que de verdad pasó. **Recomendada.**
+2. Recrear la BD de desarrollo y volver a migrar. Pierde la configuración y los datos de prueba.
+3. Dejarlo. El panel y el bot funcionan; `/health` dirá `degraded` y el pie del panel marcará el
+   esquema como no coincidente, lo que estorba al recorrer el quickstart (T080).
+
+---
+
 ## Phase 9: Despliegue de la 0.1.3
 
 **Purpose**: la feature no está terminada hasta que está en producción y comprobada. Es la fase que
