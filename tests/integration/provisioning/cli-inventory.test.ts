@@ -133,7 +133,8 @@ describe('mantenimiento del inventario (US4)', () => {
     expect(await main(['list'], io, testDeps())).toBe(0);
     const text = io.stdout.join('\n');
     expect(text).toContain(`Inventario ${ws.inventoryPath} — 2 instancias`);
-    expect(text).toMatch(/^! demo-01 +Cliente demo-01 +activa +0\.2\.0 +—$/m);
+    // 017: la tabla gana la columna PROVEEDOR entre IMAGEN y ÚLTIMA VERIFICACIÓN.
+    expect(text).toMatch(/^! demo-01 +Cliente demo-01 +activa +0\.2\.0 +anthropic +—$/m);
     expect(text).toContain(
       '! 2 instancias activas sin verificación correcta en los últimos 31 días.',
     );

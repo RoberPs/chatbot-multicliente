@@ -806,6 +806,37 @@ Lo que **no** cambia con el proveedor: las cuatro causas de fallo del dominio, e
 intentos por respuesta —que comparten un único presupuesto, porque la política de reintentos de
 los SDK está desactivada—, el registro de consumo, el tope de gasto y la salida a una persona.
 
+#### Qué está probado de cada proveedor, y qué no
+
+**Que un proveedor esté implementado no quiere decir que esté declarado apto.** Son dos cosas
+distintas y conviene no confundirlas al hablar con un cliente:
+
+| Proveedor | Estado | Qué significa |
+|---|---|---|
+| `anthropic` | **En producción** | Es el de las dos instancias desplegadas. Evaluado con el modelo real en features anteriores |
+| `gemini` | Implementado · **conexión verificada** | La cadena entera funciona contra su API real (petición, esquema de salida, consumo, derivación). **No evaluado**: la calidad de sus respuestas no está medida |
+| `openai` | Implementado · **probado solo con dobles** | El adaptador cumple el contrato y pasa la batería común, sin red ni credenciales. No se ha llamado a su API real |
+
+**Decisión del 2026-10-14**: no se evalúan Gemini ni OpenAI hasta que un cliente quiera usarlos.
+Es el mismo criterio que ya se sigue con **el canal de WhatsApp y con los audios**: están
+implementados y se revisan a fondo justo antes de activarlos en el primer cliente que los pida. La
+razón es la misma —la evaluación con el modelo real cuesta dinero y su resultado caduca con cada
+cambio en los adaptadores— y el riesgo es nulo mientras nadie los use, porque ninguna instancia
+los declara.
+
+**Qué hacer cuando un cliente los pida**, antes de darle su instancia:
+
+1. `pnpm test:eval` con `LLM_PROVIDER` y `LLM_MODEL` de ese proveedor y ese modelo, con el esfuerzo
+   por defecto. Son unas 220 llamadas y entre 20 y 35 minutos.
+2. Si no alcanza el criterio, darle un `LLM_EFFORT` propio razonado y reevaluar. Si sigue sin
+   alcanzarlo, **no ofrecérselo** y escribir por qué.
+3. Anotar aquí proveedor, modelo, esfuerzo, fecha y veredicto.
+
+Ojo con el nivel gratuito de Gemini: su límite de peticiones por minuto puede hacer que una corrida
+completa devuelva 429, que el adaptador traduce a fallo del proveedor y cuenta como pregunta
+fallada. Un informe con fallos repartidos sin relación con el contenido de las preguntas es eso, no
+un problema de calidad.
+
 ---
 
 ## 5. Actualizar el núcleo

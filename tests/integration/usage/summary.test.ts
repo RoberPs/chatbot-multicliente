@@ -105,9 +105,13 @@ describe('resumen del consumo', () => {
     const s = await summarizePeriod(t.db, { first: '2026-09-01', last: '2026-09-30' });
     expect(s.byChannel.web).toEqual({
       calls: 0,
+      // 017: sin consumo no hay nada que no se haya medido, y ningún concepto queda «sin dato»:
+      // un canal sin llamadas no afirma que el modelo no informe de nada.
+      unmeasuredCalls: 0,
       replies: 0,
       summaries: 0,
       tokens: tokens(0, 0),
+      cache: { write: 'reported', read: 'reported' },
       cost: new Map(),
       unpricedModels: [],
     });
