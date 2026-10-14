@@ -79,4 +79,43 @@ describe('escritura de caché no informada', () => {
     // (1200 + 300 + 800) × 1 000 000 millonésimas por MTok: la escritura nula aporta 0.
     expect(row?.costPico).toBe(2_300_000_000n);
   });
+
+  /**
+   * T066 (FR-026, FR-027): cambiar de proveedor no cambia nada de esto.
+   *
+   * El precio se busca por **nombre de modelo**, que es lo que cambia al cambiar de proveedor, así
+   * que el camino del «modelo sin precio» —degradar a solo contacto del negocio— sigue siendo el
+   * mismo y no hace falta nada nuevo. Y el coste ya registrado **no se recalcula nunca**: la fila
+   * del proveedor anterior conserva el importe que se congeló cuando se registró, aunque el modelo
+   * actual ya no tenga precio.
+   */
+  it('al cambiar de modelo el histórico no se recalcula y el nuevo queda sin precio', async () => {
+    const b = await start();
+    await t.db.insert(modelPrice).values({
+      model: TEST_LLM_MODEL,
+      inputMicrosPerMtok: 1_000_000n,
+      outputMicrosPerMtok: 1_000_000n,
+      cacheWriteMicrosPerMtok: 2_000_000n,
+      cacheReadMicrosPerMtok: 1_000_000n,
+    });
+    await b.send('¿Abrís el sábado?');
+    await b.settle();
+    const [congelada] = await records();
+    expect(congelada?.costPico).toBe(2_300_000_000n);
+
+    // El operador cambia de proveedor: el modelo pasa a ser otro, y ese otro no tiene precio.
+    await t.db.delete(modelPrice);
+    await b.send('¿Y el domingo?');
+    await b.settle();
+
+    const rows = await records();
+    expect(rows).toHaveLength(2);
+    // La fila anterior sigue exactamente igual: el coste congelado no se toca (FR-026).
+    expect(rows[0]).toMatchObject({ costPico: 2_300_000_000n, currency: 'USD' });
+    // La nueva queda sin valorar, que es lo que hace saltar el aviso de «modelo sin precio».
+    expect(rows[1]?.costPico).toBeNull();
+    expect(rows[1]?.currency).toBeNull();
+    // Y sigue siendo «sin dato» en el concepto que el proveedor no informa, no un cero.
+    expect(rows[1]?.cacheWriteTokens).toBeNull();
+  });
 });

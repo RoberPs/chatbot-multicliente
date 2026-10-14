@@ -111,6 +111,9 @@ export async function renderPage(
   const spend = await spendBanner(request, data.state.business.timezone);
   const protection = protectionWarnings(
     await readProtection(request.server, data.state.business.timezone),
+    // 017 (FR-025a): la severidad del aviso de consumo no medido depende de si hay clientes
+    // delante, así que el estado del negocio entra aquí, donde ya se conoce.
+    { businessActive: data.state.business.status === 'active' },
   );
   const html = await reply.viewAsync(view, {
     errors: {},

@@ -35,7 +35,7 @@ import {
   summarizeDays,
   summarizePeriod,
 } from '../../usage/summary.js';
-import type { SpendCapLevel, UsageRow, UsageSummary } from '../../usage/types.js';
+import type { ConceptState, SpendCapLevel, UsageRow, UsageSummary } from '../../usage/types.js';
 import { parseForm } from '../form-parse.js';
 import type { FormErrorResponse } from '../form-errors.js';
 import { formErrorData, readState, renderPage, submitForm } from '../render.js';
@@ -75,17 +75,44 @@ export function costText(row: UsageRow, currency: string): string {
   return unpriced ? `${parts.join(' + ')} (hay consumo sin precio)` : parts.join(' + ');
 }
 
+/** Texto de «sin dato», distinguible de un cero a simple vista y en un lector de pantalla. */
+export const NO_DATA = 'sin dato';
+
+/**
+ * 017 (FR-024, SC-012): un concepto de caché, con sus tres estados.
+ *
+ * - informado → el número;
+ * - **no informado** → «sin dato», **nunca `0`**: un cero afirmaría que el modelo midió y que no
+ *   hubo nada, y eso es exactamente lo que FR-024 prohíbe confundir;
+ * - parcialmente informado → el número de lo que sí se midió, marcado como incompleto en lugar de
+ *   presentarse como exacto. La suma ignora los nulos, así que no subestima lo medido.
+ *
+ * Ninguno de los tres textos nombra al proveedor (FR-008): el estado se deduce de lo registrado.
+ */
+function conceptCell(tokens: number | null, state: ConceptState): string {
+  if (state === 'unreported' || tokens === null) return NO_DATA;
+  return state === 'partial' ? `${count(tokens)} (parcial)` : count(tokens);
+}
+
+/**
+ * Respuestas con modelo y, si hubo, las llamadas cuyo consumo no se informó (017, FR-025a). Va
+ * pegado al número al que califica: el operador tiene que ver que de esas respuestas hay unas
+ * cuantas que nadie midió, no un recuento suelto en otra parte de la página.
+ */
+function repliesCell(row: UsageRow): string {
+  const replies = count(row.replies);
+  if (row.unmeasuredCalls === 0) return replies;
+  const n = row.unmeasuredCalls;
+  return `${replies} (${count(n)} ${n === 1 ? 'llamada sin medir' : 'llamadas sin medir'})`;
+}
+
 const cellsOf = (row: UsageRow, currency: string): string[] => [
-  count(row.replies),
+  repliesCell(row),
   count(row.summaries),
   count(row.tokens.input),
   count(row.tokens.output),
-  // 017: aquí es donde «sin dato» tiene que dejar de parecerse a un cero (FR-024). Lo pinta T065,
-  // con su nota genérica y sus totales marcados como incompletos; hasta entonces un concepto no
-  // informado sale como 0, y por eso el entorno de desarrollo se queda en un proveedor que informa
-  // de los cuatro conceptos.
-  count(row.tokens.cacheWrite ?? 0),
-  count(row.tokens.cacheRead ?? 0),
+  conceptCell(row.tokens.cacheWrite, row.cache.write),
+  conceptCell(row.tokens.cacheRead, row.cache.read),
   costText(row, currency),
 ];
 
@@ -155,8 +182,18 @@ export async function usageRoutes(app: FastifyInstance): Promise<void> {
     const periods = currentPeriods(now, timezone);
     const tables: Array<{ id: string; title: string; first: string; rows: UsageTableRow[] }> = [];
     const unpriced = new Set<string>();
+    /**
+     * 017 (FR-024, FR-008): conceptos que algún periodo mostrado no informa, para la nota
+     * genérica. Dice «el modelo configurado», **nunca** el nombre del proveedor, y se deduce de lo
+     * registrado: la presentación no sabe quién hay detrás.
+     */
+    const noData = new Set<string>();
+    let unmeasuredCalls = 0;
     const addSummary = (id: string, title: string, summary: UsageSummary) => {
       summary.instance.unpricedModels.forEach((m) => unpriced.add(m));
+      if (summary.instance.cache.write !== 'reported') noData.add('la escritura en caché');
+      if (summary.instance.cache.read !== 'reported') noData.add('la lectura de caché');
+      unmeasuredCalls += summary.instance.unmeasuredCalls;
       tables.push({ id, title, first: 'Canal', rows: channelRows(summary, settings.currency) });
     };
     if (month) {
@@ -219,6 +256,8 @@ export async function usageRoutes(app: FastifyInstance): Promise<void> {
       monthUnavailable: asked !== undefined && month === null,
       tables,
       unpricedModels: [...unpriced].sort(),
+      noDataConcepts: [...noData],
+      unmeasuredCalls,
       months: months.map((m) => ({ value: m, label: monthLabel(m), selected: m === month })),
       currency: settings.currency,
       currentModel,

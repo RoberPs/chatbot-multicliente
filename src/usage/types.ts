@@ -115,6 +115,12 @@ export interface ProtectionState {
   /** Nivel del tope de gasto (010); `null` si no se pudo leer. */
   spendCap: SpendCapState | null;
   whatsapp: { today: number; cap: number; reached: boolean } | null;
+  /**
+   * 017 (FR-025a): llamadas del mes local cuyo consumo el modelo no informó; `null` si no se pudo
+   * leer. Es lo que convierte un total que parecía exacto en un total del que se sabe que falta
+   * algo, y de ahí sale el aviso.
+   */
+  unmeasuredCalls: number | null;
   /** Contadores de derivación del día local; `null` si no se pudieron leer. */
   handoffs: {
     started: number;
@@ -128,11 +134,33 @@ export interface ProtectionState {
 }
 
 /** Totales de un grupo de registros (un canal, los clientes finales o la instancia). */
+/**
+ * 017 (FR-024, R15): qué sabe un periodo de un concepto de caché.
+ *
+ * **Se deduce de lo registrado, nunca del nombre del proveedor** (FR-006): si en el periodo no hay
+ * ni una fila que informe el concepto, sale «sin dato». Así la capa de presentación no necesita
+ * saber quién hay detrás del modelo.
+ */
+export type ConceptState = 'reported' | 'partial' | 'unreported';
+
+/** Estado de los dos conceptos de caché en un grupo de consumo (017). */
+export interface CacheConceptStates {
+  write: ConceptState;
+  read: ConceptState;
+}
+
 export interface UsageRow {
   calls: number;
+  /**
+   * De `calls`, las que no informaron ningún token (017, FR-025). No es «consumo cero»: es consumo
+   * que nadie midió, y por eso se muestra aparte en lugar de desaparecer en la suma.
+   */
+  unmeasuredCalls: number;
   replies: number;
   summaries: number;
   tokens: TokenUsage;
+  /** Estado de cada concepto de caché en el grupo (017, FR-024). */
+  cache: CacheConceptStates;
   /** Coste valorado por moneda, en billonésimas. */
   cost: Map<string, bigint>;
   /** Modelos con algún registro sin precio en el grupo (US2-4). */

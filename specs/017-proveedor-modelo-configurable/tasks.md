@@ -244,16 +244,16 @@ panel, que «sin dato» no se parece a un cero ([quickstart.md](quickstart.md) �
 
 ### Tests de US3 ⚠️ primero, y deben fallar
 
-- [ ] T060 [P] [US3] Escribir en `tests/unit/usage/summary.test.ts` los tests de los tres estados por concepto —informado, no informado y parcialmente informado— y de que los totales **no** suman lo no informado como cero (FR-024, SC-012)
-- [ ] T061 [P] [US3] Escribir en `tests/unit/usage/protection.test.ts` los tests de severidad del aviso de consumo no medido: **crítico** con el tope activado y el negocio activo, normal en los demás casos, y **que nunca revierte ninguna escritura del operador** (FR-025a)
-- [ ] T062 [P] [US3] Escribir en `tests/contract/admin/usage-no-data.test.ts` el test de que la pantalla de consumo muestra «sin dato» y no `0`, con una nota que **no** nombra al proveedor
+- [X] T060 [P] [US3] Escribir en `tests/unit/usage/summary.test.ts` los tests de los tres estados por concepto —informado, no informado y parcialmente informado— y de que los totales **no** suman lo no informado como cero (FR-024, SC-012)
+- [X] T061 [P] [US3] Escribir en `tests/unit/usage/protection.test.ts` los tests de severidad del aviso de consumo no medido: **crítico** con el tope activado y el negocio activo, normal en los demás casos, y **que nunca revierte ninguna escritura del operador** (FR-025a)
+- [X] T062 [P] [US3] Escribir en `tests/contract/admin/usage-no-data.test.ts` el test de que la pantalla de consumo muestra «sin dato» y no `0`, con una nota que **no** nombra al proveedor
 
 ### Implementación de US3
 
-- [ ] T063 [US3] Cambiar `src/usage/summary.ts` para agregar `unmeasured_calls` y decidir por periodo si cada concepto de caché está informado, no informado o parcialmente informado, deduciéndolo de lo registrado y **no** del nombre del proveedor (R15)
-- [ ] T064 [US3] Añadir a `src/usage/protection.ts` el aviso de consumo no medido con la severidad de FR-025a, calculado con `computeWarnings` y nunca guardado
-- [ ] T065 [US3] Cambiar `src/admin/views/usage.eta` para mostrar «sin dato» distinguible del cero, con la nota genérica, el recuento de respuestas no medidas, y los totales que incluyen un hueco marcados como incompletos
-- [ ] T066 [US3] Comprobar que el aviso de «modelo sin precio» y su degradación a solo contacto del negocio siguen funcionando igual al cambiar de proveedor, sin recalcular el histórico (FR-026, FR-027)
+- [X] T063 [US3] Cambiar `src/usage/summary.ts` para agregar `unmeasured_calls` y decidir por periodo si cada concepto de caché está informado, no informado o parcialmente informado, deduciéndolo de lo registrado y **no** del nombre del proveedor (R15)
+- [X] T064 [US3] Añadir a `src/usage/protection.ts` el aviso de consumo no medido con la severidad de FR-025a, calculado con `computeWarnings` y nunca guardado
+- [X] T065 [US3] Cambiar `src/admin/views/usage.eta` para mostrar «sin dato» distinguible del cero, con la nota genérica, el recuento de respuestas no medidas, y los totales que incluyen un hueco marcados como incompletos
+- [X] T066 [US3] Comprobar que el aviso de «modelo sin precio» y su degradación a solo contacto del negocio siguen funcionando igual al cambiar de proveedor, sin recalcular el histórico (FR-026, FR-027)
 
 **Checkpoint**: US3 completa. El tope de gasto protege lo que puede y el operador sabe cuándo la suma es incompleta.
 

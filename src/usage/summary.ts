@@ -12,6 +12,7 @@ import { usageCutoff } from './retention.js';
 import {
   addTokenUsage,
   ZERO_TOKENS,
+  type ConceptState,
   type UsagePurpose,
   type UsageRow,
   type UsageSummary,
@@ -38,30 +39,69 @@ export function monthRange(month: string): DayRange {
 
 export const emptyRow = (): UsageRow => ({
   calls: 0,
+  unmeasuredCalls: 0,
   replies: 0,
   summaries: 0,
   tokens: { ...ZERO_TOKENS },
+  // Un grupo sin ninguna fila que informe el concepto está «informado» y vale 0: no hubo llamadas
+  // que informar. «Sin dato» se afirma solo cuando hubo llamadas y ninguna lo informó.
+  cache: { write: 'reported', read: 'reported' },
   cost: new Map(),
   unpricedModels: [],
 });
 
 /** Fila agregada de la consulta: un grupo de canal, propósito, modelo y moneda. */
-interface Group {
+export interface Group {
   channel: Channel;
   purpose: UsagePurpose;
   model: string;
   currency: string | null;
   records: number;
   calls: number;
+  unmeasuredCalls: number;
   input: number;
   output: number;
   cacheWrite: number;
   cacheRead: number;
+  /** Filas del grupo con el concepto **no nulo**: `count()` no cuenta los nulos (017, R15). */
+  cacheWriteRows: number;
+  cacheReadRows: number;
   cost: string | null;
 }
 
-function addGroup(row: UsageRow, g: Group): void {
+/**
+ * 017 (R15): recuentos con los que se deduce el estado de cada concepto. Viven aparte de
+ * `UsageRow` —en un `Map` local a la agregación— para no meter contadores intermedios en el tipo
+ * que lee el panel.
+ */
+interface ConceptCounts {
+  /** Filas a las que el concepto se aplica. */
+  rows: number;
+  write: number;
+  read: number;
+}
+
+/**
+ * Las transcripciones no entran en el recuento: guardan `0` en los conceptos de caché porque no
+ * tienen caché, no porque el proveedor del modelo informe de ella. Contarlas haría que una
+ * instancia cuyo proveedor **nunca** informa de la escritura de caché pareciese «parcialmente
+ * informada» en cuanto transcribiese un audio.
+ */
+const conceptApplies = (purpose: UsagePurpose) => purpose !== 'transcription';
+
+function conceptState(withConcept: number, rows: number): ConceptState {
+  if (rows === 0 || withConcept === rows) return 'reported';
+  return withConcept === 0 ? 'unreported' : 'partial';
+}
+
+function addGroup(row: UsageRow, g: Group, counts?: ConceptCounts): void {
   row.calls += g.calls;
+  row.unmeasuredCalls += g.unmeasuredCalls;
+  if (counts && conceptApplies(g.purpose)) {
+    counts.rows += g.records;
+    counts.write += g.cacheWriteRows;
+    counts.read += g.cacheReadRows;
+  }
   // Las transcripciones (012) suman llamadas y coste, pero no son respuestas ni resúmenes.
   if (g.purpose === 'reply') row.replies += g.records;
   else if (g.purpose === 'handoff_summary') row.summaries += g.records;
@@ -86,6 +126,13 @@ function sortCost(row: UsageRow): UsageRow {
   return row;
 }
 
+/** Cierre de una fila: monedas ordenadas y estado de cada concepto de caché (017). */
+function finishRow(row: UsageRow, counts: ConceptCounts | undefined): UsageRow {
+  const { rows, write, read } = counts ?? { rows: 0, write: 0, read: 0 };
+  row.cache = { write: conceptState(write, rows), read: conceptState(read, rows) };
+  return sortCost(row);
+}
+
 const groupColumns = {
   channel: modelUsage.channel,
   purpose: modelUsage.purpose,
@@ -93,27 +140,46 @@ const groupColumns = {
   currency: modelUsage.currency,
   records: sql<number>`count(*)::int`,
   calls: sql<number>`sum(${modelUsage.calls})::int`,
+  unmeasuredCalls: sql<number>`sum(${modelUsage.unmeasuredCalls})::int`,
   // `bigint` en Postgres → texto; los tokens de un mes caben de sobra en un `number`.
   input: sql<number>`sum(${modelUsage.inputTokens})::float8`,
   output: sql<number>`sum(${modelUsage.outputTokens})::float8`,
   cacheWrite: sql<number>`sum(${modelUsage.cacheWriteTokens})::float8`,
   cacheRead: sql<number>`sum(${modelUsage.cacheReadTokens})::float8`,
+  // `count(columna)` ignora los nulos: es exactamente «cuántas filas informaron el concepto».
+  cacheWriteRows: sql<number>`count(${modelUsage.cacheWriteTokens})::int`,
+  cacheReadRows: sql<number>`count(${modelUsage.cacheReadTokens})::int`,
   cost: sql<string | null>`sum(${modelUsage.costPico})::text`,
 };
 
-function aggregate(groups: Group[], period: DayRange): UsageSummary {
+/**
+ * Núcleo **puro** de la agregación: de los grupos de la consulta a las filas del panel. Exportado
+ * para que la deducción del estado de cada concepto (017, R15) se pueda probar sin base de datos.
+ */
+export function aggregateGroups(groups: Group[], period: DayRange): UsageSummary {
   const byChannel = Object.fromEntries(CHANNELS.map((c) => [c, emptyRow()])) as Record<
     Channel,
     UsageRow
   >;
   const customers = emptyRow();
   const instance = emptyRow();
+  const counts = new Map<UsageRow, ConceptCounts>();
+  const countsOf = (row: UsageRow): ConceptCounts => {
+    const existing = counts.get(row);
+    if (existing) return existing;
+    const fresh: ConceptCounts = { rows: 0, write: 0, read: 0 };
+    counts.set(row, fresh);
+    return fresh;
+  };
   for (const g of groups) {
-    addGroup(byChannel[g.channel], g);
-    if (g.channel !== 'playground') addGroup(customers, g);
-    addGroup(instance, g);
+    const channelRow = byChannel[g.channel];
+    addGroup(channelRow, g, countsOf(channelRow));
+    if (g.channel !== 'playground') addGroup(customers, g, countsOf(customers));
+    addGroup(instance, g, countsOf(instance));
   }
-  for (const row of [...Object.values(byChannel), customers, instance]) sortCost(row);
+  for (const row of [...Object.values(byChannel), customers, instance]) {
+    finishRow(row, counts.get(row));
+  }
   return { period, byChannel, customers, instance };
 }
 
@@ -124,7 +190,7 @@ export async function summarizePeriod(tx: DbOrTx, period: DayRange): Promise<Usa
     .from(modelUsage)
     .where(between(modelUsage.day, period.first, period.last))
     .groupBy(modelUsage.channel, modelUsage.purpose, modelUsage.model, modelUsage.currency);
-  return aggregate(groups, period);
+  return aggregateGroups(groups, period);
 }
 
 /** Consumo de la instancia por día de un mes `AAAA-MM`; solo los días con consumo. */
@@ -146,12 +212,15 @@ export async function summarizeDays(
     )
     .orderBy(asc(modelUsage.day));
   const days = new Map<string, UsageRow>();
+  const counts = new Map<string, ConceptCounts>();
   for (const g of groups) {
     const row = days.get(g.day) ?? emptyRow();
-    addGroup(row, g);
+    const dayCounts = counts.get(g.day) ?? { rows: 0, write: 0, read: 0 };
+    addGroup(row, g, dayCounts);
     days.set(g.day, row);
+    counts.set(g.day, dayCounts);
   }
-  return [...days.entries()].map(([day, row]) => ({ day, row: sortCost(row) }));
+  return [...days.entries()].map(([day, row]) => ({ day, row: finishRow(row, counts.get(day)) }));
 }
 
 /** Meses `AAAA-MM` conservados (R14) que tienen consumo, del más reciente al más antiguo. */

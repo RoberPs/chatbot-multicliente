@@ -264,7 +264,9 @@ export type WarningCode =
   | 'SPEND_UNREADABLE'
   | 'BUSINESS_NOTICES_HELD'
   // 017 (FR-005b): el proveedor rechaza la credencial del modelo.
-  | 'LLM_KEY_REJECTED';
+  | 'LLM_KEY_REJECTED'
+  // 017 (FR-025a): hubo respuestas cuyo consumo el modelo no informó. Alarma, nunca bloqueo.
+  | 'USAGE_UNMEASURED';
 
 /** `instance`: avisos de la instancia, no de la configuración del negocio (012). */
 export type WarningTargetKind =

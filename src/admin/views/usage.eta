@@ -17,6 +17,17 @@
       <% }) %>
     </div>
   <% } %>
+  <% /* 017 (FR-024, FR-008): nota genérica. Dice «el modelo configurado», nunca el proveedor. */ %>
+  <% if (it.noDataConcepts.length > 0 || it.unmeasuredCalls > 0) { %>
+    <div class="notice" role="status" data-usage-no-data>
+      <% if (it.noDataConcepts.length > 0) { %>
+        <p>El modelo configurado no informa de <%= it.noDataConcepts.join(' ni de ') %>: ese dato sale como «sin dato», que no es cero, y no se suma como tal. El coste estimado no lo valora.</p>
+      <% } %>
+      <% if (it.unmeasuredCalls > 0) { %>
+        <p><%= it.unmeasuredCalls %> <%= it.unmeasuredCalls === 1 ? 'llamada al modelo no informó' : 'llamadas al modelo no informaron' %> de su consumo: hubo consumo que no se ha podido valorar, y no fue gratis. Donde aparece, va junto a las respuestas con modelo.</p>
+      <% } %>
+    </div>
+  <% } %>
   <% it.tables.forEach(function (table) { %>
     <section class="card usage">
       <h2><%= table.title %></h2>

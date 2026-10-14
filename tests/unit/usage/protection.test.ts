@@ -21,6 +21,8 @@ function state(
     level?: SpendCapLevel;
     whatsappReached?: boolean;
     held?: number;
+    /** 017: llamadas del mes cuyo consumo el modelo no informó. */
+    unmeasured?: number;
   } = {},
 ): ProtectionState {
   const contactOnly = opts.contactOnly ?? [];
@@ -49,6 +51,7 @@ function state(
           held: opts.held ?? 0,
           limits: { dailyMax: 20, forwardIntervalMinutes: 15, noticesDailyMax: 60 },
         },
+    unmeasuredCalls: unreadable ? null : (opts.unmeasured ?? 0),
     unpricedModels: {
       llm: contactOnly.includes('model_unpriced') ? 'modelo-x' : null,
       stt: contactOnly.includes('stt_unpriced') ? 'whisper-1' : null,
@@ -174,5 +177,76 @@ describe('protectionWarnings', () => {
 
   it('el tope alcanzado y el tope de WhatsApp no son avisos de protección (los da la banda de gasto)', () => {
     expect(protectionWarnings(state({ level: 'reached', whatsappReached: true }))).toEqual([]);
+  });
+});
+
+/**
+ * 017 (FR-025a, T061): severidad del aviso de consumo no medido.
+ *
+ * Es **crítico** solo cuando las dos cosas pasan a la vez: el tope de gasto está activado —y
+ * entonces no se puede garantizar— y el negocio está activo —y entonces hay clientes delante—. En
+ * cualquier otro caso es un aviso normal: saberlo importa, pero no hay nada que proteger.
+ */
+describe('aviso de consumo no medido (017, FR-025a)', () => {
+  const codeOf = (warnings: ReturnType<typeof protectionWarnings>) =>
+    warnings.filter((w) => w.code === 'USAGE_UNMEASURED').map((w) => w.severity);
+
+  it('sin consumo no medido no hay aviso', () => {
+    expect(codeOf(protectionWarnings(state(), { businessActive: true }))).toEqual([]);
+    expect(codeOf(protectionWarnings(state({ unmeasured: 0 }), { businessActive: true }))).toEqual(
+      [],
+    );
+  });
+
+  it('crítico con el tope activado y el negocio activo', () => {
+    const warnings = protectionWarnings(state({ unmeasured: 4, level: 'normal' }), {
+      businessActive: true,
+    });
+    const [w] = warnings.filter((x) => x.code === 'USAGE_UNMEASURED');
+    expect(w).toMatchObject({ severity: 'critical', target: { kind: 'instance' } });
+    expect(w?.message).toContain('4 respuestas');
+    expect(w?.message).toContain('tope');
+  });
+
+  const NORMAL_CASES: Array<[string, SpendCapLevel, boolean]> = [
+    ['con el negocio inactivo', 'normal', false],
+    ['sin tope activado', 'none', true],
+    ['sin tope y sin negocio activo', 'none', false],
+  ];
+
+  it.each(NORMAL_CASES)('normal %s', (_name, level, businessActive) => {
+    expect(codeOf(protectionWarnings(state({ unmeasured: 4, level }), { businessActive }))).toEqual(
+      ['normal'],
+    );
+  });
+
+  it('sin indicar el estado del negocio es normal: nadie afirma que haya clientes delante', () => {
+    expect(codeOf(protectionWarnings(state({ unmeasured: 4 })))).toEqual(['normal']);
+  });
+
+  it('una sola llamada se nombra en singular', () => {
+    const [w] = protectionWarnings(state({ unmeasured: 1 })).filter(
+      (x) => x.code === 'USAGE_UNMEASURED',
+    );
+    expect(w?.message).toContain('1 respuesta del modelo no informó');
+  });
+
+  // El gasto ilegible ya degrada por su cuenta; «no se sabe» no puede inventarse un aviso.
+  it('con el gasto ilegible no se afirma nada del consumo no medido', () => {
+    expect(codeOf(protectionWarnings(state({ contactOnly: ['spend_unreadable'] })))).toEqual([]);
+  });
+
+  /**
+   * FR-025a: **nunca revierte ninguna escritura del operador.** El aviso nace de una respuesta del
+   * bot, no de una escritura, así que no entra en `computeWarnings` —que es lo que la regla de
+   * revertir mira— y quien activa el negocio pasa `businessActive: false`, con lo que el aviso que
+   * ve esa comprobación nunca es crítico.
+   */
+  it('no es crítico en el camino que decide si el negocio se puede activar', () => {
+    const s = state({ unmeasured: 99, level: 'reached' });
+    const seenByActivation = protectionWarnings(s, { businessActive: false });
+    expect(seenByActivation.filter((w) => w.severity === 'critical').map((w) => w.code)).not.toContain(
+      'USAGE_UNMEASURED',
+    );
   });
 });

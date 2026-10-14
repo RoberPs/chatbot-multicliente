@@ -83,6 +83,7 @@ interface Row extends Record<string, unknown> {
   monthly_cap_cents: number | null;
   whatsapp_daily_cap: number;
   spent: string;
+  unmeasured: number;
   llm_priced: boolean;
   stt_priced: boolean;
   wa_today: number;
@@ -131,6 +132,8 @@ function unreadable(input: ProtectionInput, errorClass: string): ProtectionRead 
     spendCap: null,
     whatsapp: null,
     handoffs: null,
+    // No se pudo leer: `null` es «no se sabe», que no es «no hubo» (FR-025a).
+    unmeasuredCalls: null,
     unpricedModels: { llm: null, stt: null },
     readFailure: errorClass,
   };
@@ -144,6 +147,10 @@ export async function protectionState(tx: DbOrTx, input: ProtectionInput): Promi
     select s.currency, s.cap_enabled, s.monthly_cap_cents, s.whatsapp_daily_cap,
       (select coalesce(sum(u.cost_pico), 0)::text from model_usage u
         where u.currency = s.currency and u.day between ${first}::date and ${last}::date) as spent,
+      -- 017 (FR-025a): llamadas del mes cuyo consumo el modelo no informó. Sin filtrar por moneda:
+      -- una llamada no medida puede no tener coste valorado, y aun así hubo consumo.
+      (select coalesce(sum(u.unmeasured_calls), 0)::int from model_usage u
+        where u.day between ${first}::date and ${last}::date) as unmeasured,
       exists (select 1 from model_price p where p.model = ${input.llmModel}) as llm_priced,
       (${input.sttModel}::text is null
         or exists (select 1 from transcription_price t where t.model = ${input.sttModel}))
@@ -205,6 +212,7 @@ export async function protectionState(tx: DbOrTx, input: ProtectionInput): Promi
       cap: row.whatsapp_daily_cap,
       reached: waToday >= row.whatsapp_daily_cap,
     },
+    unmeasuredCalls: row.unmeasured,
     handoffs:
       row.daily_max === null || row.forward_interval_minutes === null || row.notices_daily_max === null
         ? null
@@ -317,7 +325,24 @@ const INSTANCE_TARGET = { kind: 'instance' as const, label: 'Consumo' };
  * Avisos de protección (data-model §2.2): se calculan en cada página y nunca se guardan; no
  * entran en `computeWarnings` ni en las escrituras protegidas (R3). Los críticos impiden activar.
  */
-export function protectionWarnings(state: ProtectionState): Warning[] {
+export interface ProtectionWarningOptions {
+  /**
+   * 017 (FR-025a): ¿está el negocio activo? Sube a **crítico** el aviso de consumo no medido
+   * cuando además el tope de gasto está activado, porque es el caso en que el tope no se puede
+   * garantizar y hay clientes delante.
+   *
+   * Quien activa el negocio pasa `false`, y no por comodidad: el aviso de consumo no medido **no
+   * puede bloquear** ninguna escritura del operador (FR-025a), y los críticos de protección sí
+   * impiden activar. Un aviso que nace de una respuesta del bot no puede dejar al operador sin
+   * poder trabajar.
+   */
+  businessActive?: boolean;
+}
+
+export function protectionWarnings(
+  state: ProtectionState,
+  options: ProtectionWarningOptions = {},
+): Warning[] {
   const warnings: Warning[] = [];
   const critical = (code: Warning['code'], message: string): void => {
     warnings.push({ code, severity: 'critical', target: INSTANCE_TARGET, message });
@@ -353,6 +378,30 @@ export function protectionWarnings(state: ProtectionState): Warning[] {
       'STT_MODEL_UNPRICED',
       `El modelo de transcripción «${state.unpricedModels.stt ?? '?'}» no tiene precio; los audios se responden con el contacto del negocio.`,
     );
+  }
+  /**
+   * 017 (FR-025a): consumo que el modelo no informó. Es una **alarma, no un bloqueo**: nace de una
+   * respuesta del bot, no de una escritura del operador, así que no revierte ninguna transacción
+   * ni impide seguir trabajando. La regla de revertir lo que deja un crítico se aplica a las
+   * escrituras de configuración, y esta no es una.
+   *
+   * Lo que el panel dice es «hubo consumo que no se pudo valorar», no «ese consumo fue gratis».
+   */
+  const unmeasured = state.unmeasuredCalls ?? 0;
+  if (unmeasured > 0) {
+    const capActive = state.spendCap !== null && state.spendCap.level !== 'none';
+    const text =
+      `${String(unmeasured)} ${unmeasured === 1 ? 'respuesta del modelo no informó' : 'respuestas del modelo no informaron'} ` +
+      'de su consumo este mes: ese consumo no se ha podido valorar y no cuenta como cero.';
+    warnings.push({
+      code: 'USAGE_UNMEASURED',
+      severity: capActive && options.businessActive === true ? 'critical' : 'normal',
+      target: INSTANCE_TARGET,
+      message:
+        capActive && options.businessActive === true
+          ? `${text} Con el tope de gasto activado, el tope no se puede garantizar.`
+          : text,
+    });
   }
   const held = state.handoffs?.held ?? 0;
   if (held > 0) {

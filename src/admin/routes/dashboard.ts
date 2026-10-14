@@ -48,7 +48,12 @@ export async function dashboardRoutes(app: FastifyInstance): Promise<void> {
     try {
       // 012: sin tope o sin precio en producción, el negocio no se puede activar (FR-003).
       const state = await readState(app.knowledge);
-      const protection = protectionWarnings(await readProtection(app, state.business.timezone));
+      // 017 (FR-025a): `businessActive: false` a propósito, y no por comodidad. Aquí se está
+      // activando, y el aviso de consumo no medido no puede impedirlo: nace de una respuesta del
+      // bot, no de una escritura del operador.
+      const protection = protectionWarnings(await readProtection(app, state.business.timezone), {
+        businessActive: false,
+      });
       await activateBusiness(db, protection);
     } catch (err) {
       if (!(err instanceof ActivationBlockedError)) throw err;
