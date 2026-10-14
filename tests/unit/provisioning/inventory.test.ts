@@ -43,6 +43,7 @@ const EXAMPLE: Inventory = {
       publicUrl: 'https://demo-01.ejemplo.com',
       imageVersion: '0.1.0',
       llmWorkspace: 'demo-01',
+      llmProvider: 'anthropic',
       backupKeyLocation: 'Gestor de secretos, entrada demo-01/BACKUP_KEY',
       backupDir: '/var/lib/chatbot/backups',
       database: {
@@ -99,6 +100,28 @@ describe('esquema del inventario (contracts/inventory-format.md)', () => {
   ])('rechaza: %s', (_name, mutate) => {
     const inv = clone();
     mutate(inv);
+    expect(inventorySchema.safeParse(inv).success).toBe(false);
+  });
+
+  /**
+   * 017 (FR-009): el campo del proveedor es nuevo y hay inventarios reales ahí fuera. Como
+   * `instanceSchema` es un `strictObject`, un campo **obligatorio** dejaría de cargar esos
+   * ficheros y rompería `instance:list` antes de que nadie pudiera arreglarlo. Por eso entra como
+   * nullable con valor por defecto y `version` se queda en 1: no es un formato nuevo.
+   */
+  it('un inventario anterior a la 017, sin el campo del proveedor, sigue cargando', () => {
+    const inv = clone() as unknown as Record<string, unknown>;
+    const instances = inv.instances as Array<Record<string, unknown>>;
+    for (const instance of instances) delete instance.llmProvider;
+    const parsed = inventorySchema.safeParse(inv);
+    expect(parsed.success).toBe(true);
+    // `null` es «el inventario no lo sabe», distinto de cualquier proveedor concreto.
+    expect(parsed.data?.instances[0]?.llmProvider).toBeNull();
+  });
+
+  it('rechaza un proveedor que no es elegible', () => {
+    const inv = clone();
+    Object.assign(first(inv), { llmProvider: 'mistral' });
     expect(inventorySchema.safeParse(inv).success).toBe(false);
   });
 
@@ -217,6 +240,65 @@ describe('operaciones del inventario (US4, research R9)', () => {
       today: TODAY,
     });
     expect(testing.instance.status).toBe('testing');
+  });
+
+  // 017 (FR-009): el proveedor se registra; la credencial, nunca. Y un entorno sin `LLM_PROVIDER`
+  // se registra como `anthropic`, que es lo que ese entorno significa (FR-003).
+  it('registerInstance anota el proveedor declarado y ninguna credencial', () => {
+    const { inventory } = sampleInventory(1);
+    const opts = { client: 'X', status: 'active' as const, today: TODAY };
+    const sinDeclarar = productionEnv('demo-07');
+    expect(
+      registerInstance(inventory, sinDeclarar, TEST_INVENTORY_KEY, opts).instance.llmProvider,
+    ).toBe('anthropic');
+
+    const gemini = productionEnv('demo-08', {
+      ANTHROPIC_API_KEY: '',
+      GEMINI_API_KEY: 'AIza-clave-de-prueba-de-gemini-larga',
+      LLM_PROVIDER: 'gemini',
+      LLM_MODEL: 'modelo-del-proveedor',
+    });
+    const result = registerInstance(inventory, gemini, TEST_INVENTORY_KEY, opts);
+    expect(result.instance.llmProvider).toBe('gemini');
+    const text = serializeInventory(result.inventory);
+    // El valor no está en ninguna parte. El **nombre** de la variable sí, en la huella, y debe
+    // estarlo: el inventario registra de qué variable es cada secreto, no el secreto.
+    expect(containsAny(text, collectSecrets(gemini))).toBe(false);
+
+    // Un valor mal escrito no impide registrar: lo rechaza la comprobación previa, con su mensaje.
+    const malEscrito = productionEnv('demo-09', { LLM_PROVIDER: 'mistral' });
+    expect(
+      registerInstance(inventory, malEscrito, TEST_INVENTORY_KEY, opts).instance.llmProvider,
+    ).toBeNull();
+  });
+
+  it('syncInstance rellena el proveedor de un inventario anterior y anota el cambio', () => {
+    const { inventory, envs } = sampleInventory(1);
+    const env = envs[0];
+    if (!env) throw new Error('falta el entorno de ejemplo');
+    // Inventario anterior a la 017: el campo existe pero no se sabe.
+    const previo = structuredClone(inventory);
+    const instance = previo.instances[0];
+    if (!instance) throw new Error('falta la instancia de ejemplo');
+    instance.llmProvider = null;
+
+    const primera = syncInstance(previo, instance.id, env, TEST_INVENTORY_KEY, TODAY);
+    expect(primera.inventory.instances[0]?.llmProvider).toBe('anthropic');
+    expect(primera.changed).toContain('LLM_PROVIDER');
+
+    // Y una segunda pasada sin cambios no vuelve a anotarlo: `changed` es «qué cambió».
+    const again = syncInstance(primera.inventory, instance.id, env, TEST_INVENTORY_KEY, TODAY);
+    expect(again.changed).not.toContain('LLM_PROVIDER');
+
+    const cambiado = syncInstance(
+      primera.inventory,
+      instance.id,
+      { ...env, LLM_PROVIDER: 'openai', LLM_MODEL: 'modelo-del-proveedor' },
+      TEST_INVENTORY_KEY,
+      TODAY,
+    );
+    expect(cambiado.inventory.instances[0]?.llmProvider).toBe('openai');
+    expect(cambiado.changed).toContain('LLM_PROVIDER');
   });
 
   it('registerInstance rechaza id repetido y entorno sin INSTANCE_ID válido', () => {
@@ -380,10 +462,10 @@ describe('operaciones del inventario (US4, research R9)', () => {
     const text = formatInstanceList(view, '/inv/inventory.json', later);
     expect(text.split('\n')[0]).toBe('Inventario /inv/inventory.json — 3 instancias');
     expect(text).toMatch(
-      /^! demo-01 +Cliente demo-01 +activa +0\.1\.0 +2026-09-20 restaurable \(35 días\)$/m,
+      /^! demo-01 +Cliente demo-01 +activa +0\.1\.0 +anthropic +2026-09-20 restaurable \(35 días\)$/m,
     );
     expect(text).toMatch(
-      /^ {2}demo-02 +Cliente demo-02 +de baja +0\.1\.0 +— +\(baja 2026-09-30\)$/m,
+      /^ {2}demo-02 +Cliente demo-02 +de baja +0\.1\.0 +anthropic +— +\(baja 2026-09-30\)$/m,
     );
     expect(text).toContain('de pruebas');
     expect(text.split('\n').at(-1)).toBe(

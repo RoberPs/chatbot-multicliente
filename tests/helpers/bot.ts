@@ -152,6 +152,14 @@ export interface TestBotOptions {
   usageMeter?: UsageMeter;
   /** Como en producción (012): tope obligatorio y precios exigidos. Por defecto, no. */
   production?: boolean;
+  /**
+   * 017 (FR-005b): ¿el proveedor rechaza la credencial **ahora mismo**?
+   *
+   * Es una función, como en `bot.ts`, y por el mismo motivo: el vigilante sale del degradado solo
+   * y la protección tiene que verlo sin reiniciar nada. Un booleano capturado al construir el bot
+   * no permitiría probar la recuperación.
+   */
+  credentialRejected?: () => boolean;
   /** Pool de las lecturas públicas del chat (012); por defecto, el de la BD de prueba. */
   publicDb?: Db;
 }
@@ -207,6 +215,9 @@ export async function createTestBot(t: TestDatabase, opts: TestBotOptions = {}):
     production: opts.production ?? false,
     llmModel: TEST_LLM_MODEL,
     sttModel: audioTranscription ? TEST_STT_MODEL : null,
+    ...(opts.credentialRejected === undefined
+      ? {}
+      : { credentialRejected: opts.credentialRejected }),
   };
   const handoff = createHandoffService({
     db: t.db,

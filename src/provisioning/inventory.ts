@@ -11,6 +11,7 @@ import { homedir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { z } from 'zod';
 import { INSTANCE_ID_PATTERN } from '../config/env.js';
+import { isLlmProvider, LLM_PROVIDERS, type LlmProvider } from '../llm/provider.js';
 import { compare, type Finding } from './check.js';
 import type { EnvMap } from './env-file.js';
 import {
@@ -69,6 +70,17 @@ const instanceSchema = z.strictObject({
   publicUrl: z.string().min(1).nullable(),
   imageVersion: description,
   llmWorkspace: description,
+  /**
+   * 017 (FR-009): proveedor del modelo que la instancia declara en su entorno. **Nunca** su
+   * credencial: el inventario guarda huellas de secretos, no secretos, y el proveedor no es uno.
+   *
+   * **Nullable con valor por defecto, y `version` se queda en 1, a propósito.** Hay inventarios
+   * reales ahí fuera y `instanceSchema` es un `strictObject`: un campo obligatorio dejaría de
+   * cargar los ficheros existentes y rompería `instance:list` antes de que nadie pudiera
+   * arreglarlo. `null` significa «el inventario es anterior a la 017 y no lo sabe», que es
+   * distinto de cualquier proveedor concreto; un `pnpm instance:sync` lo rellena.
+   */
+  llmProvider: z.enum(LLM_PROVIDERS).nullable().default(null),
   backupKeyLocation: description,
   backupDir: z.string().min(1).nullable(),
   database: databaseSchema.nullable(),
@@ -446,6 +458,20 @@ function matchesAsWarnings(
   return [...comparison.errors, ...comparison.warnings];
 }
 
+/**
+ * 017 (FR-009): proveedor que declara un entorno. **Ausente equivale a `anthropic`** (FR-003), que
+ * es lo que permite que los entornos de las dos instancias desplegadas no se toquen.
+ *
+ * Un valor que no es elegible devuelve `null` en lugar de lanzar: la comprobación previa ya lo
+ * rechaza con su mensaje y es su trabajo, no el del inventario, que no debe inventarse un
+ * proveedor ni impedir registrar una instancia por un entorno mal escrito.
+ */
+function envProvider(env: EnvMap): LlmProvider | null {
+  const raw = env.LLM_PROVIDER?.trim() ?? '';
+  if (raw === '') return 'anthropic';
+  return isLlmProvider(raw) ? raw : null;
+}
+
 export interface RegisterResult {
   inventory: Inventory;
   instance: Instance;
@@ -478,6 +504,7 @@ export function registerInstance(
     publicUrl: envOrigin(env),
     imageVersion: null,
     llmWorkspace: null,
+    llmProvider: envProvider(env),
     backupKeyLocation: null,
     backupDir: present(env.BACKUP_DIR) ? env.BACKUP_DIR.trim() : null,
     database: databaseIdentity(env.DATABASE_URL),
@@ -547,6 +574,14 @@ export function syncInstance(
     }
   }
 
+  // 017: el proveedor se refresca aquí, y es además la vía por la que un inventario anterior a la
+  // 017 deja de tener `null`. Se anota como cambio bajo el nombre de su variable, porque para el
+  // operador es exactamente eso: algo que cambió en el entorno de la instancia.
+  const provider = envProvider(env);
+  if (provider !== null && provider !== instance.llmProvider) {
+    instance.llmProvider = provider;
+    changed.add('LLM_PROVIDER');
+  }
   const database = databaseIdentity(env.DATABASE_URL);
   if (database) instance.database = database;
   const origin = envOrigin(env);
@@ -720,11 +755,19 @@ export function formatInstanceList(view: InstanceView[], inventoryPath: string, 
     if (v.dates.dataDeleted !== null) notes.push(`datos borrados ${v.dates.dataDeleted}`);
     return {
       mark: v.verificationOverdue ? '!' : ' ',
-      cells: [v.id, v.client, STATUS_LABELS[v.status], v.imageVersion ?? '—', verification],
+      cells: [
+        v.id,
+        v.client,
+        STATUS_LABELS[v.status],
+        v.imageVersion ?? '—',
+        // 017: «—» es «el inventario no lo sabe» (anterior a la 017), no «ninguno».
+        v.llmProvider ?? '—',
+        verification,
+      ],
       notes: notes.length > 0 ? `(${notes.join(', ')})` : '',
     };
   });
-  const header = ['ID', 'CLIENTE', 'ESTADO', 'IMAGEN', 'ÚLTIMA VERIFICACIÓN'];
+  const header = ['ID', 'CLIENTE', 'ESTADO', 'IMAGEN', 'PROVEEDOR', 'ÚLTIMA VERIFICACIÓN'];
   const widths = header.map((h, i) =>
     Math.max(width(h), ...rows.map((r) => width(r.cells[i] ?? ''))),
   );

@@ -213,8 +213,8 @@ instancia con una credencial rechazada y comprobar que arranca degradada, avisa 
 - [X] T045 [P] [US2] Escribir en `tests/unit/provisioning/check.test.ts` los tests de la tabla de decisión completa de [contracts/credential-verification.md](contracts/credential-verification.md) §4, incluido que `llm_key_unverified` («no se pudo comprobar») es **distinguible** de no haber pedido la validación (FR-028, FR-030, FR-030a)
 - [X] T045a [P] [US2] Añadir en `tests/unit/provisioning/check.test.ts` la aserción de que **ni la comprobación ni la validación opcional escriben nada**, ni en el entorno ni en el inventario (FR-034). Esta feature añade a una herramienta local justo lo que podría tentar a escribir —una llamada de red cuyo veredicto se podría guardar en disco—, así que el test tiene que existir antes que la bandera
 - [X] T046 [P] [US2] Escribir en `tests/unit/llm/credential-probe.test.ts` los tests de clasificación del veredicto: 2xx → `accepted`, 401 y 403 → `rejected`, 5xx, fallo de red y plazo agotado → `inconclusive`
-- [ ] T047 [P] [US2] Escribir en `tests/integration/llm/credential-degraded.test.ts` el test del ciclo completo: credencial rechazada al arrancar → arranca, queda degradada, aviso crítico, y al pasar a aceptada sale del degradado sola, con **una** línea de registro al entrar y **una** al salir (SC-010)
-- [ ] T048 [P] [US2] Escribir el test de que ningún mensaje de la comprobación ni del registro contiene ningún carácter de ninguna credencial (FR-032, SC-004)
+- [X] T047 [P] [US2] Escribir en `tests/integration/llm/credential-degraded.test.ts` el test del ciclo completo: credencial rechazada al arrancar → arranca, queda degradada, aviso crítico, y al pasar a aceptada sale del degradado sola, con **una** línea de registro al entrar y **una** al salir (SC-010)
+- [X] T048 [P] [US2] Escribir el test de que ningún mensaje de la comprobación ni del registro contiene ningún carácter de ninguna credencial (FR-032, SC-004)
 
 ### Implementación de US2
 
@@ -228,7 +228,7 @@ instancia con una credencial rechazada y comprobar que arranca degradada, avisa 
 - [X] T056 [US2] Añadir a `src/usage/protection.ts` el estado de credencial rechazada, que degrada a «solo contacto del negocio» por el mismo camino que el modelo sin precio, y su aviso **crítico** en `computeWarnings` (FR-005b)
 - [X] T057 [US2] Lanzar la comprobación del arranque desde `src/bot.ts` **sin bloquear**: `rejected` → degradado; `inconclusive` → arranca normal con una línea de registro; nunca fatal, nunca bucle de reinicio (FR-005a, FR-005c)
 - [X] T058 [US2] Cambiar `src/provisioning/generate.ts` para que `pnpm instance:new` acepte el proveedor y emita la variable de credencial correspondiente en el entorno generado (FR-010)
-- [ ] T059 [US2] Registrar el proveedor declarado de cada instancia en el inventario (`src/provisioning/inventory.ts` y las órdenes que lo leen), **sin** registrar ninguna credencial (FR-009)
+- [X] T059 [US2] Registrar el proveedor declarado de cada instancia en el inventario (`src/provisioning/inventory.ts` y las órdenes que lo leen), **sin** registrar ninguna credencial (FR-009)
 
 **Checkpoint**: US2 completa. El agujero está cerrado por los dos lados: antes de desplegar y en el arranque.
 

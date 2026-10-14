@@ -233,6 +233,8 @@ export async function buildInstanceEnv(
       publicUrl: data.url,
       imageVersion: null,
       llmWorkspace: null,
+      // 017 (FR-009): el proveedor elegido queda registrado en el alta; la credencial, nunca.
+      llmProvider: data.provider,
       backupKeyLocation: null,
       backupDir: data.backupDir,
       database: null,

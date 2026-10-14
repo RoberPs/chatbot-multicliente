@@ -231,6 +231,8 @@ export function instanceFromEnv(
     publicUrl: env.PUBLIC_BASE_URL ?? null,
     imageVersion: '0.1.0',
     llmWorkspace: null,
+    // 017: lo que declara el entorno; sin `LLM_PROVIDER`, `anthropic` (FR-003).
+    llmProvider: (env.LLM_PROVIDER ?? 'anthropic') as Instance['llmProvider'],
     backupKeyLocation: null,
     backupDir: env.BACKUP_DIR ?? null,
     database: null,
@@ -271,7 +273,12 @@ export function collectSecrets(env: EnvMap): string[] {
     'BACKUP_KEY',
     'HEALTH_SECRET',
     'OPERATOR_PASSWORD_HASH',
+    // 017: las tres credenciales de proveedor son secretos de la misma clase, así que las tres
+    // entran en las búsquedas de privacidad. Si solo estuviera la de Anthropic, un mensaje que
+    // filtrase la de Gemini pasaría desapercibido justo en la feature que las añade.
     'ANTHROPIC_API_KEY',
+    'GEMINI_API_KEY',
+    'OPENAI_API_KEY',
     'WHATSAPP_ACCESS_TOKEN',
     'WHATSAPP_APP_SECRET',
     'WHATSAPP_VERIFY_TOKEN',
