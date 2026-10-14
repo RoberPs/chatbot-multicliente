@@ -814,7 +814,7 @@ distintas y conviene no confundirlas al hablar con un cliente:
 | Proveedor | Estado | Qué significa |
 |---|---|---|
 | `anthropic` | **En producción** | Es el de las dos instancias desplegadas. Evaluado con el modelo real en features anteriores |
-| `gemini` | Implementado · **conexión verificada** | La cadena entera funciona contra su API real (petición, esquema de salida, consumo, derivación). **No evaluado**: la calidad de sus respuestas no está medida |
+| `gemini` | Implementado · **conexión verificada** | La cadena entera funciona contra su API real (petición, esquema de salida, consumo, derivación). **No declarado apto**: ver la medida de abajo |
 | `openai` | Implementado · **probado solo con dobles** | El adaptador cumple el contrato y pasa la batería común, sin red ni credenciales. No se ha llamado a su API real |
 
 **Decisión del 2026-10-14**: no se evalúan Gemini ni OpenAI hasta que un cliente quiera usarlos.
@@ -836,6 +836,42 @@ Ojo con el nivel gratuito de Gemini: su límite de peticiones por minuto puede h
 completa devuelva 429, que el adaptador traduce a fallo del proveedor y cuenta como pregunta
 fallada. Un informe con fallos repartidos sin relación con el contenido de las preguntas es eso, no
 un problema de calidad.
+
+#### Medida de Gemini del 2026-10-14 (comprobación de conexión, no evaluación)
+
+| | |
+|---|---|
+| Proveedor | `gemini` |
+| Modelo | `gemini-3.5-flash-lite` |
+| Esfuerzo | `medium` (el valor por defecto) |
+| Alcance | **Parcial, por decisión**: SC-007 (varias preguntas en un mensaje) y SC-008 (petición de hablar con una persona). 29 llamadas reales en vez de las ~220 de una corrida completa |
+| Duración | 1,2 min |
+| Veredicto | **Conexión verificada · NO declarado apto** |
+
+Qué salió:
+
+- **La cadena funciona.** 24 de las 29 llamadas devolvieron una respuesta válida: esquema de salida
+  respetado, respuesta validada con Zod, datos del negocio en el cuerpo. Latencia p95 de 5,4 s y
+  6,8 s, dentro del presupuesto de 10 s de SC-003.
+- **SC-008 · 12/12 (100 %)** en la detección de la petición de persona. La salida a una persona
+  —Principio V— se detecta siempre.
+- **SC-008 con vías de aviso · 7/12 (58 %)** y **SC-007 · 0/5 (0 %)**. Dos causas distintas, y
+  conviene no mezclarlas:
+  - **5 llamadas fallaron por el lado del proveedor** (plantilla `R-ERR`). En el nivel gratuito los
+    modelos `flash` grandes devuelven **503 «high demand»** de forma sistemática —`gemini-flash-latest`
+    y `gemini-3.8-flash` fallaron las dos veces que se probaron— y el `-lite` falla de vez en cuando.
+  - **El resto son fallos de calidad reales**: el modelo responde pero se deja datos del negocio sin
+    dar (dirección, hora de apertura, precios) y no siempre reconoce que no tiene un dato, que es lo
+    que exige el Principio IV.
+
+**Por qué no se declara apto** (FR-036): un modelo `-lite` no alcanza el criterio, y subirlo a un
+`flash` grande no es opción hoy en el nivel gratuito porque devuelve 503. Declararlo apto exigiría
+una corrida completa con un modelo de pago, y eso se hace **cuando un cliente lo pida**.
+
+**Trampa anotada para entonces**: `gemini-2.5-flash` ya **no está disponible para cuentas nuevas**;
+la API devuelve un 404 cuyo mensaje recomienda otro modelo. El 404 llega al responder como fallo del
+proveedor y el cliente recibe la disculpa con el contacto, así que un nombre de modelo retirado se
+parece mucho a un proveedor caído. Comprobar el modelo con una llamada antes de desplegar.
 
 ---
 

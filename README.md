@@ -19,6 +19,7 @@ Estados: especificada → planificada → en implementación → completada (o a
 | 013 | Requisitos de despliegue seguro | Núcleo (operación) | Completada | `013-secure-deployment` | [spec](specs/013-secure-deployment/spec.md) · [plan](specs/013-secure-deployment/plan.md) · [tareas](specs/013-secure-deployment/tasks.md) | 2026-10-06  |
 | 014 | Modo oscuro del panel del operador | Núcleo | Completada | `014-dark-mode-panel` | [spec](specs/014-dark-mode-panel/spec.md) · [plan](specs/014-dark-mode-panel/plan.md) · [tareas](specs/014-dark-mode-panel/tasks.md) | 2026-10-13  |
 | 016 | Resistencia a los cortes de la base de datos y verificación de copias por socket | Núcleo (corrección) | Completada | `016-db-outage-resilience` | [spec](specs/016-db-outage-resilience/spec.md) · [plan](specs/016-db-outage-resilience/plan.md) · [tareas](specs/016-db-outage-resilience/tasks.md) | 2026-10-09  |
+| 017 | Proveedor del modelo configurable por instancia | Núcleo | Completada (solo `anthropic` declarado apto; ver abajo) | `017-proveedor-modelo-configurable` | [spec](specs/017-proveedor-modelo-configurable/spec.md) · [plan](specs/017-proveedor-modelo-configurable/plan.md) · [tareas](specs/017-proveedor-modelo-configurable/tasks.md) | 2026-10-14  |
 
 ---
 
@@ -78,6 +79,34 @@ coste estimado con los precios que configura el operador, y un **tope mensual de
 hace que, al alcanzarse, el bot responda en WhatsApp y en el chat web solo con el contacto del
 negocio, sin dejar de derivar a una persona.
 
+Cada instancia **elige su proveedor de modelo** (feature 017): `anthropic`, `gemini` u `openai`,
+declarado en su fichero de entorno con la credencial de ese proveedor y nada más. No hay una imagen
+distinta por proveedor, y el panel, los canales y la conversación no saben quién hay detrás: lo que
+varía entre los tres está escrito en una tabla de capacidades que una prueba mantiene pegada al
+código. Sin `LLM_PROVIDER` la instancia es de Anthropic, así que los entornos ya desplegados no se
+tocan.
+
+La misma feature cierra un fallo que estaba abierto: una credencial que no corresponde al proveedor
+declarado **ya no pasa** la comprobación previa, y si el proveedor la rechaza al arrancar, la
+instancia **arranca degradada** —los clientes reciben solo el contacto del negocio—, avisa al
+operador en crítico, reintenta cada 5 minutos y sale del degradado sola. Nunca es fatal: un proceso
+muerto no deja salida a una persona. Y el consumo deja de dar por cero lo que el modelo no informa:
+el panel distingue «sin dato» de `0` y dice cuántas respuestas no se pudieron medir.
+
+**Qué proveedor está declarado apto, que no es lo mismo que implementado**:
+
+| Proveedor | Estado |
+|---|---|
+| `anthropic` | **En producción.** Es el de las dos instancias desplegadas |
+| `gemini` | Implementado, **conexión verificada** contra su API real (2026-10-14, `gemini-3.5-flash-lite`). **No declarado apto**: en el nivel gratuito los modelos `flash` grandes devuelven 503 por demanda y el `-lite` no alcanza el criterio de calidad |
+| `openai` | Implementado y probado con dobles, **sin llamar a su API real** |
+
+Gemini y OpenAI se evalúan **cuando un cliente quiera usarlos**, igual que ya se hace con el canal
+de WhatsApp y con los audios: la evaluación con el modelo real cuesta dinero y su resultado caduca
+con cada cambio en los adaptadores. Mientras nadie los declare en su entorno, ninguna instancia los
+usa. El procedimiento está en
+[docs/operacion-multicliente.md](docs/operacion-multicliente.md) §4.3.
+
 El operador **personaliza el aspecto del chat web** (feature 011): colores, forma, posición,
 tamaño, nombre, bienvenida, textos e imágenes, con vista previa en vivo. Se aplica en la
 siguiente carga del chat sin tocar el fragmento pegado en la web, nunca deja el texto ilegible y
@@ -101,7 +130,7 @@ pnpm dev                                    # panel en http://localhost:3000/adm
 pnpm kb:snapshot                            # lo que recibiría el bot ahora mismo, en JSON
 ```
 
-Con `ANTHROPIC_API_KEY` y `EMERGENCY_CONTACT_PHONE` en `.env` ya hay bot, sin necesidad de
+Con la credencial del proveedor declarado y `EMERGENCY_CONTACT_PHONE` en `.env` ya hay bot, sin necesidad de
 WhatsApp. Se puede probar de dos maneras:
 
 - **Desde el panel**: `http://localhost:3000/admin/playground` ("Probar el bot" en la
@@ -382,11 +411,12 @@ Contrato de las órdenes: [specs/007-instance-provisioning/contracts/instance-co
 | `NODE_ENV` | Sí | `development`, `test` o `production`. En `production` la cookie es `Secure`, se envía HSTS y las plantillas se cachean |
 | `TRUST_PROXY` | Con `PUBLIC_BASE_URL` https (013) | Proxies delante del servicio: número de saltos (`1`) o IP/CIDR separadas por comas. Nunca `true` |
 | `WHATSAPP_PHONE_NUMBER_ID` · `WHATSAPP_ACCESS_TOKEN` · `WHATSAPP_APP_SECRET` · `WHATSAPP_VERIFY_TOKEN` · `WHATSAPP_GRAPH_VERSION` | Las cinco o ninguna | Canal de WhatsApp Cloud API. Sin ellas la instancia arranca solo con el panel |
-| `EMERGENCY_CONTACT_PHONE` | Con `ANTHROPIC_API_KEY` | Teléfono E.164 que se da si no se puede leer la información del negocio (disculpa del bot y chat web "no disponible") |
-| `ANTHROPIC_API_KEY` | Para tener bot | Clave de la API de Anthropic. Con ella ya hay bot: "Probar el bot" y chat web, aunque no haya WhatsApp. También la usan `pnpm bot:chat` y `pnpm test:eval` |
+| `EMERGENCY_CONTACT_PHONE` | Con credencial del modelo | Teléfono E.164 que se da si no se puede leer la información del negocio (disculpa del bot y chat web "no disponible") |
+| `LLM_PROVIDER` | No (`anthropic`) | Proveedor del modelo: `anthropic`, `gemini` u `openai` (017). Ausente equivale a `anthropic`, así que los entornos anteriores siguen funcionando sin cambios |
+| `ANTHROPIC_API_KEY` · `GEMINI_API_KEY` · `OPENAI_API_KEY` | La del proveedor declarado, para tener bot | Credencial de su proveedor. **Solo se usa la del declarado en `LLM_PROVIDER`**: las otras nunca sirven de respaldo, y una credencial puesta en la variable de otro proveedor deja el entorno NO APTO en `pnpm instance:check`. Con la correcta ya hay bot: "Probar el bot" y chat web, aunque no haya WhatsApp. También la usan `pnpm bot:chat` y `pnpm test:eval` |
 | `PUBLIC_BASE_URL` | No | URL pública de la instancia (`https`, sin ruta; `http` solo con `localhost` o `127.0.0.1`). Se usa para escribir el fragmento del chat web y para comprobar el origen de las peticiones del chat |
-| `LLM_MODEL` | No (`claude-sonnet-5-5`) | Modelo que redacta las respuestas |
-| `LLM_EFFORT` | No (`medium`) | Esfuerzo del modelo: `low`, `medium` o `high` |
+| `LLM_MODEL` | **Sí con `gemini` y `openai`**; no con `anthropic` (`claude-sonnet-5-5`) | Modelo que redacta las respuestas. Fuera de Anthropic no hay valor por defecto a propósito: sus catálogos se mueven rápido y un nombre retirado devuelve un 404 que se parece mucho a un proveedor caído |
+| `LLM_EFFORT` | No (`medium`) | Esfuerzo del modelo: `low`, `medium` o `high`. No significa lo mismo en los tres proveedores: con `openai` depende del modelo, y si el modelo no lo admite la instancia lo deja dicho en el registro y sigue atendiendo sin él |
 | `AUDIO_TRANSCRIPTION` | No (`off`) | Interruptor de audios. Con `off` un audio recibe el aviso de "solo texto" y no se descarga |
 | `STT_API_KEY` | Con audios `on` | Clave del servicio de transcripción (API de OpenAI) |
 | `STT_MODEL` | No (`whisper-1`) | Modelo de transcripción |
@@ -411,7 +441,7 @@ Contrato de las órdenes: [specs/007-instance-provisioning/contracts/instance-co
 | `pnpm test` | Unitarios, contrato e integración (levanta PostgreSQL con Testcontainers) |
 | `pnpm test:unit` · `test:contract` · `test:integration` | Cada suite por separado |
 | `pnpm test <patrón>` | Solo los ficheros que coinciden, p. ej. `pnpm test sector-neutrality` |
-| `pnpm test:eval` | Evaluación con el modelo real y los tres sectores de ejemplo (SC-001 a SC-010); tiene coste y no entra en `pnpm test`. Se omite sin `ANTHROPIC_API_KEY` |
+| `pnpm test:eval` | Evaluación con el modelo real y los tres sectores de ejemplo (SC-001 a SC-010); tiene coste y no entra en `pnpm test`. Se parametriza con `LLM_PROVIDER` y `LLM_MODEL` para correrla por proveedor, y se omite —diciendo por qué— sin la credencial del proveedor declarado |
 | `EVAL_CHANNEL=web pnpm test:eval` | La misma evaluación por el canal web, para comprobar que da los mismos resultados que por WhatsApp. SC-009 se omite: la web solo admite texto |
 | `npx vitest run --project eval --reporter=verbose` | La evaluación mostrando las tablas de porcentajes de **todos** los criterios. Con `pnpm test:eval` a secas, el reporter por defecto de vitest descarta la salida de los ficheros que pasan y solo se ven los criterios que fallan |
 | `pnpm test:eval audio` | Además, los audios con Whisper real (necesita `STT_API_KEY` y las grabaciones de `tests/fixtures/audio/`) |
