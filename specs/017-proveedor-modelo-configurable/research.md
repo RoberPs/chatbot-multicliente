@@ -125,7 +125,8 @@ credencial, y esta clasificación:
 |---|---|
 | 2xx | credencial **aceptada** |
 | 401, 403 | credencial **rechazada** |
-| cualquier otra cosa (red, 5xx, tiempo agotado, DNS) | **no concluyente** |
+| 400 **cuyo cuerpo dice que la credencial no vale** | credencial **rechazada** (corrección de T053, abajo) |
+| cualquier otra cosa (red, 5xx, tiempo agotado, DNS, otros 400) | **no concluyente** |
 
 Cabeceras por proveedor: Anthropic usa `x-api-key` más `anthropic-version`; OpenAI usa
 `Authorization: Bearer`; Gemini usa la clave en `x-goog-api-key`. La implementación fija el detalle
@@ -141,6 +142,36 @@ devuelve el listado **sin** autenticar. Si algún proveedor no pidiera credencia
 no probaría nada. **Mitigación**: la implementación verifica proveedor a proveedor que una credencial
 inválida da 401/403, con una prueba que lo fija; si alguno no cumpliera, se usa para él la petición
 de generación más pequeña posible y se anota el coste.
+
+### Comprobación a mano, hecha el 2026-10-14 (T053)
+
+Una petición por proveedor al extremo de listado, con una credencial **inválida** y sin tocar las
+reales. Resultado medido, no supuesto:
+
+| Proveedor | Credencial inválida | Respuesta real |
+|---|---|---|
+| Anthropic | `sk-ant-…` inventada | **401** |
+| OpenAI | `sk-proj-…` inventada | **401** |
+| Gemini | `AIza…` bien formada e incorrecta | **400** · `API key not valid. Please pass a valid API key.` (`INVALID_ARGUMENT`) |
+| Gemini | `AQ.…` bien formada e incorrecta | **401** |
+
+**Los tres exigen credencial**: ninguno devolvió 2xx, así que no hace falta recurrir a una petición
+de generación y la validación sigue sin generar tokens ni coste (FR-031).
+
+**Pero esta tabla corrige la clasificación de arriba, y el fallo era real.** Gemini responde **400**
+—no 401— a una clave clásica `AIza…` incorrecta, que es el formato de la mayoría de las credenciales
+de Gemini en circulación. Con la clasificación original ese caso habría salido como «no se pudo
+comprobar»: `instance:check --validar-credencial` habría dado **apto** con una advertencia y el
+arranque **no** habría degradado la instancia, justo en el proveedor nuevo y justo en el agujero que
+esta feature existe para cerrar.
+
+**Corrección aplicada** (`src/llm/credential-probe.ts`): un **400 cuenta como rechazo solo si el
+cuerpo dice que el problema es la credencial** (`API_KEY_INVALID`, «API key not valid», «invalid api
+key»). Un 400 por una petición mal formada por nuestra parte sigue siendo no concluyente, y un
+cuerpo ilegible también. La regla se aplica a los tres proveedores, porque cualquiera puede cambiar
+de código, pero es deliberadamente estrecha: se amplía lo que cuenta como veredicto sin convertir
+cualquier error en una degradación. Fijado en `tests/unit/llm/credential-probe.test.ts` con los
+cuerpos reales, sin red.
 
 ## R6 · Comprobación de la credencial al arrancar (FR-005a/b/c)
 

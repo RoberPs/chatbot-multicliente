@@ -59,6 +59,28 @@ function probeRequest(provider: LlmProvider, apiKey: string): ProbeRequest {
   }
 }
 
+/**
+ * Marcas con las que un proveedor dice, en un 400, que el problema es la credencial y no la
+ * petición. Medidas contra las APIs reales el 2026-10-14 (R5).
+ */
+const KEY_INVALID_MARKERS = ['API_KEY_INVALID', 'api key not valid', 'invalid api key'];
+
+/**
+ * ¿El cuerpo de un 400 dice que la credencial no vale?
+ *
+ * Lee el cuerpo **solo** en ese caso, y nunca lo registra ni lo devuelve: el cuerpo de un error
+ * puede traer de vuelta parte de la petición, y de ahí no puede salir nada (FR-032). Si el cuerpo
+ * no se puede leer, no hay veredicto.
+ */
+async function saysKeyInvalid(response: { text: () => Promise<string> }): Promise<boolean> {
+  try {
+    const body = (await response.text()).toLowerCase();
+    return KEY_INVALID_MARKERS.some((marker) => body.includes(marker.toLowerCase()));
+  } catch {
+    return false;
+  }
+}
+
 export interface VerifyCredentialOptions {
   /** Señal de quien llama; se combina con el plazo propio. */
   signal?: AbortSignal;
@@ -99,9 +121,18 @@ export async function verifyCredential(
     const response = await doFetch(url, { method: 'GET', headers, signal: controller.signal });
     const status = response.status;
     if (status >= 200 && status < 300) return 'accepted';
-    // Solo estos dos son un veredicto sobre la credencial. Un 400 es una petición mal formada por
-    // nuestra parte y un 429 es un límite de ritmo: ninguno dice nada de si la clave sirve.
-    if (status === 401 || status === 403) {
+    // 401 y 403 son siempre un veredicto sobre la credencial. Un 429 es un límite de ritmo y no
+    // dice nada de si la clave sirve.
+    //
+    // **El 400 es el caso que la comprobación a mano de T053 destapó** (R5). Gemini responde
+    // `400 API key not valid` a una clave clásica `AIza…` incorrecta, en lugar de 401. Tratarlo
+    // como «no se pudo comprobar» dejaría pasar la credencial equivocada justo en el proveedor
+    // nuevo, que es el agujero que esta feature existe para cerrar. Por eso el 400 se mira, y se
+    // mira **estrecho**: solo cuenta como rechazo si el proveedor dice que el problema es la
+    // credencial. Un 400 por una petición mal formada por nuestra parte sigue siendo inconcluso.
+    const rejected =
+      status === 401 || status === 403 || (status === 400 && (await saysKeyInvalid(response)));
+    if (rejected) {
       options.log?.(
         `El proveedor rechazó la credencial de ${keyVariableOf(provider)} (HTTP ${String(status)}).`,
       );

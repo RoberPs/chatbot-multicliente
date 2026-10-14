@@ -58,6 +58,43 @@ describe.each(LLM_PROVIDERS)('verifyCredential con %s', (provider) => {
     expect(await veredicto(provider, respondeCon(status))).toBe('inconclusive');
   });
 
+  /**
+   * El caso que destapó la comprobación a mano de T053 (R5, medido el 2026-10-14): **Gemini
+   * responde `400 API key not valid`** a una clave clásica `AIza…` incorrecta, no un 401. Tratarlo
+   * como «no se pudo comprobar» dejaría pasar la credencial equivocada justo en el proveedor
+   * nuevo, que es el agujero que la feature existe para cerrar.
+   *
+   * La regla se aplica a los tres —un proveedor puede cambiar de código cualquier día— pero es
+   * **estrecha**: solo cuando el proveedor dice que el problema es la credencial.
+   */
+  it.each([
+    ['el cuerpo real de Gemini', '{"error":{"code":400,"message":"API key not valid. Please pass a valid API key.","status":"INVALID_ARGUMENT"}}'],
+    ['el código INVALID_ARGUMENT con su razón', '{"error":{"details":[{"reason":"API_KEY_INVALID"}]}}'],
+    ['un «invalid api key» en otra forma', '{"error":{"message":"Invalid API key provided"}}'],
+  ])('un 400 que dice que la credencial no vale es rejected (%s)', async (_n, body) => {
+    const f = vi.fn(async () => new Response(body, { status: 400 })) as FetchDoble;
+    expect(await veredicto(provider, f)).toBe('rejected');
+  });
+
+  it('un 400 por una petición mal formada por nuestra parte sigue siendo inconclusive', async () => {
+    const body = JSON.stringify({
+      error: { message: 'Invalid JSON payload received. Unknown name "foo".' },
+    });
+    const f = vi.fn(async () => new Response(body, { status: 400 })) as FetchDoble;
+    expect(await veredicto(provider, f)).toBe('inconclusive');
+  });
+
+  it('un 400 cuyo cuerpo no se puede leer es inconclusive', async () => {
+    const f = vi.fn(
+      async () =>
+        ({
+          status: 400,
+          text: () => Promise.reject(new Error('cuerpo ilegible')),
+        }) as unknown as Response,
+    ) as FetchDoble;
+    expect(await veredicto(provider, f)).toBe('inconclusive');
+  });
+
   it('un fallo de red es inconclusive', async () => {
     expect(await veredicto(provider, falla(new TypeError('fetch failed')))).toBe('inconclusive');
   });

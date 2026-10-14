@@ -19,7 +19,8 @@ CredentialVerdict = 'accepted' | 'rejected' | 'inconclusive'
 |---|---|
 | 2xx | `accepted` |
 | 401, 403 | `rejected` |
-| 5xx, fallo de red, DNS, plazo agotado, cualquier otra cosa | `inconclusive` |
+| 400 **cuyo cuerpo dice que la credencial no vale** | `rejected` (medido en T053: Gemini responde así a una clave `AIza…` incorrecta) |
+| 5xx, fallo de red, DNS, plazo agotado, otros 400, cualquier otra cosa | `inconclusive` |
 
 - Petición: `GET` al extremo de **listado de modelos** del proveedor, que no genera tokens
   (FR-031).
