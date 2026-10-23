@@ -341,8 +341,9 @@ function operatorHashAndKeyFormat(env: EnvMap, out: Findings): void {
        * proveedor», y esto no es un detalle estético.
        *
        * El caso real: una clave clásica de Gemini (`AIza…`) tiene **39** caracteres y el mínimo
-       * de la variable de Anthropic es **40**, así que al pegarla en `ANTHROPIC_API_KEY` salta
-       * primero `secret_too_short`. Con la supresión de la 007 el entorno quedaba **no apto** —el
+       * de la variable de Anthropic es **40**, así que al pegarla en esa variable salta primero
+       * `secret_too_short`. (El nombre de la variable no se escribe aquí a propósito: la regla C1
+       * lo reserva a `src/llm/`, y `tests/unit/llm/seam.test.ts` lo vigila — cazó este comentario.) Con la supresión de la 007 el entorno quedaba **no apto** —el
        * agujero seguía cerrado— pero el mensaje decía «es demasiado corta», y el operador se iba
        * a buscar una clave más larga del proveedor equivocado en lugar de enterarse de que la
        * había puesto en la variable que no era. Es el error más probable, en la comprobación que
