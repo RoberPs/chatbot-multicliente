@@ -424,13 +424,166 @@ la 016 cubrió con sus T051 y T052.
 **Requisitos de acceso**: estas tareas necesitan el VPS y las lanza el usuario. Claude no puede leer
 ficheros de entorno de producción, y la sesión de GHCR del VPS se cierra tras cada despliegue.
 
-- [ ] T082 Construir y publicar la imagen 0.1.3 en GHCR. **Antes de construir**, comprobar el emisor del certificado de `registry.npmjs.org`: si es Avast, el `docker build` falla con un error de certificado que no se parece a lo que es
+### `pnpm test:eval` se salta: decisión del usuario del 2026-10-23, con lo que cambió
+
+El guion de publicación (`docs/operacion-multicliente.md` §5.1) dice que la evaluación **no es
+opcional** si la versión toca `src/conversation`, `src/knowledge`, los prompts o el modelo, y exige
+—si se salta— **dejar escrito qué ficheros cambiaron**. Esto es ese escrito.
+
+**La decisión**: no se corre, se va directo al despliegue, por el coste y porque la cadena de
+respuesta ya se ha probado mucho en producción real. Mismo criterio y misma anotación que en la
+`0.1.1` (ver `docs/plan-despliegue-produccion.md` fase 11).
+
+**Precisión que conviene no perder: la evaluación de Anthropic anotada en §4.3 es de features
+anteriores, no de este código.** Nunca se ha corrido sobre la 017. Lo que sigue es, por tanto, el
+único análisis que hay de por qué eso no es grave.
+
+Los 16 ficheros cambiados en las tres zonas que vigila el guion (`git diff main..HEAD -- src/`):
+
+| Fichero | Qué cambió | ¿Afecta a lo que contesta el modelo? |
+|---|---|---|
+| `src/llm/prompt.ts` | **nada, sin diff** | **No.** El prompt del sistema es idéntico |
+| `src/conversation/types.ts` | +2 líneas: un valor en `CAP_REASONS` | No. `modelReplySchema` intacto |
+| `src/knowledge/types.ts` | +6 líneas: dos códigos en `WarningCode` | No. Avisos del panel |
+| `src/conversation/responder.ts` | +55: contabilidad de `calls` / `unmeasuredCalls` | No. Cuenta el consumo; no toca la petición ni la validación |
+| `src/llm/anthropic-chat-model.ts` | `replyJsonSchema()` se va a `reply-schema.ts`; `MAX_RETRIES` **1 → 0** | **El esquema, no**: T008 fija por regresión que el dialecto `anthropic` produce **exactamente** el mismo JSON Schema que antes. **`MAX_RETRIES`, sí** (abajo) |
+| `src/llm/token-usage.ts`, `anthropic-usage.ts`, `anthropic-summarizer.ts` | extracción de consumo y `maxRetries: 0` en el resumidor | No a la respuesta; sí al registro de consumo, que tiene sus propios tests de integración |
+| `reply-schema.ts`, `provider.ts`, `factory.ts`, `capabilities.ts`, `credential-probe.ts`, `gemini-*`, `openai-*` | ficheros **nuevos** | No. Código muerto en una instancia de Anthropic: sin `LLM_PROVIDER` nada de esto se construye (FR-003) |
+
+**El único cambio con efecto observable en producción es `MAX_RETRIES` 1 → 0** (T034a, FR-020), y
+está declarado en el comentario de cabecera del propio adaptador: un fallo pasajero del proveedor
+que antes reintentaba el SDK ahora llega al responder, que contesta con disculpa y contacto.
+
+**Por qué la evaluación tampoco era el instrumento para medirlo**: mide la calidad de las
+respuestas, y solo vería este cambio si al proveedor le diera por fallar durante la corrida. Lo que
+sí lo mide es **T084 con tráfico real**: si aparece una disculpa con contacto que antes no salía, es
+esto. Queda como lo que hay que vigilar en producción, no como algo que la puerta de calidad dejó
+pasar sin saberlo.
+
+### Lo que esta versión trae y las dos anteriores no: una migración
+
+La `0.1.1` y la `0.1.2` se desplegaron **sin migración**. La `0.1.3` lleva la **0009**, así que es
+la primera actualización que cambia el esquema de una instancia ya desplegada. Eso activa tres
+partes del guion que hasta ahora no se habían usado en producción:
+
+- La instancia hace la **copia previa** `…__premigration.cbak` antes de migrar. Si no puede
+  (falta configuración, directorio inexistente o sin permiso, disco lleno), **no migra ni arranca**
+  y lo registra como `migration_blocked`, dejando el esquema sin tocar.
+- Mientras migra **no escucha**, así que `instance:versions` la muestra como `No responde`. Eso no
+  es un fallo: se distingue de una caída mirando los registros (`migration_blocked` /
+  `migration_failed`).
+- El **cierre (§5.5) exige validar una copia** posterior a la actualización de cada instancia con la
+  guía de la §8, y anotarla con `instance:verified`. Esto entra en T086.
+
+### FR-003 verificado en los entornos de producción (2026-10-23, antes de construir)
+
+`pnpm instance:check` con el núcleo **0.1.3** sobre los dos entornos desplegados, que **no se han
+tocado**: sin `LLM_PROVIDER`, sin `GEMINI_API_KEY` ni `OPENAI_API_KEY`.
+
+| | `viajes` | `restaurante` |
+|---|---|---|
+| Veredicto | **APTO para desplegar**, salida 0 | **APTO para desplegar**, salida 0 |
+| Comparación con el inventario | sí, 1 instancia | sí, 1 instancia |
+| Errores | 0 | 0 |
+| Advertencias | 3 | 3 |
+
+**Esto es FR-003 verificado donde importa**: el núcleo nuevo resuelve los dos entornos como
+Anthropic sin pedir nada. Que **no exija `LLM_MODEL`** lo demuestra por sí solo, porque solo la
+perdona con `anthropic` (FR-001). Ningún `llm_key_*`, ninguna credencial reclamada.
+
+Las 3 advertencias son previas y ninguna bloquea:
+
+- `DATABASE_URL: apunta a localhost en production` — es la forma de socket Unix del compose.
+- `WHATSAPP_PHONE_NUMBER_ID: las variables WHATSAPP_* están vacías` — **ninguna de las dos
+  instancias tiene canal de WhatsApp**. Reduce T084 a un solo canal: el chat web.
+- `BACKUP_DIR: es igual al de la otra instancia` — **falsa alarma en esta topología**, y conviene
+  dejarlo escrito porque esta versión lleva migración y las copias `premigration` caen ahí.
+  `instance:check` compara el valor literal, que es el mismo porque es la ruta **dentro** del
+  contenedor (`/var/lib/chatbot/backups`); el compose la monta desde
+  `/srv/chatbot/instancia-1/backups` y `/srv/chatbot/instancia-2/backups`, que son directorios
+  distintos del anfitrión. Las copias no comparten volumen.
+
+- [X] T082 Construir y publicar la imagen 0.1.3 en GHCR. **Antes de construir**, comprobar el emisor del certificado de `registry.npmjs.org`: si es Avast, el `docker build` falla con un error de certificado que no se parece a lo que es.
+
+  **HECHA el 2026-10-23.** Construida en el equipo del operador y publicada en GHCR:
+
+  | | |
+  |---|---|
+  | Imagen | `ghcr.io/roberps/chatbot-multicliente:0.1.3` |
+  | Digest | `sha256:48aab420ee3183b6ae129ca62a06e43a236d4331535a0682ff7d070524d45b5b` |
+  | Etiqueta Git | `v0.1.3` (creada; antes solo existía `v0.1.0`: las de la 0.1.1 y la 0.1.2 nunca se crearon) |
+  | `org.opencontainers.image.version` | `0.1.3`, igual que la etiqueta `-t` |
+  | `HEALTHCHECK` | `["CMD","node","dist/src/cli/healthcheck.js"]`, `StartPeriod` 120 s, `StartInterval` 5 s, `Interval` 30 s, 3 reintentos |
+  | Trivy `HIGH,CRITICAL --ignore-unfixed` | **salida 0**, nada que bloquee (Debian 12.15, 88 paquetes del sistema) |
+  | Certificado de `registry.npmjs.org` | Google Trust Services, **no** Avast. El `docker build` no tuvo ningún problema de certificado |
+
+  Sesión de GHCR cerrada tras publicar (`docker logout`).
+
+  **Dos cosas del equipo, para no repetirlas**: en Windows PowerShell 5.1 el template
+  `-f '{{ index .Config.Labels "org.opencontainers.image.version" }}'` **falla** con
+  `function "org" not defined`, porque la shell se come las comillas dobles interiores al pasar el
+  argumento a un ejecutable nativo; la forma que sí funciona es
+  `--format '{{json .Config.Labels}}'`. Y Trivy por contenedor sin `-t` imprime la barra de
+  progreso en cientos de líneas en vez de sobrescribirla: `--no-progress` lo evita, y
+  `--exit-code 1` da el veredicto sin tener que leer la tabla.
 - [ ] T083 Desplegar la 0.1.3 **por tandas** en las dos instancias del VPS (instancia-1 = viajes, instancia-2 = restaurante), comprobando entre tandas que `/health` responde con la versión nueva y que las dos quedan en `Correcto`. Las dos siguen con Anthropic: **ningún entorno de producción se toca**, y eso es precisamente lo que verifica FR-003 en el sitio donde importa
 - [ ] T084 Comprobar en producción, con un cliente real por cada canal, que la cadena de respuesta sigue entera: dato registrado, falta de dato reconocida y **derivación a una persona** (Principios IV y V)
-- [ ] T085 Comprobar de paso que **la preferencia de tema del panel sobrevive a la actualización**: es la parte del §5 del quickstart de la 014 que no se pudo verificar el mismo día y quedó anotada en su T030
+- [ ] T085 Comprobar de paso que **la preferencia de tema del panel sobrevive a la actualización**: es la parte del §5 del quickstart de la 014 que no se pudo verificar el mismo día y quedó anotada en su T030.
+
+  **Punto de partida tomado el 2026-10-23, antes de desplegar** (sin esto la tarea no se podría
+  medir después): en los **dos** paneles de producción se puso el tema en **Oscuro** y, tras
+  recargar, el radio volvió marcado en Oscuro. La cookie `kb_theme` se guarda y se relee.
+
+  **Por qué «Automático» no valía**: `auto` **no guarda, borra** —valor vacío y `Max-Age=0`
+  (`src/admin/theme.ts`)—, así que un panel en Automático se queda sin cookie y «sobrevive a la
+  actualización» sería indistinguible de «nunca hubo nada que sobreviviera». Al abrir los paneles
+  el radio salía en Automático, que es lo correcto cuando no hay cookie, no un defecto.
 - [ ] T086 Anotar el despliegue en el inventario (`pnpm instance:versions --annotate`) y en `docs/plan-despliegue-produccion.md`, y **contar al usuario el resultado real** de T083 a T085, sin redondear
 
 **Checkpoint**: la 0.1.3 está en producción, las dos instancias en `Correcto`, y el pendiente de la 014 resuelto.
+
+### 🛑 PARADA del 2026-10-23, con la imagen publicada y producción todavía en 0.1.2
+
+Se para por decisión del usuario **antes de tocar el VPS**. El corte es limpio: lo hecho no cambia
+nada en producción, y lo que queda empieza por una orden que no depende de nada de esta sesión.
+
+**Hecho, y comprobado**
+
+| | |
+|---|---|
+| Decisión sobre `pnpm test:eval` | **Saltarla**, con el escrito que exige §5.1 (arriba, en esta misma fase) |
+| `pnpm instance:check` de las dos instancias con el núcleo 0.1.3 | **APTO** y salida 0 las dos → **FR-003 verificado en producción** |
+| Punto de partida de T085 | Tema en **Oscuro** en los dos paneles, comprobado que la cookie se relee tras recargar |
+| T082 · imagen 0.1.3 | **Construida, analizada y publicada en GHCR**, digest `sha256:48aab420…d45b5b`. Etiqueta `v0.1.3` creada. Sesión de GHCR cerrada |
+
+**Sin hacer**: T083, T084, T085 (la mitad de después) y T086. **Producción sigue en 0.1.2** y con
+Anthropic, con sus entornos sin tocar. La imagen 0.1.3 está en GHCR pero **ninguna instancia la ha
+bajado**: publicar no despliega.
+
+**Estado del repositorio**: rama `017-proveedor-modelo-configurable`, árbol limpio, **nada subido a
+`origin`** (el push es al final del proyecto y solo pidiéndolo). La etiqueta `v0.1.3` es local.
+
+**Por dónde se reanuda**: T083, primera tanda, `instancia-1` = viajes. La primera orden es
+`ssh vps`, y la primera comprobación —antes de arrancar nada— es que el digest de la imagen bajada
+coincida con el de arriba:
+
+```bash
+sudo docker image inspect ghcr.io/roberps/chatbot-multicliente:0.1.3 --format '{{index .RepoDigests 0}}'
+```
+
+**Lo que hay que tener presente al volver**, porque no está en el texto original de las tareas:
+
+1. **Es la primera actualización con migración** (la 0009). Estrena en producción la copia
+   `…__premigration.cbak`, el `migration_blocked` y el `No responde` legítimo mientras migra. Es el
+   punto delicado de todo el despliegue.
+2. **T084 se reduce a un canal**, el chat web: `instance:check` confirmó que ninguna de las dos
+   instancias tiene `WHATSAPP_*`.
+3. **Qué vigilar en T084**: una disculpa con contacto que antes no salía es el `maxRetries` a 0, no
+   un fallo nuevo.
+4. **T086 lleva trabajo extra por la migración**: §5.5 pide validar una copia posterior a la
+   actualización de cada instancia (guía §8) y anotarla con `instance:verified`.
+5. `docs/plan-despliegue-produccion.md` **no se ha tocado todavía a propósito**: su registro es el
+   del despliegue, y el despliegue no ha ocurrido. Se escribe en T086.
 
 ---
 
