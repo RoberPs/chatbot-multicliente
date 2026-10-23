@@ -314,7 +314,26 @@ verde, y no lo está. Lo que hay, medido y sin redondear:
 |---|---|
 | `pnpm lint` | **limpio** |
 | `pnpm typecheck` | **limpio** |
-| `pnpm test` | **3 fallos · 3557 pasadas · 3 omitidas** (3563), 292 ficheros, 1 fallido, 31,7 min |
+| `pnpm test` | **4 fallos · 3577 pasadas · 3 omitidas** (3584), 292 ficheros, 2 fallidos, 50 min (2026-10-23) |
+
+#### Tres corridas, y lo que dicen juntas
+
+| Fecha | Fallos | Dónde |
+|---|---|---|
+| 2026-10-14 | 3 | `outage.test.ts` |
+| 2026-10-23 (máquina cargada) | 6 | `outage` (3) · `chat-design` (3) · suite caída en `db/tls` |
+| 2026-10-23 (máquina limpia) | 4 | `outage` (3) · `handoff/limits` (1) |
+
+**Los 3 de `outage.test.ts` salen siempre.** Son previos: reproducidos en `fcb8d50` y con el cambio
+de `protection.ts` revertido.
+
+**Los demás cambian de fichero en cada corrida** y ninguno es una aserción de lógica:
+`container not running`, `Test timed out`, `timeout exceeded when trying to connect`. Son el pool de
+PostgreSQL y Docker sin recursos. Entre la segunda y la tercera corrida se liberaron **15,2 GB** en
+Docker (imágenes y caché de construcción) y desaparecieron los de `chat-design` y `tls`, pero
+apareció el de `limits` con 50 transacciones en paralelo.
+
+**Ningún fallo es atribuible a la 017.** Los 3577 que pasan incluyen todo lo de esta feature.
 
 Los 3 fallos están **todos** en `tests/integration/db/outage.test.ts` y **son previos a esta
 feature**:

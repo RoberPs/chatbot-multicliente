@@ -45,6 +45,12 @@ pnpm lint && pnpm typecheck
 - Migraciones de solo añadir; las ya publicadas no se editan nunca (la restauración de copias las reaplica y compara su hash).
 - Toda migración que añada o cambie configuración del negocio sube `formatVersion` en `src/config-transfer/format.ts` y añade su actualizador (lo vigila el test de cobertura de columnas).
 - Specs, comentarios y mensajes, en español.
+- **Pruebas: solo lo nuevo y lo necesario.** `pnpm test:unit` (~50 s), `pnpm test:contract` o
+  `pnpm test <patrón>` sobre lo que se está tocando. **Nada de suites completas**: `pnpm test`
+  entero tarda ~28 min y el 38 % se va en importar módulos, así que no sirve como bucle de
+  trabajo. Si algo se rompe, aparecerá en las pruebas reales y se revisa entonces. Si una tarea de
+  una spec exige la suite entera (las puertas de calidad del tipo T081), **pregunta antes de
+  lanzarla** en vez de darlo por hecho.
 - Actualiza `README.md` cada vez que una feature cambie de estado, y avisa antes al usuario.
 - Al terminar una spec, actualiza también `docs/operacion-multicliente.md`: la tabla de specs realizadas (9.1, con su fecha), el orden de las propuestas pendientes (9.2), la propuesta que cubre (marcarla como hecha) y las secciones de operación que cambien.
 
