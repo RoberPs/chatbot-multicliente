@@ -311,16 +311,27 @@ proveedor declarado elegible, con su fecha, su modelo y su ajuste de esfuerzo.
   proveedor.
 - **FR-008**: El panel de operador MUST NOT nombrar al proveedor **como tal** en ninguna pantalla:
   ni su nombre como proveedor, ni el nombre de su variable de credencial, ni el de su SDK.
-  **Matizado el 2026-10-23, recorriendo el §1c del quickstart.** El **nombre del modelo
-  configurado** MAY aparecer: la tabla de precios está indexada por él, el operador necesita verlo
-  para registrar su precio, y es un valor que ha escrito él mismo en su entorno. De ese nombre se
+  **Matizado el 2026-10-23, recorriendo el §1c del quickstart y comprobado después con el panel
+  real en el navegador.** El **nombre del modelo configurado** MAY aparecer, y aparece en **dos**
+  sitios, no en uno: la **pantalla de consumo**, cuya tabla de precios está indexada por él, y la
+  **banda de gasto de la 010**, que vive en la plantilla común y por tanto sale en **todas** las
+  pantallas mientras el tope esté activado y el modelo **no tenga precio** («El modelo «X» no tiene
+  precio: su consumo no cuenta para el tope»). Esa banda es una alarma de operación que tiene que
+  ser accionable —nombrar el modelo es lo que la hace accionable— y desaparece en cuanto se registra
+  el precio, algo que en producción hay que hacer igualmente, porque un modelo sin precio deja al
+  bot respondiendo solo con el contacto (FR-027). En los dos casos es un valor que el operador ha
+  escrito él mismo en su entorno. De ese nombre se
   puede **inferir** el proveedor, y con Gemini la inferencia es inmediata porque sus modelos llevan
   el nombre del proveedor dentro (`gemini-3.5-flash-lite`). Se acepta a conciencia: ocultar el
   nombre del modelo rompería la pantalla de precios, y lo que esta regla protege es que el producto
   no se case con un proveedor de cara al cliente, no que el operador no reconozca su propia
-  configuración. **Consecuencia que conviene saber**: el aviso de «modelo sin precio» se construye
-  del consumo registrado, así que una instancia que haya cambiado de modelo muestra **todos** los
-  que ha usado, y con ellos su historial de proveedores.
+  configuración. **Consecuencia que conviene saber**: el aviso de «modelo sin precio» de la
+  pantalla de consumo se construye del consumo **registrado**, así que una instancia que haya
+  cambiado de modelo muestra **todos** los que ha usado, y con ellos su historial de proveedores.
+  **Medido el 2026-10-23 sobre el panel real**, con un modelo de Gemini configurado y sin precio:
+  las **17** pantallas contienen el nombre del proveedor, y las **17** quedan limpias al quitar de
+  su HTML los nombres de modelo. El nombre del modelo es la **única** vía por la que el proveedor
+  asoma, que es lo que esta regla sigue exigiendo.
 - **FR-009**: El inventario de instancias MUST registrar el proveedor declarado de cada instancia, y
   MUST NOT registrar ninguna credencial.
 - **FR-010**: Las órdenes de aprovisionamiento y la orden de hablar con el bot por terminal MUST

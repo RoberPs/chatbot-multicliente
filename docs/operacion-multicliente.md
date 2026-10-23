@@ -807,8 +807,15 @@ Fila por fila, y qué pasa en cada caso:
 El panel **no nombra al proveedor**: ni como proveedor, ni por su variable de credencial, ni por su
 SDK. Lo vigila una prueba de contrato en cada pantalla.
 
-**Pero el nombre del modelo sí se ve**, en la pantalla de *Consumo*: la tabla de precios está
-indexada por él y el operador necesita verlo para registrarlo. Con Anthropic y con OpenAI eso no
+**Pero el nombre del modelo sí se ve**, y en dos sitios. En la pantalla de *Consumo*, porque la
+tabla de precios está indexada por él y el operador necesita verlo para registrarlo. Y en la **banda
+de gasto**, que va en la plantilla común y sale en **todas** las pantallas mientras el modelo
+configurado no tenga precio: «El modelo «X» no tiene precio: su consumo no cuenta para el tope».
+
+Esa banda desaparece en cuanto registras el precio —algo que en producción hay que hacer igualmente,
+porque un modelo sin precio deja al bot respondiendo solo con el contacto—. Así que en una instancia
+bien configurada el nombre del modelo se queda en la pantalla de consumo; en una recién cambiada de
+modelo, sale en todas hasta que la arregles. Con Anthropic y con OpenAI eso no
 dice gran cosa —`claude-…`, `gpt-…`—, pero **los modelos de Gemini llevan el nombre del proveedor
 dentro** (`gemini-3.5-flash-lite`), así que en una instancia de Gemini el panel deja ver quién hay
 detrás. Está aceptado a conciencia (FR-008, matizada el 2026-10-23): ocultar el nombre del modelo

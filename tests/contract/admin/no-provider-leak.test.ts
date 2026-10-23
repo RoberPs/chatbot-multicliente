@@ -166,6 +166,12 @@ describe('con un modelo cuyo nombre lleva el del proveedor (FR-008 matizada)', (
     expect(delata(sinElModelo)).toEqual([]);
   });
 
+  /**
+   * Comprobado sobre el panel real en el navegador (2026-10-23): con un modelo de Gemini sin
+   * precio, las 17 pantallas contienen «gemini», y no por la tabla de precios sino por la **banda
+   * de gasto de la 010**, que vive en la plantilla comun: «El modelo «X» no tiene precio». Por eso
+   * este bloque recorre **todas** las pantallas y no solo la de consumo.
+   */
   it.each(PANTALLAS)('y %s sigue sin nombrar a nadie', async (url) => {
     const res = await get(app, session, `/admin${url}`);
     expect([200, 302, 303]).toContain(res.statusCode);
