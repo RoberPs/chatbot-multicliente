@@ -802,6 +802,24 @@ Fila por fila, y qué pasa en cada caso:
 7. **Señal propia de rechazo.** Cada uno la señala a su manera y las tres acaban en la **misma**
    causa del dominio, `refusal`. Gemini tiene además dos: el bloqueo del prompt y el del candidato.
 
+#### Lo que el panel deja ver del proveedor, y lo que no
+
+El panel **no nombra al proveedor**: ni como proveedor, ni por su variable de credencial, ni por su
+SDK. Lo vigila una prueba de contrato en cada pantalla.
+
+**Pero el nombre del modelo sí se ve**, en la pantalla de *Consumo*: la tabla de precios está
+indexada por él y el operador necesita verlo para registrarlo. Con Anthropic y con OpenAI eso no
+dice gran cosa —`claude-…`, `gpt-…`—, pero **los modelos de Gemini llevan el nombre del proveedor
+dentro** (`gemini-3.5-flash-lite`), así que en una instancia de Gemini el panel deja ver quién hay
+detrás. Está aceptado a conciencia (FR-008, matizada el 2026-10-23): ocultar el nombre del modelo
+rompería la pantalla de precios, y lo que la regla protege es que el producto no se case con un
+proveedor de cara al cliente, no que el operador no reconozca su propia configuración.
+
+**Y hay una consecuencia que conviene saber antes de cambiar de modelo en una instancia viva**: el
+aviso de «modelo sin precio» se construye del consumo **registrado**, así que una instancia que ha
+cambiado de modelo los muestra **todos** los que ha usado, y con ellos su historial de proveedores.
+Si eso molesta de cara a un cliente, hay que decidirlo antes del cambio, no después.
+
 Lo que **no** cambia con el proveedor: las cuatro causas de fallo del dominio, el plazo y los dos
 intentos por respuesta —que comparten un único presupuesto, porque la política de reintentos de
 los SDK está desactivada—, el registro de consumo, el tope de gasto y la salida a una persona.

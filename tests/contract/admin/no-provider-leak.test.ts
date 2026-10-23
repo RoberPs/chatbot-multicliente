@@ -48,6 +48,14 @@ const PANTALLAS = [
  * operador ha escrito en el entorno de su instancia. De un nombre de modelo se puede **inferir** el
  * proveedor, pero FR-008 prohíbe que el panel lo **nombre**, no que el operador reconozca su propia
  * configuración. Por eso `claude-…` o `gpt-…` no están en esta lista.
+ *
+ * **Y aquí esta batería da confianza de menos de la que parece.** Corre con modelos cuyo nombre no
+ * contiene el del proveedor, así que nunca ve el caso de Gemini: `gemini-3.5-flash-lite` lleva la
+ * palabra dentro, y una instancia de Gemini **sí** muestra el nombre del proveedor en la pantalla
+ * de consumo. Eso se descubrió recorriendo el §1c del quickstart (T080) y está aceptado a
+ * conciencia en FR-008, matizada el 2026-10-23. El último `describe` de este fichero lo deja
+ * **comprobado** en lugar de solo escrito, y afirma lo único que sigue siendo exigible: que el
+ * nombre del modelo es la **única** vía por la que el proveedor asoma.
  */
 const PROHIBIDO = [
   ...LLM_PROVIDERS,
@@ -114,5 +122,53 @@ describe('ninguna pantalla del panel nombra al proveedor', () => {
     const res = await app.inject({ method: 'GET', url: '/chat/frame' });
     // Si la ruta no existe en esta configuración, no hay nada que delatar.
     if (res.statusCode === 200) expect(delata(res.body)).toEqual([]);
+  });
+});
+
+/**
+ * El caso que la batería de arriba no puede ver (FR-008, matizada el 2026-10-23).
+ *
+ * `gemini-3.5-flash-lite` contiene literalmente «gemini», así que una instancia de Gemini muestra
+ * el nombre del proveedor en la pantalla de consumo. No se oculta: la tabla de precios está
+ * indexada por el nombre del modelo y el operador necesita verlo.
+ *
+ * Lo que sí se exige, y es lo que fija este bloque: que el nombre del modelo sea la **única** vía
+ * por la que el proveedor asoma. Si mañana alguien añade un «Proveedor: Gemini» en una cabecera, o
+ * deja escapar el nombre de la variable de credencial, esto falla — y seguiría fallando aunque el
+ * modelo configurado se llamase de otra forma.
+ */
+describe('con un modelo cuyo nombre lleva el del proveedor (FR-008 matizada)', () => {
+  const MODELO_GEMINI = 'gemini-3.5-flash-lite';
+  let t: TestDatabase;
+  let app: FastifyInstance;
+  let session: Session;
+
+  beforeAll(async () => {
+    t = await createTestDatabase();
+    app = await buildTestApp(t.db, t.url, null, { LLM_MODEL: MODELO_GEMINI });
+    session = await login(app);
+  });
+  afterAll(async () => {
+    await app.close();
+    await t.close();
+  });
+
+  it('la pantalla de consumo muestra el modelo, y por eso deja ver el proveedor', async () => {
+    const res = await get(app, session, '/admin/usage');
+    expect(res.body).toContain(MODELO_GEMINI);
+    // Documentado, no disimulado: con este modelo la pantalla **sí** contiene «gemini».
+    expect(delata(res.body)).toContain('gemini');
+  });
+
+  it('pero el nombre del modelo es la única vía: quitarlo deja la pantalla limpia', async () => {
+    const res = await get(app, session, '/admin/usage');
+    const sinElModelo = res.body.replaceAll(MODELO_GEMINI, '«modelo»');
+    expect(delata(sinElModelo)).toEqual([]);
+  });
+
+  it.each(PANTALLAS)('y %s sigue sin nombrar a nadie', async (url) => {
+    const res = await get(app, session, `/admin${url}`);
+    expect([200, 302, 303]).toContain(res.statusCode);
+    expect(delata(res.body.replaceAll(MODELO_GEMINI, '«modelo»'))).toEqual([]);
   });
 });

@@ -309,7 +309,18 @@ proveedor declarado elegible, con su fecha, su modelo y su ajuste de esfuerzo.
   estado de la instancia MUST NOT depender de qué proveedor hay detrás.
 - **FR-007**: La información de estado que la instancia publica por red MUST NOT revelar el
   proveedor.
-- **FR-008**: El panel de operador MUST NOT mostrar el nombre del proveedor en ninguna pantalla.
+- **FR-008**: El panel de operador MUST NOT nombrar al proveedor **como tal** en ninguna pantalla:
+  ni su nombre como proveedor, ni el nombre de su variable de credencial, ni el de su SDK.
+  **Matizado el 2026-10-23, recorriendo el §1c del quickstart.** El **nombre del modelo
+  configurado** MAY aparecer: la tabla de precios está indexada por él, el operador necesita verlo
+  para registrar su precio, y es un valor que ha escrito él mismo en su entorno. De ese nombre se
+  puede **inferir** el proveedor, y con Gemini la inferencia es inmediata porque sus modelos llevan
+  el nombre del proveedor dentro (`gemini-3.5-flash-lite`). Se acepta a conciencia: ocultar el
+  nombre del modelo rompería la pantalla de precios, y lo que esta regla protege es que el producto
+  no se case con un proveedor de cara al cliente, no que el operador no reconozca su propia
+  configuración. **Consecuencia que conviene saber**: el aviso de «modelo sin precio» se construye
+  del consumo registrado, así que una instancia que haya cambiado de modelo muestra **todos** los
+  que ha usado, y con ellos su historial de proveedores.
 - **FR-009**: El inventario de instancias MUST registrar el proveedor declarado de cada instancia, y
   MUST NOT registrar ninguna credencial.
 - **FR-010**: Las órdenes de aprovisionamiento y la orden de hablar con el bot por terminal MUST
