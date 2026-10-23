@@ -189,7 +189,12 @@ derivación a una persona, y ninguna pantalla del panel nombrando al proveedor
 
 ### Cierre del tramo 1 🛑 PARADA
 
-- [ ] T043a **Dejar el repositorio en estado reanudable y parar.** Concretamente: (a) `pnpm lint && pnpm typecheck && pnpm test` en verde, y **contar al usuario el resultado real**, sin redondear; (b) árbol limpio, todo commiteado, **sin subir nada a `origin`**; (c) `.env` de desarrollo con el proveedor en Anthropic, para que el panel no se encuentre con un «sin dato» que todavía no sabe pintar; (d) comprobar que `package.json` sigue en **0.1.2** y que `README.md` **no** se ha tocado, porque ningún proveedor está declarado apto aún; (e) anotar al usuario en qué tarea se paró y cuál es la primera del tramo 2
+- [X] T043a **ANULADA el 2026-10-23, no completada.** La parada del tramo 1 ocurrió en su momento y
+  el tramo 2 ya pasó por encima, así que su condición (d) —«`package.json` sigue en **0.1.2** y
+  `README.md` **no** se ha tocado»— exige hoy justo lo contrario de donde está el repositorio:
+  la versión es **0.1.3** y el README está actualizado, como mandaban T078 y T079. Marcarla como
+  cumplida sería mentir; dejarla pendiente, también. Lo que pedía y sigue vigente está cubierto por
+  T081. Texto original: **Dejar el repositorio en estado reanudable y parar.** Concretamente: (a) `pnpm lint && pnpm typecheck && pnpm test` en verde, y **contar al usuario el resultado real**, sin redondear; (b) árbol limpio, todo commiteado, **sin subir nada a `origin`**; (c) `.env` de desarrollo con el proveedor en Anthropic, para que el panel no se encuentre con un «sin dato» que todavía no sabe pintar; (d) comprobar que `package.json` sigue en **0.1.2** y que `README.md` **no** se ha tocado, porque ningún proveedor está declarado apto aún; (e) anotar al usuario en qué tarea se paró y cuál es la primera del tramo 2
 
 ---
 
@@ -300,8 +305,37 @@ modelo, su esfuerzo y su fecha.
 - [X] T077 [P] Anotar en `docs/plan-despliegue-produccion.md` §6 que la decisión del 2026-10-12 queda implementada en la 017
 - [X] T078 **Avisar al usuario antes** y luego actualizar `README.md` con el estado de la feature 017
 - [X] T079 Subir `package.json` a **0.1.3**
-- [ ] T080 Recorrer [quickstart.md](quickstart.md) completo, §1 a §6, y anotar el resultado real de cada apartado, sin redondear. El §2 es el que verifica SC-001: una instancia atiende con cualquier proveedor cambiando solo su fichero de entorno
-- [ ] T081 Pasar la puerta de calidad entera: `pnpm lint && pnpm typecheck && pnpm test` y la evaluación por proveedor, y **contar al usuario el resultado real** antes de dar la feature por cerrada
+- [X] T080 **Recorrido el 2026-10-23; resultado completo en [quickstart.md](quickstart.md).** §1,
+  §2, §3 y §5 recorridos. **§4 y §6 no**, con su razón escrita: §4 necesita una credencial real
+  revocada y su ciclo lo cubre `tests/integration/llm/credential-degraded.test.ts`; §6 no se hace
+  hasta que un cliente pida Gemini u OpenAI, por decisión del usuario. **SC-001 verificado**: una
+  instancia atendió con Gemini cambiando solo su fichero de entorno. Encontró además dos fallos
+  reales, los dos corregidos: el diagnóstico de la credencial corta (`check.ts`) y una regla
+  FR-008 incumplible, matizada tras medir el panel real. Texto original: Recorrer
+  [quickstart.md](quickstart.md) completo, §1 a §6, y anotar el resultado real de cada apartado, sin redondear. El §2 es el que verifica SC-001: una instancia atiende con cualquier proveedor cambiando solo su fichero de entorno
+- [X] T081 Pasar la puerta de calidad entera: `pnpm lint && pnpm typecheck && pnpm test` y la evaluación por proveedor, y **contar al usuario el resultado real** antes de dar la feature por cerrada.
+
+  **PASADA EL 2026-10-23 CON DOS EXCEPCIONES DECLARADAS**, no en verde a secas:
+
+  | | |
+  |---|---|
+  | `pnpm lint` | limpio |
+  | `pnpm typecheck` | limpio |
+  | `pnpm test` | **4 fallos · 3577 pasadas · 3 omitidas** (3584), 50 min |
+
+  **Excepción 1 · Los 3 fallos de `tests/integration/db/outage.test.ts` son previos a esta
+  feature.** Probado: se reproducen idénticos en `fcb8d50` y con el cambio de `protection.ts`
+  revertido. El cuarto fallo de esta corrida (`handoff/limits.test.ts`) es un
+  `timeout exceeded when trying to connect` del pool de PostgreSQL, y en cada corrida le toca a un
+  fichero distinto; ninguno es una aserción de lógica. Ver «Tres corridas» más arriba.
+
+  **Excepción 2 · La evaluación por proveedor está limitada por decisión del usuario.** Anthropic
+  —el de producción— está evaluado. Gemini tiene la **conexión verificada** contra su API real pero
+  **no está declarado apto**. OpenAI no se ha llamado nunca. Los dos se evalúan **cuando un cliente
+  los pida**, igual que el canal de WhatsApp y los audios. Está escrito en `README.md` y en
+  `docs/operacion-multicliente.md` §4.3.
+
+  **Ningún fallo es atribuible a la 017.**
 
 ---
 
