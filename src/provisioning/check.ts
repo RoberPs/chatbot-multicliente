@@ -332,9 +332,26 @@ function operatorHashAndKeyFormat(env: EnvMap, out: Findings): void {
   const LLM_CODES = new Set(['llm_key_format', 'llm_key_other_provider']);
   for (const variable of ['OPERATOR_PASSWORD_HASH', ...LLM_PROVIDERS.map(keyVariableOf)]) {
     const value = env[variable];
-    if (!present(value) || reported.has(variable)) continue;
+    if (!present(value)) continue;
+    const already = reported.has(variable);
     for (const q of secretQuality(variable, value)) {
       if (variable !== 'OPERATOR_PASSWORD_HASH' && !LLM_CODES.has(q.code)) continue;
+      /**
+       * 017: un error de calidad **no silencia** el diagnóstico de «credencial de otro
+       * proveedor», y esto no es un detalle estético.
+       *
+       * El caso real: una clave clásica de Gemini (`AIza…`) tiene **39** caracteres y el mínimo
+       * de la variable de Anthropic es **40**, así que al pegarla en `ANTHROPIC_API_KEY` salta
+       * primero `secret_too_short`. Con la supresión de la 007 el entorno quedaba **no apto** —el
+       * agujero seguía cerrado— pero el mensaje decía «es demasiado corta», y el operador se iba
+       * a buscar una clave más larga del proveedor equivocado en lugar de enterarse de que la
+       * había puesto en la variable que no era. Es el error más probable, en la comprobación que
+       * existe justo para cazarlo.
+       *
+       * «Parece una credencial de otro proveedor» **explica** la longitud, así que gana el sitio.
+       * Los demás códigos siguen suprimidos como en la 007, para no apilar hallazgos.
+       */
+      if (already && q.code !== 'llm_key_other_provider') continue;
       const ctx: MessageContext = {
         variable,
         ...(q.otherProvider === undefined ? {} : { otherProvider: q.otherProvider }),

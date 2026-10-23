@@ -179,6 +179,152 @@ se escribe.
 > Esto cuesta dinero y está fuera de `pnpm test` a propósito. Ninguna de las dos cosas es
 > negociable en esta feature.
 
+---
+
+## Resultado del recorrido (T080) - 2026-10-23
+
+Recorrido con el alcance que decidio el usuario: **Gemini** como proveedor nuevo a probar contra su
+API real, **OpenAI pendiente** hasta que un cliente lo pida.
+
+### 0. Antes de empezar
+
+Nada que instalar: el entorno ya estaba montado del tramo anterior.
+
+**Hallazgo resuelto**: `/health` respondia `degraded`. No era la feature: la BD de desarrollo habia
+aplicado una version distinta del fichero `0009_unmeasured_usage.sql` -se aplico en el tramo 1 y
+despues T021a le anadio el comentario de cabecera-, y `sameSchema` compara indice, etiqueta **y
+hash**. El esquema aplicado era el correcto, verificado columna a columna. Con el visto bueno del
+usuario se actualizo el hash de esa fila de `drizzle.__drizzle_migrations`; `/health` paso a `ok`.
+
+### 1. La costura es un punto unico (SC-008) - CORRECTO
+
+| Comprobacion | Resultado |
+|---|---|
+| Variables de credencial en `src/` | Solo en `src/llm/provider.ts` y en la **excepcion documentada** `src/config/env.ts` |
+| SDK de proveedor en `src/` | Solo en `src/llm/`; el unico `@google/genai` de `capabilities.ts` esta en un comentario, no en un importe |
+
+`pnpm test` **no se lanzo en este recorrido**; su resultado esta en la seccion «Estado real de la
+puerta de calidad» de [tasks.md](tasks.md).
+
+### 2. El bot responde con Gemini - CORRECTO
+
+`LLM_PROVIDER=gemini`, `LLM_MODEL=gemini-3.5-flash-lite`, negocio real cargado en la BD de
+desarrollo. Las tres preguntas, en una sola respuesta agrupada:
+
+| Que se pregunto | Que contesto |
+|---|---|
+| Dato registrado: «A que hora abris los lunes?» | «Los lunes abrimos de 09:00 a 20:00» CORRECTO |
+| Dato no registrado: «Haceis fisioterapia?» | «No disponemos del servicio de fisioterapia» CORRECTO (Principio IV) |
+| «Quiero hablar con una persona» | Dio el contacto del negocio CORRECTO (Principio V) |
+
+Y la comprobacion del arranque: **el vigilante no dejo ninguna linea**, y solo calla cuando el
+veredicto es `accepted`. La credencial de Gemini se verifico contra su API real al arrancar.
+
+**Hallazgo del SDK, comprobado, y no es un fallo.** `@google/genai` imprime
+«Both GOOGLE_API_KEY and GEMINI_API_KEY are set. Using GOOGLE_API_KEY» cuando las dos estan en el
+entorno -en esta maquina `GOOGLE_API_KEY` esta definida a nivel de sistema-. El aviso es
+**enganoso**: el SDK resuelve `options.apiKey ?? envApiKey`, asi que la credencial que le pasa el
+adaptador **gana**. Comprobado con una prueba, no deducido: con la declarada invalida y la del
+sistema valida, la llamada **falla**. `GOOGLE_API_KEY` no actua de respaldo (FR-004, FR-005).
+
+**Lo que queda para el usuario**: la mirada al panel. Claude no tiene la contrasena del operador.
+
+### 3. La comprobacion previa caza la credencial equivocada - CORRECTO, con un fallo encontrado y corregido
+
+Con entornos sinteticos y un inventario de usar y tirar, fuera del repositorio. Ninguna credencial
+real.
+
+| Caso | Resultado |
+|---|---|
+| 3.1 Credencial de Gemini formato `AQ.` en `ANTHROPIC_API_KEY` | **NO APTO**, `llm_key_other_provider`, «parece una credencial de gemini», sin mostrar el valor |
+| 3.2 Forma no reconocida | **APTO** con aviso `llm_key_format` (R3: no se rechaza lo desconocido) |
+| 3.3 Credenciales sobrantes | **APTO** con un `llm_key_unused` por cada una (FR-033) |
+| Control: `gemini` con su credencial y su modelo | **APTO**, sin incidencias |
+| Extra: `gemini` **sin** `LLM_MODEL` | **NO APTO**: «LLM_MODEL es obligatoria con LLM_PROVIDER=gemini» (FR-001) |
+| 3.4 Sin bandera | **APTO**, y **sin una palabra** sobre la validacion (SC-009) |
+| 3.4 Con `--validar-credencial` y credencial inventada | **NO APTO**, `llm_key_rejected`, «el proveedor la rechaza» (FR-030) |
+
+El ultimo caso **demuestra el arreglo de T053 en la orden real**: Gemini responde 400 a una clave
+invalida, y antes del arreglo eso habria salido como `llm_key_unverified` -un aviso- y el entorno
+habria quedado **apto**.
+
+El caso «sin red, con bandera» no se recorrio: no se simulo el corte de red. Lo cubren los tests
+unitarios de `credential-probe` (5xx, fallo de red, DNS y plazo agotado dan `inconclusive`).
+
+#### Fallo encontrado recorriendo 3.1, y corregido
+
+Una clave **clasica** de Gemini (`AIza...`) tiene **39** caracteres y el minimo de la variable de
+Anthropic es **40**. Al pegarla en `ANTHROPIC_API_KEY` saltaba `secret_too_short`, y una supresion
+heredada de la 007 -«no apiles hallazgos sobre una variable que ya fallo», en
+`src/provisioning/check.ts`- impedia que `llm_key_other_provider` **se emitiera**. Ni en `--json`.
+
+El agujero seguia cerrado -el entorno quedaba **no apto**- pero el mensaje decia «es demasiado
+corta», asi que el operador se iba a buscar una clave mas larga del proveedor equivocado en lugar
+de enterarse de que la habia puesto en la variable que no era. Es el error **mas probable**, porque
+`AIza...` es el formato de la mayoria de las claves de Gemini en circulacion, y pasaba justo en la
+comprobacion que existe para cazarlo.
+
+Corregido: un error de calidad ya no silencia el diagnostico de proveedor equivocado, que es el que
+**explica** la longitud. La supresion sigue en pie para todo lo demas. Dos pruebas de regresion en
+`tests/unit/provisioning/check.test.ts`.
+
+### 5. El consumo no medido no se confunde con cero - CORRECTO en los datos
+
+Una llamada real de Gemini por el **canal medido** (chat web) dejo esta fila:
+
+| `calls` | `unmeasured_calls` | `input` | `output` | `cache_write` | `cache_read` | `currency` |
+|---|---|---|---|---|---|---|
+| 1 | 0 | 4302 | 763 | **NULL** | **0** | NULL |
+
+Es FR-024 de punta a punta: **NULL** donde el proveedor no informa del concepto y **0** donde si
+informa y fue cero. Y la insercion **no fallo** con el nulo dentro, que es la trampa de T022a -el
+`coalesce` del coste- aguantando en condiciones reales. `currency` nulo porque
+`gemini-3.5-flash-lite` no tiene precio registrado: es el camino de «modelo sin precio» (FR-027).
+
+**Aviso para quien lo mire**: `pnpm bot:chat` **no** registra consumo -es una herramienta de
+conversacion, no un canal medido-, asi que para ver filas hay que hablar por el chat web o por el
+panel.
+
+**Lo que queda para el usuario**: la presentacion en el panel («sin dato» frente a `0`, la nota
+generica, el recuento de respuestas no medidas). La cubre el test de contrato
+`tests/contract/admin/usage-no-data.test.ts`, pero la mirada a mano sigue pendiente.
+
+### 4 y 6. No recorridos, con razon
+
+- **4** (credencial rechazada degrada): necesita una credencial real revocada del proveedor
+  declarado. No se revoco ninguna. El ciclo completo -degradado, aviso critico, recuperacion sola,
+  una linea al entrar y una al salir- lo cubre `tests/integration/llm/credential-degraded.test.ts`
+  con el vigilante real.
+- **6** (evaluacion por proveedor): **por decision del usuario**, Gemini y OpenAI no se evaluan
+  hasta que un cliente los pida, igual que el canal de WhatsApp y los audios. La medida parcial de
+  Gemini del 2026-10-14 esta en `docs/operacion-multicliente.md` 4.3.
+
+### Pregunta abierta: FR-008 y el nombre del modelo de Gemini
+
+FR-008 dice que el panel **no** debe mostrar el nombre del proveedor en ninguna pantalla. El test
+`tests/contract/admin/no-provider-leak.test.ts` lo vigila con una lista de prohibidos que incluye
+los tres nombres de proveedor, y documenta una excepcion deliberada: **el nombre del modelo si puede
+aparecer**, porque la tabla de precios esta indexada por el y es un valor que el operador escribio.
+
+Con Anthropic y con OpenAI la excepcion no choca: `claude-...` y `gpt-...` no contienen «anthropic»
+ni «openai». **Con Gemini si**: `gemini-3.5-flash-lite` contiene literalmente «gemini», asi que una
+instancia de Gemini muestra el nombre del proveedor en la pantalla de consumo.
+
+El test no lo detecta porque corre con un modelo de prueba de nombre neutro, asi que **da confianza
+de mas** para las instancias de Gemini. No es una fuga de secretos -el proveedor no es un secreto-
+pero o FR-008 se matiza por escrito («el panel no nombra al proveedor *como tal*; de la
+configuracion del operador se puede inferir») o hay que decidir ocultar el nombre del modelo, lo que
+romperia la pantalla de precios. **Sin decidir.**
+
+### Estado del entorno al terminar
+
+- `.env` quedo en **`LLM_PROVIDER=gemini`** con `LLM_MODEL=gemini-3.5-flash-lite`, para que se
+  pueda mirar el panel con el caso interesante. **Antes de cerrar la feature hay que devolverlo a
+  Anthropic** (condicion (c) de T043a). Hay copia del original en el scratchpad de la sesion.
+- Servidor de desarrollo **levantado** en `http://localhost:3000/admin`.
+
+---
+
 ## 7. Antes de dar la feature por cerrada
 
 - [ ] `pnpm lint && pnpm typecheck && pnpm test` en verde

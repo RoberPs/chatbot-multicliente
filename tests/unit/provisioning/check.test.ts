@@ -839,6 +839,39 @@ describe('validate: credencial del modelo (017)', () => {
     expect(result.ok).toBe(false);
   });
 
+  /**
+   * Regresión encontrada recorriendo el §3.1 del quickstart (T080).
+   *
+   * Una clave clásica de Gemini tiene **39** caracteres y el mínimo de la variable de Anthropic es
+   * **40**, así que salta primero `secret_too_short`. Una supresión heredada de la 007 —«no apiles
+   * hallazgos sobre una variable que ya falló»— hacía que `llm_key_other_provider` **no se
+   * emitiera**: el entorno quedaba no apto, así que el agujero seguía cerrado, pero el mensaje
+   * decía «es demasiado corta» y el operador se iba a buscar una clave más larga del proveedor
+   * equivocado.
+   *
+   * Es el error más probable —`AIza…` es el formato de la mayoría de las claves de Gemini en
+   * circulación— en la comprobación que existe justo para cazarlo. Los dos errores tienen que
+   * salir, y el que explica el problema no puede faltar.
+   */
+  it('una credencial de otro proveedor más corta que el mínimo da LOS DOS errores', () => {
+    const clasica = `AIza${'x'.repeat(35)}`;
+    expect(clasica).toHaveLength(39);
+    const result = run(fresh({ ANTHROPIC_API_KEY: clasica }));
+    expect(errorKeys(result)).toContain('secret_too_short:ANTHROPIC_API_KEY');
+    expect(errorKeys(result)).toContain('llm_key_other_provider:ANTHROPIC_API_KEY');
+    expect(result.ok).toBe(false);
+  });
+
+  // Y la supresión de la 007 sigue en pie para todo lo demás: un solo hallazgo por variable.
+  it('un error de calidad no se duplica con el aviso de forma desconocida', () => {
+    const mala = `zz-${'x'.repeat(10)}`;
+    const result = run(fresh({ ANTHROPIC_API_KEY: mala }));
+    // Cuál de las reglas de calidad salta no importa aquí; que salte **una** y que el aviso de
+    // forma desconocida **no** se le sume, sí.
+    expect(result.errors.filter((e) => e.variable === 'ANTHROPIC_API_KEY')).toHaveLength(1);
+    expect(warningKeys(result)).not.toContain('llm_key_format:ANTHROPIC_API_KEY');
+  });
+
   it('el mensaje dice de qué proveedor parece, y no muestra el valor (FR-032)', () => {
     const valor = `AIza${'x'.repeat(40)}`;
     const result = run(fresh({ ANTHROPIC_API_KEY: valor }));
