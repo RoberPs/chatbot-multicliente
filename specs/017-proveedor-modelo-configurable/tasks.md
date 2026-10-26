@@ -526,9 +526,97 @@ Las 3 advertencias son previas y ninguna bloquea:
   `--format '{{json .Config.Labels}}'`. Y Trivy por contenedor sin `-t` imprime la barra de
   progreso en cientos de líneas en vez de sobrescribirla: `--no-progress` lo evita, y
   `--exit-code 1` da el veredicto sin tener que leer la tabla.
-- [ ] T083 Desplegar la 0.1.3 **por tandas** en las dos instancias del VPS (instancia-1 = viajes, instancia-2 = restaurante), comprobando entre tandas que `/health` responde con la versión nueva y que las dos quedan en `Correcto`. Las dos siguen con Anthropic: **ningún entorno de producción se toca**, y eso es precisamente lo que verifica FR-003 en el sitio donde importa
-- [ ] T084 Comprobar en producción, con un cliente real por cada canal, que la cadena de respuesta sigue entera: dato registrado, falta de dato reconocida y **derivación a una persona** (Principios IV y V)
-- [ ] T085 Comprobar de paso que **la preferencia de tema del panel sobrevive a la actualización**: es la parte del §5 del quickstart de la 014 que no se pudo verificar el mismo día y quedó anotada en su T030.
+- [X] T083 Desplegar la 0.1.3 **por tandas** en las dos instancias del VPS (instancia-1 = viajes, instancia-2 = restaurante), comprobando entre tandas que `/health` responde con la versión nueva y que las dos quedan en `Correcto`. Las dos siguen con Anthropic: **ningún entorno de producción se toca**, y eso es precisamente lo que verifica FR-003 en el sitio donde importa.
+
+  **HECHA el 2026-10-26, las dos tandas.**
+
+  Segunda tanda (restaurante): digest comprobado, copia previa
+  `restaurante__0008_abuse_protection__20261026T121422Z__premigration.cbak` (17 090 bytes, 30
+  tablas), migración 0009 aplicada, servidor escuchando y **ninguna línea de credencial** —su clave
+  da 200—. Ni `migration_blocked` ni `migration_failed`.
+
+### La copia con el esquema nuevo se restaura: §5.5 cumplido en las dos instancias
+
+Es la comprobación que esta versión estrena, porque es la primera actualización con migración. Hecha
+**dentro de cada contenedor**, contra el PostgreSQL de verificación del propio VPS:
+
+| | viajes | restaurante |
+|---|---|---|
+| Copia posterior | `viajes__0009_unmeasured_usage__20261026T123305Z__manual.cbak` | `restaurante__0009_unmeasured_usage__20261026T123322Z__manual.cbak` |
+| Tamaño | 14,3 KB | 18,4 KB |
+| Esquema · núcleo | `0009_unmeasured_usage` · **0.1.3** | `0009_unmeasured_usage` · **0.1.3** |
+| `business · service · faq` | 1 · 23 · 11 | 1 · 36 · 13 |
+| Veredicto | **`RESTAURABLE`**, 33 tablas, recuentos iguales a la copia, «Base de datos temporal eliminada» | ídem |
+| Huérfanos | listados, 0 retirados, 0 fallidos | listados, 0 retirados, 0 fallidos |
+
+El encabezado **«Núcleo: 0.1.3»** de las dos copias es además la confirmación independiente de que
+las dos instancias corren la versión nueva.
+
+**Primera tanda (viajes), más abajo.**
+
+  | | |
+  |---|---|
+  | Imagen bajada | digest comprobado contra el publicado: **coincide** |
+  | Copia previa | `viajes__0008_abuse_protection__20261026T110318Z__premigration.cbak`, 13 854 bytes, 30 tablas, `reason: premigration` |
+  | Migración 0009 | **aplicada**. Ni `migration_blocked` ni `migration_failed` |
+  | `instance:versions --only viajes` | `Correcto` · núcleo **0.1.3** · esquema **0009_unmeasured_usage** · Tope `normal` · «Coincide: NO» (anotación vieja, se arregla en el cierre) |
+
+  **La ruta del despliegue no es la de la receta.** §2.5 describe `/srv/chatbot/nucleo`, que **no
+  existe**. El compose vivo es `/srv/chatbot/deploy/docker-compose.prod.yml` y se levanta desde
+  `/srv/chatbot/deploy`, así que el `.env` de compose es `/srv/chatbot/deploy/.env`. Hay además una
+  **segunda copia** del compose en `/home/operador/deploy/`, que no es la que manda. Y el checkout
+  de la etiqueta que pedía la receta **sobra**: la 017 no toca nada bajo `deploy/` y la imagen viene
+  de GHCR, no se construye en el servidor (además `v0.1.3` no está en `origin`, porque no se sube
+  nada en esta feature).
+
+### FR-005b disparó en producción, y tenía razón: la clave de viajes está rota desde antes
+
+Al arrancar, viajes registró: «La credencial de `ANTHROPIC_API_KEY` no es válida para el proveedor
+configurado: la instancia queda degradada y los clientes reciben solo el contacto del negocio».
+
+**Medido contra la API real, desde el propio VPS**, con la misma petición que hace la sonda:
+
+| | longitud de la clave | `GET /v1/models` |
+|---|---|---|
+| viajes (instancia-1) | 108 | **401** |
+| restaurante (instancia-2) | 106 | **200** |
+
+**El control es lo que lo demuestra**: restaurante seguía en 0.1.2 y su bot respondió correctamente a
+una pregunta de horario mientras se hacía la medida, así que su clave genera de verdad — y da 200.
+La de viajes da 401. **La sonda no se equivoca: la credencial está mal.**
+
+**Lo que esto destapa**: con un 401, el bot de viajes **no podía llamar al modelo desde antes de
+este despliegue**. Llevaba tiempo contestando «ahora mismo no puede» y derivando a una persona, sin
+que nada lo dijera. La 017 no ha causado la avería: la ha diagnosticado. Es exactamente el caso de
+uso de FR-005b. La diferencia de longitud (108 frente a 106) apunta a caracteres de más en la clave
+de viajes —un copiado con un salto de línea o un espacio pegado—; conviene mirarlo al rotarla.
+
+**Defecto encontrado de paso, pendiente de corregir**: `createCredentialWatcher` construye su
+verificación como `(p, k) => verifyCredential(p, k)` y **no le pasa su propio `log`**
+(`src/llm/credential-probe.ts`), así que la línea `El proveedor rechazó la credencial de … (HTTP
+nnn)` **no llega al registro**. El operador ve que la credencial fue rechazada pero no con qué
+estado, que es justo el dato que distingue «clave mala» de «sonda equivocada»: hubo que medirlo a
+mano con `curl`. No bloquea el despliegue; se arregla en una versión posterior.
+
+**Corrección a lo que se dijo en su momento**: «sale del degradado sola en menos de 5 minutos» vale
+solo si la **misma** clave vuelve a ser válida en el proveedor. Con una clave **nueva** en el
+fichero de entorno hace falta **recrear el contenedor**, porque el entorno se lee al arrancar el
+proceso.
+- [X] T084 Comprobar en producción, con un cliente real por cada canal, que la cadena de respuesta sigue entera: dato registrado, falta de dato reconocida y **derivación a una persona** (Principios IV y V).
+
+  **Comprobada por el operador el 2026-10-26 en las dos instancias**, por el chat web. **Un solo
+  canal, no dos**: `instance:check` confirmó que ninguna de las dos tiene `WHATSAPP_*`, así que no
+  hay canal de WhatsApp que probar.
+
+  Durante la comprobación, viajes empezó dando «ahora mismo no puede» y derivando a una persona en
+  todas las preguntas —el degradado por credencial rechazada— mientras restaurante, todavía en
+  0.1.2, respondía con normalidad. Ese contraste fue el **control** que demostró que la sonda de
+  credencial no se equivocaba. Tras rotar la clave, viajes volvió a responder.
+
+  **Lo que había que vigilar y no apareció**: ninguna disculpa con contacto atribuible al cambio de
+  `maxRetries` a 0. La única respuesta de ese tipo tuvo causa conocida —la credencial— y desapareció
+  al arreglarla.
+- [X] T085 Comprobar de paso que **la preferencia de tema del panel sobrevive a la actualización**: es la parte del §5 del quickstart de la 014 que no se pudo verificar el mismo día y quedó anotada en su T030.
 
   **Punto de partida tomado el 2026-10-23, antes de desplegar** (sin esto la tarea no se podría
   medir después): en los **dos** paneles de producción se puso el tema en **Oscuro** y, tras
@@ -538,7 +626,28 @@ Las 3 advertencias son previas y ninguna bloquea:
   (`src/admin/theme.ts`)—, así que un panel en Automático se queda sin cookie y «sobrevive a la
   actualización» sería indistinguible de «nunca hubo nada que sobreviviera». Al abrir los paneles
   el radio salía en Automático, que es lo correcto cuando no hay cookie, no un defecto.
-- [ ] T086 Anotar el despliegue en el inventario (`pnpm instance:versions --annotate`) y en `docs/plan-despliegue-produccion.md`, y **contar al usuario el resultado real** de T083 a T085, sin redondear
+
+  **Resultado tras la actualización (2026-10-26), comprobado por el operador**: el tema sigue en
+  **Oscuro** en los dos paneles sin volver a elegirlo, ya con la 0.1.3 encima. **Queda resuelto el
+  pendiente que la 014 dejó abierto en su T030.**
+- [X] T086 Anotar el despliegue en el inventario (`pnpm instance:versions --annotate`) y en `docs/plan-despliegue-produccion.md`, y **contar al usuario el resultado real** de T083 a T085, sin redondear.
+
+  **HECHA el 2026-10-26.**
+
+  | | |
+  |---|---|
+  | `instance:versions --annotate` + segunda pasada | Las dos `Correcto` · núcleo **0.1.3** · esquema **0009_unmeasured_usage** · Anotada **0.1.3** · **«Coincide: sí»** · Tope `normal`. «Todas las instancias están correctas y coinciden con lo anotado» |
+  | `instance:verified viajes` | `viajes__0009_unmeasured_usage__20261026T123305Z__manual.cbak · restaurable` |
+  | `instance:verified restaurante` | `restaurante__0009_unmeasured_usage__20261026T123322Z__manual.cbak · restaurable` |
+  | `docs/plan-despliegue-produccion.md` | Registro completo del despliegue en la fase 11, con las desviaciones del guion y lo que salió mal del procedimiento |
+  | `docs/operacion-multicliente.md` §9.1 | Fila de la 017 ampliada con el despliegue de la 0.1.3 |
+
+  **Resultado real contado al usuario, sin redondear**: el despliegue salió bien en las dos
+  instancias, pero **no fue un despliegue limpio**. Lo que encontró —una credencial rechazada en
+  viajes que llevaba tiempo rota— no lo causó esta versión, pero era un cliente sin bot. Y de paso
+  salieron tres cosas del procedimiento que estaban mal escritas o directamente ausentes: la ruta
+  del compose en la receta, el estado HTTP que el registro se traga, y el template de `docker
+  inspect` que no funciona en PowerShell 5.1. Las tres quedan escritas.
 
 **Checkpoint**: la 0.1.3 está en producción, las dos instancias en `Correcto`, y el pendiente de la 014 resuelto.
 

@@ -1068,13 +1068,80 @@ como está en producción (dos clústeres por socket Unix y una caída de verdad
       arregla** y su aviso decía que los contenedores pasan a `unhealthy` durante el corte, algo
       que con la 0.1.1 ya no ocurre. Corregido en el repositorio y en el VPS, que vuelven a
       coincidir byte a byte.
-- [ ] `/speckit-specify`: modo oscuro del panel (**núcleo**, afecta a todos los clientes).
-- [ ] Después, la spec del **proveedor del modelo configurable** (ver §6), que es la que lleva la
-  instancia 2 a Gemini. Va detrás del modo oscuro a propósito: el modo oscuro es un cambio pequeño
-  y visible, mejor primera prueba del ciclo de actualización sobre instancias ya desplegadas.
-- [ ] Plan, tareas, implementación, nueva etiqueta y despliegue sobre las 2 instancias.
-- [ ] Actualizar `README.md` y `docs/operacion-multicliente.md` (§9.1 con fecha, §9.2, secciones
+- [x] `/speckit-specify`: modo oscuro del panel (**núcleo**, afecta a todos los clientes).
+  **Hecha: feature 014**, desplegada como **0.1.2** el 2026-10-13 en las dos instancias, por tandas.
+- [x] Después, la spec del **proveedor del modelo configurable** (ver §6). Va detrás del modo oscuro
+  a propósito: el modo oscuro es un cambio pequeño y visible, mejor primera prueba del ciclo de
+  actualización sobre instancias ya desplegadas.
+  - **Hecha: feature 017**, desplegada como **0.1.3** el 2026-10-26 (detalle abajo).
+  - **Lo que NO se hizo, y es un cambio de criterio**: esta spec iba a ser «la que lleva la
+    instancia 2 a Gemini», y **no la lleva**. Las dos instancias siguen con Anthropic. Gemini queda
+    implementado y con la conexión verificada contra su API real, pero **no declarado apto**, y
+    OpenAI solo probado con dobles: los dos se evalúan cuando un cliente los pida, igual que el
+    canal de WhatsApp y los audios ([operacion-multicliente.md](operacion-multicliente.md) §4.3).
+    Lo que la 017 entrega es la capacidad de cambiar de proveedor tocando solo un fichero de
+    entorno, no el cambio en sí.
+- [x] Plan, tareas, implementación, nueva etiqueta y despliegue sobre las 2 instancias.
+- [x] Actualizar `README.md` y `docs/operacion-multicliente.md` (§9.1 con fecha, §9.2, secciones
   de operación) según [CLAUDE.md](../CLAUDE.md). Avisar al usuario antes de tocar el README.
+
+#### Despliegue de la 0.1.3 (feature 017), el 2026-10-26
+
+Imagen `ghcr.io/roberps/chatbot-multicliente:0.1.3`, digest
+`sha256:48aab420ee3183b6ae129ca62a06e43a236d4331535a0682ff7d070524d45b5b`, etiqueta Git `v0.1.3`.
+Construida en el equipo del operador, Trivy `HIGH,CRITICAL --ignore-unfixed` sin nada que bloquee.
+Desplegada **por tandas**: primero `instancia-1` (viajes), comprobada, y después `instancia-2`
+(restaurante). Las dos quedan en `Correcto`, núcleo `0.1.3`, esquema **`0009_unmeasured_usage`**.
+
+**Primera actualización que aplica una migración a instancias ya desplegadas.** Las dos hicieron su
+copia previa (`…__premigration.cbak`, esquema `0008_abuse_protection`) y migraron sin
+`migration_blocked` ni `migration_failed`. Después, una copia **posterior** por instancia, las dos
+verificadas con `db:verify` contra el PostgreSQL de verificación del propio VPS: **`RESTAURABLE`**,
+33 tablas, recuentos iguales, y anotadas en el inventario con `instance:verified`. Es la primera
+prueba real de que una copia hecha con el esquema nuevo se restaura.
+
+**FR-003 verificado donde importa**: ningún entorno de producción se tocó. Los dos siguen sin
+`LLM_PROVIDER` y el núcleo nuevo los resuelve como Anthropic; `instance:check` con la 0.1.3 dio
+`APTO` en los dos **antes** de construir la imagen.
+
+**Lo que el despliegue destapó, y es lo más importante de esta publicación**: al arrancar, viajes
+registró que su `ANTHROPIC_API_KEY` **no es válida** y se degradó a «solo contacto del negocio»
+(FR-005b). Medido contra la API real desde el propio VPS, `GET /v1/models` devolvía **401** con la
+clave de viajes y **200** con la de restaurante —cuyo bot respondía correctamente en ese mismo
+momento, lo que descarta un fallo de la sonda—. Con un 401, **el bot de viajes no podía llamar al
+modelo desde antes de este despliegue**: llevaba tiempo contestando «ahora mismo no puede» y
+derivando a una persona sin que nada lo dijera. La 017 no causó la avería: la diagnosticó. Se rotó
+la clave en la consola de Anthropic, se actualizó `/srv/chatbot/instancia-1.env` y la copia local
+del operador, se registró la rotación con `instance:sync` y se recreó el contenedor; viajes volvió
+a responder.
+
+**Desviaciones conscientes del guion de §5.1**, las dos anotadas:
+
+- **`pnpm test:eval` no se pasó**, por decisión del usuario y por coste, pese a que la 017 toca
+  `src/conversation`, `src/knowledge` y el adaptador de Anthropic. El escrito fichero a fichero que
+  exige el guion está en
+  [specs/017-proveedor-modelo-configurable/tasks.md](../specs/017-proveedor-modelo-configurable/tasks.md),
+  fase 9. Resumen: el prompt no cambió, `modelReplySchema` está intacto y el dialecto `anthropic`
+  está fijado por una prueba de regresión; el único cambio con efecto observable es `maxRetries`
+  1 → 0, que una evaluación solo habría detectado por casualidad.
+- **El §5.2 «instancia de pruebas» sigue sin poder seguirse**: no existe tal instancia. Su papel lo
+  hizo la primera tanda.
+
+**Lo que salió mal del procedimiento, para no repetirlo** (nada del núcleo):
+
+- **La receta apunta a una ruta que no existe.** §2.5 habla de `/srv/chatbot/nucleo`; el compose
+  vivo es `/srv/chatbot/deploy/docker-compose.prod.yml` y se levanta desde `/srv/chatbot/deploy`,
+  así que el `.env` de compose es `/srv/chatbot/deploy/.env`. Hay además una **copia** del compose
+  en `/home/operador/deploy/` que no es la que manda. El `git checkout vX.Y.Z` del servidor
+  **sobra** cuando la versión no toca `deploy/`: la imagen viene de GHCR y la etiqueta ni siquiera
+  está en `origin`.
+- **El registro se traga el estado HTTP del rechazo de credencial.**
+  `createCredentialWatcher` no le pasa su `log` a `verifyCredential`, así que la línea
+  «El proveedor rechazó la credencial de … (HTTP nnn)» no llega a ninguna parte. Hubo que medirlo a
+  mano con `curl`. **Pendiente de corregir** en una versión posterior.
+- **En Windows PowerShell 5.1**, `docker inspect -f '{{ index .Config.Labels "…" }}'` falla con
+  `function "org" not defined` porque la shell se come las comillas dobles interiores; la forma que
+  funciona es `--format '{{json .Config.Labels}}'`.
 
 ## 6. Qué tienes que traer a la próxima sesión
 
