@@ -156,7 +156,7 @@ servidores externos. Nada externo se ejecuta sin tu confirmación.
   y `caddy validate`.
 
 ### Fase 1 · Cuentas (Tú, con mi guía) — **HECHA el 2026-10-07**
-- [ ] Bitwarden con 2FA con app; carpeta «chatbot». Criterio: los códigos TOTP viven en la app del
+- [x] Bitwarden con 2FA con app; carpeta «chatbot». Criterio: los códigos TOTP viven en la app del
   móvil, **no** en el campo «clave de autenticador» de la bóveda (si no, el segundo factor deja de
   serlo); cada secreto va en un **campo personalizado oculto** con el nombre exacto de su variable.
   **Rehecha el 2026-10-07**: se perdió la contraseña maestra de la primera cuenta, sin pista
@@ -173,6 +173,12 @@ servidores externos. Nada externo se ejecuta sin tu confirmación.
     es la única vía de rescate si se vuelve a olvidar la maestra.
   - La región se anota: pedir la pista en `vault.bitwarden.com` cuando la cuenta está en la `.eu`
     no da error, dice que la ha enviado igualmente y no llega nada.
+  - **Completada el 2026-10-28.** La casilla estuvo sin marcar hasta esa fecha, y no era un
+    descuido: al rehacer la bóveda **no volvieron a entrar las `BACKUP_KEY` de las dos
+    instancias**, solo estaba la de `dev-01`. Lo destapó la fase 10, al necesitarlas para probar
+    una restauración. Guardadas ya las dos, con su `keyId` en un campo **visible** al lado (no es
+    secreto: va en claro en cada copia) para poder comprobar de un vistazo que la clave es la que
+    corresponde.
 - [x] Hetzner (cuenta nueva), 2FA. La verificación pedía tarjeta o documento: se hizo con **tarjeta
   y 25 € de saldo**, que no es una tasa sino prepago que se consume con las facturas (solo se
   reembolsa cerrando la cuenta entera; la recarga no lleva factura). Proyecto `chatbot` creado.
@@ -1004,10 +1010,92 @@ como está en producción (dos clústeres por socket Unix y una caída de verdad
   derivación **queda retenido**, no se contesta en diferido: aparece en «Mensajes retenidos» para
   que lo lea una persona (`service.ts:323-338`).
 
-### Fase 10 · Copias fuera del servidor (Los dos)
-- [ ] Contratar una Storage Box de Hetzner (unos 4 €/mes) y copiar `BACKUP_DIR` con rsync o rclone
-  por SSH, con una tarea programada.
-- [ ] Probar una restauración completa en una BD temporal con la copia de la Storage Box.
+### Fase 10 · Copias fuera del servidor (Los dos) — **HECHA el 2026-10-28**
+
+> **La Storage Box de Hetzner se descarta.** Todo `BACKUP_DIR` de las dos instancias ocupa **310 KB**
+> (20 ficheros de 13 a 19 KB). Pagar 4 €/mes por eso no tiene sentido: las copias caben de sobra en
+> el PC del administrador. La decisión se toma con datos medidos, no estimados.
+
+- [x] Sacar `BACKUP_DIR` del VPS de forma automática. Hecho con
+  [deploy/descargar-copias.ps1](../deploy/descargar-copias.ps1) y una tarea del Programador de
+  tareas de Windows, **«Chatbot - descargar copias del VPS»**, diaria a las 09:30.
+  - `operador` es **UID 1000** y es el dueño de los dos directorios de copias (`drwx------`), así
+    que **basta `scp` normal**: no hace falta `sudo` ni el rodeo del `tar` por la tubería.
+  - El script pide al VPS el **sha256 de cada `.cbak`**, descarga solo lo que falta y **vuelve a
+    calcular el hash en local**. Si no coincide, borra el fichero y sale con código 1, que es lo
+    que el Programador marca como ejecución fallida.
+  - **No borra nada en local**: el VPS rota y el histórico de aquí crece, lo que protege contra que
+    la rotación se lleve la última copia buena. Son unos 11 MB al año entre las dos instancias.
+  - Deja `estado.json` y `registro\descargar-copias.log` en `C:\multiagente-backups`. El
+    `estado.json` es material directo para la propuesta **P7**.
+  - Usa el `ssh.exe` **de Windows**, no el de Git Bash, que no habla con el agente de Windows. El
+    servicio `ssh-agent` queda en `Automatic` con la clave cargada: así la tarea funciona sin nadie
+    delante y sobrevive a los reinicios.
+  - Probado el 2026-10-28 en los cuatro caminos: primera descarga (20/20 verificadas en 45 s),
+    segunda pasada (no repite trabajo), copia local corrompida a propósito (la detecta y la repara)
+    y copia local borrada (la recupera). La tarea **se disparó sola a las 09:30** con resultado 0.
+- [x] Probar una restauración completa desde una copia ya descargada. Hecho el 2026-10-28 con
+  `viajes__0009_unmeasured_usage__20261028T020044Z__daily.cbak`, siguiendo la guía §8 de
+  [operacion-multicliente.md](operacion-multicliente.md#8-copias-de-seguridad-guía-de-validación),
+  con el entorno local haciendo de instancia de pruebas.
+  - `pnpm db:verify`: **RESTAURABLE**, instancia `viajes`, esquema `0009_unmeasured_usage`, núcleo
+    0.1.3, **33 tablas con los recuentos iguales a la copia** (`business 1`, `service 23`,
+    `faq 11`), base temporal eliminada.
+  - `pnpm db:restore --from-instance viajes`: restaurada con los mismos recuentos, sin migraciones
+    pendientes ni conversaciones caducadas. Panel comprobado en `/admin`.
+  - Limpieza hecha: `docker compose down -v`, `BACKUP_KEYS_PREVIOUS` fuera, `SMTP_URL` y
+    `SMTP_FROM` de vuelta, y `dev-01` restaurado desde la copia previa. Verificado que la base
+    vuelve a tener 6 servicios (los de `dev-01`) y no 23 (los de viajes).
+- [x] **Segundo destino**: un disco USB (Samsung, exFAT, 120 GB), hecho el 2026-10-28. Las copias
+  quedan en tres sitios: el VPS, el PC y el disco. Sin contratar nada y sin sumar subencargados.
+  - El script lo reconoce por un **fichero testigo**,
+    `<unidad>:\multiagente-backups\.destino-copias-chatbot`, **no por la letra de unidad**, que
+    cambia según lo que haya conectado. Para preparar otro disco basta crear esa carpeta y ese
+    fichero.
+  - Copia **todo el histórico local**, no solo lo que hoy está en el VPS: el disco es la copia de
+    último recurso y tiene que poder reconstruirlo todo por sí solo.
+  - **Verifica por SHA-256 también en el disco** y borra lo que no cuadre. Un extraíble se puede
+    retirar a mitad de la copia y dejar ficheros truncados con pinta de buenos.
+  - Que el disco **no esté conectado no es un error** (sale con 0): se anota y se sigue. Pero
+    lleva la cuenta de los días y a partir de **14** avisa en el registro, porque el fallo típico
+    de este tipo de copias no es técnico, es que nadie vuelve a enchufar el disco.
+  - Comprobado el 2026-10-28: las **20 copias contrastadas una a una contra el sha256 del VPS**,
+    0 discrepancias, 310 KB. Segunda pasada: 0 ficheros recopiados. Y probado antes el camino sin
+    disco, que avisa y no falla.
+  - **Si alguna vez se elige un almacenamiento en la nube** en vez de un disco, ese proveedor pasa
+    a ser **subencargado del tratamiento** (RGPD art. 28) aunque solo guarde ficheros cifrados, y
+    hay que añadirlo al contrato que hoy menciona a Anthropic, Meta y OpenAI; las copias llevan
+    dentro conversaciones y datos de clientes finales, no solo configuración del negocio.
+  - **Decisión pendiente del administrador**: dejar el disco puesto siempre (más cómodo, copias al
+    día, pero un ransomware que cifre el PC cifraría también el disco montado) o conectarlo cada
+    cierto tiempo (protege de eso, a cambio de acordarse; para eso está el aviso de los 14 días).
+
+#### Lo que destapó la fase 10
+
+- **Las `BACKUP_KEY` de las dos instancias no estaban en Bitwarden.** Solo estaba la de `dev-01`.
+  Al rehacer la bóveda el 2026-10-07 (ver fase 1) no volvieron a entrar. Mientras duró, la copia
+  externa **no servía de nada**: los ficheros estaban aquí y la única forma de descifrarlos vivía
+  dentro del servidor del que protegen. Corregido el 2026-10-28.
+- **Guardar el `keyId` junto a cada clave.** Cada `.cbak` lleva en su cabecera, **sin cifrar**, un
+  `keyId` de 16 hex que identifica la clave que lo abre: `afaca97e39499ce6` para viajes y
+  `df2315c2e2165f58` para el restaurante (`0a132124b8cd7a48` es el de `dev-01`). No es secreto y
+  permite comprobar de un vistazo que la clave guardada es la correcta. En la primera prueba se
+  había puesto la de `dev-01` por error y el `keyId` lo delató al instante.
+- **El cortafuegos de Hetzner dejó fuera al administrador.** La IP dinámica saltó de
+  `83.39.185.94` a `83.56.74.212`, fuera del `83.36.0.0/14` que permitía el puerto 22. Síntoma:
+  *timeout*, idéntico al de un baneo de `fail2ban`, que además había uno antiguo. Se añadió
+  `83.56.0.0/14` como segundo origen de la regla. **Ojo al diagnosticar**: si `Total failed` de
+  `fail2ban-client status sshd` no sube con los intentos, es que no llegan, y entonces el culpable
+  es el cortafuegos, no el baneo.
+- **El contenedor local de PostgreSQL llevaba tiempo sin publicar puerto.** `DB_PORT=55442` cae
+  dentro de **55398–55497**, un rango que Windows tiene excluido (reservas de Hyper-V/WSL), y el
+  mapeo fallaba. Se movió a **15432**, por debajo del rango dinámico que empieza en 49152. Se ve
+  con `netsh int ipv4 show excludedportrange protocol=tcp`.
+- **Una copia `daily` puede quedar etiquetada con la instancia equivocada.** Al arrancar `pnpm dev`
+  con los datos de viajes ya restaurados, el programador creó una copia llamada `dev-01__…` que por
+  dentro llevaba datos reales de clientes, cifrada con la clave de desarrollo. Se distingue por el
+  tamaño (14 KB en vez de 84 KB). **Al terminar una prueba de restauración, borrar las copias
+  `daily` creadas durante ella.**
 
 ### Fase 11 · Specs de núcleo y ciclo de actualización (Yo)
 - [x] **Primero, la spec de corrección de los dos fallos de la fase 9** (**núcleo**), decidida el
@@ -1145,14 +1233,29 @@ a responder.
 
 ## 6. Qué tienes que traer a la próxima sesión
 
-Actualizado el 2026-10-09, al pasar la fase 9. Lo siguiente es la **spec de corrección** de los dos
-fallos que destapó esa fase (ver fase 11), y **no necesita ningún dato nuevo tuyo**. Lo que hay que
-tener presente:
+Actualizado el **2026-10-28**, al cerrar la fase 10. Antes decía que lo siguiente era la spec de
+corrección de los fallos de la fase 9: eso fue la **016**, tres versiones atrás. El estado real es
+que **las fases 0 a 10 están hechas** y la 0.1.3 corre en producción.
 
-- **La fase 9 está pasada salvo dos casillas**, las dos bloqueadas por fallos del núcleo y
-  ninguna por configuración: `db:verify` (las copias se crean y se listan, pero no se pueden
-  comprobar) y el contacto de emergencia (la respuesta es correcta pero inalcanzable). Se repiten
-  las dos sobre la 0.1.1, cuando esté la corrección.
+Lo siguiente es la spec **P7, estado de las copias de seguridad visible** (ver
+[operacion-multicliente.md §9.2](operacion-multicliente.md#92-orden-de-ejecución)), que encaja
+directamente con lo montado hoy: el `estado.json` que deja `descargar-copias.ps1` ya tiene los
+datos que P7 necesita enseñar. **No necesita ningún dato nuevo tuyo.**
+
+Lo que hay que tener presente:
+
+- **Conecta el disco USB de las copias de vez en cuando.** Si pasa de 14 días sin verlo, el
+  registro de `descargar-copias.ps1` lo avisa. Las copias están en tres sitios (VPS, PC y disco),
+  pero el disco solo se actualiza cuando está enchufado.
+- **La IP pública del administrador es dinámica y ya ha cambiado de rango una vez.** Si el VPS deja
+  de responder por SSH con *timeout*, lo primero es mirar el origen permitido del puerto 22 en el
+  cortafuegos de Hetzner, no suponer que es `fail2ban`.
+- **Defecto conocido, candidato a 0.1.4**: `createCredentialWatcher` no pasa su `log` a
+  `verifyCredential`, así que la línea «El proveedor rechazó la credencial de … (HTTP nnn)» no
+  llega al registro. Se descubrió al desplegar la 0.1.3 y obligó a medir con `curl`.
+- **El inventario tiene las dos instancias en estado «en alta», no «activa»**, y por eso
+  `instance:list` dice que no hay instancias activas. Pendiente de confirmar si es a propósito
+  (las dos figuran como «(prueba)») o si falta `instance:update --status active`.
 - **Ojo al probar el corte de la base de datos**: hoy deja las dos instancias en bucle de
   reinicio y los dos paneles pidiendo credenciales otra vez. Se recupera solo al arrancar la
   base, pero puede tardar más de dos minutos por el retroceso de Docker.

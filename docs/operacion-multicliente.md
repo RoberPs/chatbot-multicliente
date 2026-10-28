@@ -1148,6 +1148,50 @@ previa a cada migración, y borra las de más de `BACKUP_RETENTION_DAYS` días c
 Una copia que no se ha restaurado nunca no está comprobada. Esta guía se hace en menos de 15
 minutos.
 
+### Sacar las copias del servidor
+
+Una copia que solo vive en la máquina que protege no es una copia. Desde el **2026-10-28** las de
+las dos instancias se descargan solas al PC del administrador.
+
+| Dónde | Qué hay |
+|---|---|
+| `deploy/descargar-copias.ps1` | El script: pide el sha256 de cada `.cbak` al VPS, baja lo que falta y verifica el hash en local |
+| Tarea «Chatbot - descargar copias del VPS» | Programador de tareas de Windows, diaria a las 09:30, con *StartWhenAvailable* |
+| `C:\multiagente-backups\<instancia>\` | Las copias descargadas |
+| `C:\multiagente-backups\estado.json` | Resumen de la última ejecución |
+| `C:\multiagente-backups\registro\descargar-copias.log` | Histórico línea a línea |
+| `<unidad>:\multiagente-backups\` | **Tercer sitio**: disco USB, si está conectado |
+
+Las copias acaban en **tres sitios**: el VPS, el PC y un disco USB. El script reconoce el disco
+por el fichero testigo `<unidad>:\multiagente-backups\.destino-copias-chatbot`, **no por la letra
+de unidad**; para preparar otro disco basta crear esa carpeta y ese fichero. Al disco se copia
+**todo el histórico local**, no solo lo que hoy está en el VPS, porque es la copia de último
+recurso. Que el disco no esté conectado **no es un error**: se anota y se sigue, pero a partir de
+**14 días** sin verlo el registro avisa. El fallo típico de este tipo de copias no es técnico: es
+que nadie vuelve a enchufar el disco.
+
+Son **dos mecanismos independientes**: el VPS crea una copia diaria a `BACKUP_DAILY_TIME` (por
+reloj, **haya cambios o no**: [scheduler.ts](../src/backup/scheduler.ts) solo mira si llegó la hora
+y si ya existe la `daily` de hoy) y aplica su retención; el PC, a su hora, se trae lo que aún no
+tiene. El PC **no borra nada**, así que su histórico acaba siendo más largo que el del VPS.
+
+Lanzarla a mano, cuando haga falta:
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File ".\deploy\descargar-copias.ps1"
+Start-ScheduledTask -TaskName 'Chatbot - descargar copias del VPS'   # igual, pero deja constancia
+Get-ScheduledTaskInfo -TaskName 'Chatbot - descargar copias del VPS' | Select LastRunTime, LastTaskResult, NextRunTime
+```
+
+Requisito: el servicio `ssh-agent` de Windows en `Automatic` y con la clave del VPS cargada
+(`ssh-add $env:USERPROFILE\.ssh\chatbot_vps`). El agente la guarda cifrada y persistente, así que
+la tarea funciona sin nadie delante. El script usa el `ssh.exe` **de Windows**: el de Git Bash no
+habla con ese agente.
+
+Si el PC está apagado varios días, la tarea los recupera todos al encender. Si está apagado **más
+de `BACKUP_RETENTION_DAYS` días**, se pierden las copias intermedias que el VPS ya haya rotado;
+nunca la última, que el VPS conserva siempre.
+
 ### Bases temporales de `db:verify` (013)
 
 `db:verify` crea en el servidor de `BACKUP_VERIFY_URL` una base temporal
@@ -1204,9 +1248,13 @@ Anota en el inventario la fecha, el fichero y el resultado de `db:verify --json`
 1. **Copiar** (en la instancia real): `node dist/src/cli/backup.js`. Esperado: nombre
    `<instancia>__<esquema>__<fecha>__manual.cbak`, tamaño y recuentos por tabla. Apunta los
    recuentos de `business`, `service` y `faq`.
-2. **Llevar el fichero** a la instancia de pruebas por el medio que uses para sacar copias de la
-   máquina. La clave de la instancia real se pone en la de pruebas solo durante la prueba, en
-   `BACKUP_KEYS_PREVIOUS`, nunca como `BACKUP_KEY`.
+2. **Llevar el fichero** a la instancia de pruebas. En producción ya lo hace sola la tarea
+   **«Chatbot - descargar copias del VPS»** (ver [Sacar las copias del servidor](#sacar-las-copias-del-servidor)),
+   así que la copia está en `C:\multiagente-backups\<instancia>\` sin tener que tocar nada. La
+   clave de la instancia real se pone en la de pruebas solo durante la prueba, en
+   `BACKUP_KEYS_PREVIOUS`, nunca como `BACKUP_KEY`. **Comprueba el `keyId`** antes de dar por buena
+   la clave: cada `.cbak` lleva el suyo en la cabecera, sin cifrar, y basta `BACKUP_KEYS_PREVIOUS`
+   con el `keyId` que no toca para que todo falle con `wrong_key`.
 3. **Comprobar** (en la de pruebas): `pnpm db:verify <fichero>`. Esperado: `RESTAURABLE`, misma
    instancia, esquema y recuentos que en el paso 1, y "Base de datos temporal eliminada".
 4. **Restaurar en la instancia de pruebas**, parada:
@@ -1220,6 +1268,14 @@ Anota en el inventario la fecha, el fichero y el resultado de `db:verify --json`
    cambia el estado del negocio o de los canales.
 6. **Limpiar**: quita `BACKUP_KEYS_PREVIOUS` de la instancia de pruebas y vuelve a sus datos
    ficticios (o `docker compose down -v`), porque ahora contiene datos reales de clientes finales.
+   Tres cosas que se olvidan:
+   - **Borra las copias `daily` creadas durante la prueba.** Si arrancaste la instancia de pruebas
+     con los datos reales dentro, su programador habrá hecho una copia llamada `<pruebas>__…` que
+     por dentro lleva datos de clientes del negocio real, cifrada con la clave de pruebas. Se
+     distingue por el tamaño, muy distinto al de las copias propias.
+   - **Vuelve a activar `SMTP_*`** si las comentaste para la prueba.
+   - **Borra las copias del fichero de entorno** que hayas hecho por el camino: llevan dentro la
+     `BACKUP_KEY` de la instancia real, que no debe quedarse en el disco de la de pruebas.
 
 ### Si algo falla
 

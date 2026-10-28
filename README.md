@@ -21,6 +21,16 @@ Estados: especificada → planificada → en implementación → completada (o a
 | 016 | Resistencia a los cortes de la base de datos y verificación de copias por socket | Núcleo (corrección) | Completada | `016-db-outage-resilience` | [spec](specs/016-db-outage-resilience/spec.md) · [plan](specs/016-db-outage-resilience/plan.md) · [tareas](specs/016-db-outage-resilience/tasks.md) | 2026-10-09  |
 | 017 | Proveedor del modelo configurable por instancia | Núcleo | Completada (solo `anthropic` declarado apto; ver abajo) | `017-proveedor-modelo-configurable` | [spec](specs/017-proveedor-modelo-configurable/spec.md) · [plan](specs/017-proveedor-modelo-configurable/plan.md) · [tareas](specs/017-proveedor-modelo-configurable/tasks.md) | 2026-10-14  |
 
+## Estado del despliegue
+
+En producción desde el 2026-10-08. **Versión 0.1.3** en dos instancias sobre un VPS propio
+(Ubuntu 24.04, Docker, PostgreSQL 16 por socket Unix, Caddy tras Cloudflare), cada una con su
+base de datos y sus secretos.
+
+Las **fases 0 a 10** del [plan de despliegue](docs/plan-despliegue-produccion.md) están hechas:
+servidor, bases de datos, red y HTTPS, correo, pruebas de punta a punta y copias fuera del
+servidor.
+
 ---
 
 # Núcleo del chatbot: base de conocimiento, panel del operador y bot de atención
@@ -355,7 +365,14 @@ pnpm db:restore <fichero>                   # con la instancia PARADA; pide escr
   válida se conserva siempre. Los ficheros ajenos del directorio no se tocan.
 - `db:verify` necesita un usuario con `CREATEDB` en el servidor de `BACKUP_VERIFY_URL`.
 
-Guía del operador para comprobar las copias: [docs/operacion-multicliente.md §8](docs/operacion-multicliente.md#8-copias-de-seguridad-guía-de-validación).
+En producción las copias no se quedan en el servidor: `deploy/descargar-copias.ps1`, lanzado a
+diario por el Programador de tareas de Windows, se las trae al PC del administrador y, si está
+conectado, a un disco USB, de modo que viven en **tres sitios**. **Verifica cada fichero por
+SHA-256** en los dos destinos y no borra nada en local, así que el histórico de aquí acaba siendo
+más largo que el del VPS.
+
+Guía del operador para comprobar las copias: [docs/operacion-multicliente.md §8](docs/operacion-multicliente.md#8-copias-de-seguridad-guía-de-validación),
+y [cómo salen del servidor](docs/operacion-multicliente.md#sacar-las-copias-del-servidor).
 
 ## Alta de instancias
 
