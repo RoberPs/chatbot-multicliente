@@ -128,6 +128,18 @@ services:
       - pg-socket-verificacion:/var/run/postgresql-verificacion
       - /srv/chatbot/instancia-2/backups:/var/lib/chatbot/backups
 
+  # --- Instancia 3 -------------------------------------------------------------------------
+  instancia-3:
+    <<: *instancia-comun
+    container_name: instancia-3
+    env_file:
+      - path: /srv/chatbot/instancia-3.env
+        format: raw
+    volumes:
+      - pg-socket:/var/run/postgresql
+      - pg-socket-verificacion:/var/run/postgresql-verificacion
+      - /srv/chatbot/instancia-3/backups:/var/lib/chatbot/backups
+
   # --- Proxy inverso -----------------------------------------------------------------------
   caddy:
     image: caddy:2-alpine
@@ -143,7 +155,7 @@ services:
       - '80:80'
       - '443:443'
     env_file:
-      - path: /srv/chatbot/caddy.env # ACME_CORREO, INSTANCIA_1_DOMINIO, INSTANCIA_2_DOMINIO
+      - path: /srv/chatbot/caddy.env # ACME_CORREO, INSTANCIA_1_DOMINIO … INSTANCIA_3_DOMINIO
         format: raw
     volumes:
       - ./Caddyfile:/etc/caddy/Caddyfile:ro
@@ -154,6 +166,7 @@ services:
     depends_on:
       - instancia-1
       - instancia-2
+      - instancia-3
 
 networks:
   proxy:

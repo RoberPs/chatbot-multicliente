@@ -55,7 +55,7 @@ param(
   [string]   $Destino               = 'C:\multiagente-backups',
   [string]   $Alias                 = 'vps',
   [string]   $RutaRemota            = '/srv/chatbot',
-  [string[]] $Instancias            = @('instancia-1', 'instancia-2'),
+  [string[]] $Instancias            = @('instancia-1', 'instancia-2', 'instancia-3'),
   [string]   $CarpetaSecundaria     = 'multiagente-backups',
   [string]   $TestigoSecundario     = '.destino-copias-chatbot',
   [int]      $DiasAvisoSecundario   = 14

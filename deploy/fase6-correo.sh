@@ -5,7 +5,7 @@
 #
 # Se ejecuta EN EL VPS, con sudo, en dos subcomandos repetibles:
 #
-#   sudo bash /srv/chatbot/deploy/fase6-correo.sh ip <instancia-1|instancia-2>
+#   sudo bash /srv/chatbot/deploy/fase6-correo.sh ip <instancia-1|instancia-2|instancia-3>
 #       Imprime la IPv4 publica con la que SALE ese contenedor. Es la que hay que listar en
 #       Brevo, y no se da por supuesta: el contenedor sale por la red bridge de Docker con
 #       SNAT, no directamente por la interfaz del VPS.
@@ -38,8 +38,8 @@ requisitos() {
   [[ $EUID -eq 0 ]] || abortar "ejecutalo con sudo."
   command -v docker >/dev/null || abortar "no hay docker en el PATH."
   case "${1:-}" in
-    instancia-1 | instancia-2) ;;
-    *) abortar "la instancia es instancia-1 o instancia-2, no '${1:-}'." ;;
+    instancia-1 | instancia-2 | instancia-3) ;;
+    *) abortar "la instancia es instancia-1, instancia-2 o instancia-3, no '${1:-}'." ;;
   esac
   CONTENEDOR="$1"
   docker inspect -f '{{.State.Status}}' "$CONTENEDOR" >/dev/null 2>&1 ||
@@ -196,9 +196,9 @@ case "${1:-}" in
   *)
     cat <<'USO'
 Uso:
-  sudo bash fase6-correo.sh ip <instancia-1|instancia-2>
-  sudo bash fase6-correo.sh probar <instancia-1|instancia-2> <destinatario>
-  sudo bash fase6-correo.sh forma <instancia-1|instancia-2>
+  sudo bash fase6-correo.sh ip <instancia-1|instancia-2|instancia-3>
+  sudo bash fase6-correo.sh probar <instancia-1|instancia-2|instancia-3> <destinatario>
+  sudo bash fase6-correo.sh forma <instancia-1|instancia-2|instancia-3>
 USO
     exit 1
     ;;

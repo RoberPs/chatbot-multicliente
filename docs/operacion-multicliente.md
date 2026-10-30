@@ -539,11 +539,17 @@ con la versión desplegada, y anótala con `--annotate` ([sección 5](#5-actuali
 3. Consumo (010): moneda de coste, precio de `LLM_MODEL` y tope mensual de gasto
    ([sección 4.1](#41-consumo-precios-y-tope-en-el-panel-010)). No viajan en el fichero de
    configuración: se ponen en cada instancia.
+   **Destino de avisos de derivación**: ponlo a mano con el email (o teléfono) definitivo del
+   cliente. Por defecto el fichero de configuración no lo trae, así que tras importar la instancia
+   se queda sin destino y las derivaciones no avisan a nadie.
 4. Prueba en "Probar el bot" las preguntas típicas del sector y alguna trampa (precio no
    registrado, "quiero hablar con una persona").
 5. Pasa el negocio a activo.
 6. Chat web: webs permitidas, enlace de privacidad, topes diarios y mensuales acordes a lo
-   contratado, y activar. Entrega al cliente el fragmento `<script>`.
+   contratado, y activar. **Antes de entregar el fragmento `<script>`, haz una derivación de
+   prueba** desde el chat web real (no desde "Probar el bot", cuyos avisos son simulados): pide
+   hablar con una persona y comprueba que el aviso llega al destino del paso 3 y que la derivación
+   aparece en `/admin/handoffs`; después márcala como terminada. Solo entonces entrega el fragmento.
    Si el cliente quiere el chat con su imagen, **Diseño del chat** (011): colores, forma, posición,
    tamaño, nombre, bienvenida, textos y logo, avatar e icono, con vista previa. Es opcional (sin
    diseño el chat tiene el aspecto original), se aplica en la siguiente carga sin tocar el

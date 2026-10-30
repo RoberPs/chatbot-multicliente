@@ -6,6 +6,7 @@
 #   ACME_CORREO=avisos@tu-dominio
 #   INSTANCIA_1_DOMINIO=sub1.tu-dominio
 #   INSTANCIA_2_DOMINIO=sub2.tu-dominio
+#   INSTANCIA_3_DOMINIO=sub3.tu-dominio
 #
 # Los subdominios son de UN SOLO NIVEL: el certificado gratuito de Cloudflare no cubre dos.
 
@@ -27,7 +28,7 @@
 	}
 }
 
-# Fragmento comun a las dos instancias. El argumento es el nombre del servicio de Docker.
+# Fragmento comun a todas las instancias. El argumento es el nombre del servicio de Docker.
 (instancia) {
 	# LA LINEA CRITICA (receta, paso 7 y seccion 7 del plan de despliegue).
 	#
@@ -63,4 +64,8 @@
 
 {$INSTANCIA_2_DOMINIO} {
 	import instancia instancia-2
+}
+
+{$INSTANCIA_3_DOMINIO} {
+	import instancia instancia-3
 }
