@@ -1,4 +1,4 @@
-# Specification Quality Checklist: Icono del botón a tamaño completo
+# Specification Quality Checklist: Icono del botón a tamaño completo y datos que el bot no ha guardado
 
 **Purpose**: Validate specification completeness and quality before proceeding to planning
 **Created**: 2026-10-30
@@ -33,7 +33,10 @@
 
 - La spec declara su ámbito (núcleo) y no nombra clientes como requisito; el ejemplo del
   centro va en Assumptions como ilustrativo (constitución, Flujo de desarrollo).
-- Se enmienda en parte el FR-030a de la 011 (el fondo del botón queda solo como borde con la
-  opción activada); está explicado en "Límites del cambio".
+- Se enmienda en parte el FR-030a de la 011 (el fondo del botón queda solo como borde cuando hay
+  icono propio); está explicado en Assumptions.
 - El grosor del borde se deja al plan (Assumptions), sin marcador de aclaración: hay un valor
   razonable y no cambia el alcance.
+- Reescrita el 2026-10-30 con alcance reducido: sin opción en el panel (ninguna otra instancia
+  tiene icono propio) y con la regla de los datos no guardados del bot, para desplegar ambas en
+  una sola versión. Sin migración ni cambio de formatVersion.
