@@ -73,8 +73,10 @@ icono, el botón no cambia.
   `te contactar`, `le contactar`, `nos pondremos` o `se pondra en contacto`, salvo cuando
   `handoffAction` sea `started` (confirmación del sistema). Cabecera de comentario como las demás
   (modelo real, `pnpm test:eval`, se omite sin credencial).
-- [ ] T008 [US2] `pnpm typecheck` en verde con el fichero de T007. **Ejecutar
+- [X] T008 [US2] `pnpm typecheck` en verde con el fichero de T007. **Ejecutar
   `pnpm test:eval sc-unsaved-contact` solo con permiso del operador** (coste); objetivo 100 %.
+  _El operador no la lanza (2026-10-30): el comportamiento ya se comprobó en sisu con el modelo
+  real. La evaluación queda disponible para versiones futuras._
 
 **Checkpoint**: US2 probado con unitaria y, si se autoriza, con el modelo real.
 
@@ -95,6 +97,9 @@ icono, el botón no cambia.
 - [ ] T012 Validación manual del quickstart en local (US1 y US2) y entrega para el despliegue de la
   0.1.4 por la sección 5 de `docs/operacion-multicliente.md` (lo ejecuta el operador; quickstart,
   «Producción»).
+  _Local comprobado (2026-10-30): icono en `/chat/frame` y en la vista previa del panel, tres
+  formas, foco y botón sin icono. Si la vista previa no cambia, es el `frame.css` en caché
+  (`max-age=3600`): Ctrl+F5. Falta el despliegue._
 
 ---
 
