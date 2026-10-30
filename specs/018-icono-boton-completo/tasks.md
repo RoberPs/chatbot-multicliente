@@ -27,12 +27,12 @@ icono, el botón no cambia.
 
 **Independent Test**: quickstart, «Icono (US1), en local».
 
-- [ ] T001 [P] [US1] En `tests/contract/web-chat-design.test.ts`, prueba de que el `frame.css` servido
+- [X] T001 [P] [US1] En `tests/contract/web-chat-design.test.ts`, prueba de que el `frame.css` servido
   (`GET /chat/assets/frame.css`) lleva para `.toggle .design-icon` `object-fit: cover`,
   `border-radius: inherit`, `width: 100%` y `height: 100%` (y ya no `width: 28px`), y el anillo
   `.toggle:has(.design-icon)::after` con `border: 3px solid var(--chat-accent)` y
   `pointer-events: none`. Debe fallar antes de T002.
-- [ ] T002 [US1] En `src/channels/web/assets/frame.css`, sustituir la regla `.toggle .design-icon`
+- [X] T002 [US1] En `src/channels/web/assets/frame.css`, sustituir la regla `.toggle .design-icon`
   (28 px, `contain`) por la de research R1 (`position: absolute; inset: 0; width: 100%;
   height: 100%; border-radius: inherit; object-fit: cover; image-orientation: none`) y añadir el
   anillo de R2 (`.toggle:has(.design-icon)::after`, `content: ''`, `position: absolute`,
@@ -40,7 +40,7 @@ icono, el botón no cambia.
   `border: 3px solid var(--chat-accent)`, `pointer-events: none`). Actualizar el comentario de
   la 011 que precede a la regla (ahora: 018, el icono cubre el botón y el anillo marca el
   contorno). No tocar `.toggle` ni `.panel-head .design-logo`.
-- [ ] T003 [US1] `pnpm test web-chat-design` en verde (T001 pasa y las pruebas de la 011 siguen).
+- [X] T003 [US1] `pnpm test web-chat-design` en verde (T001 pasa y las pruebas de la 011 siguen).
 
 **Checkpoint**: US1 funciona y se puede validar en la vista previa del panel.
 
@@ -53,17 +53,17 @@ icono, el botón no cambia.
 
 **Independent Test**: quickstart, «Datos no guardados (US2), en local».
 
-- [ ] T004 [P] [US2] En `tests/unit/llm/prompt.test.ts`, dentro de `describe('prompt del modelo:
+- [X] T004 [P] [US2] En `tests/unit/llm/prompt.test.ts`, dentro de `describe('prompt del modelo:
   derivación (005)')`, prueba de que el prompt común contiene la regla de research R4 (al menos
   «Nunca digas que has anotado, guardado, registrado o pasado datos del cliente», «eso solo lo
   confirma el sistema cuando avisa de verdad al negocio» y «remítele al negocio y marca
   offerContact»). Debe fallar antes de T005.
-- [ ] T005 [US2] En `src/llm/prompt.ts`, añadir a `RULES`, justo después de la regla de petición de
+- [X] T005 [US2] En `src/llm/prompt.ts`, añadir a `RULES`, justo después de la regla de petición de
   persona y con su comentario (`// Datos del cliente (018): el modelo no guarda ni avisa; solo el
   sistema confirma una derivación (Principios IV y V).`), el texto de research R4.
-- [ ] T006 [US2] `pnpm test prompt.test` y `pnpm test sector-neutrality` en verde (la regla no
+- [X] T006 [US2] `pnpm test prompt.test` y `pnpm test sector-neutrality` en verde (la regla no
   nombra sectores ni clientes; si alguna prueba cuenta o numera las reglas, ajustarla).
-- [ ] T007 [P] [US2] Crear `tests/eval/sc-unsaved-contact.test.ts` (SC-003 de la 018) siguiendo
+- [X] T007 [P] [US2] Crear `tests/eval/sc-unsaved-contact.test.ts` (SC-003 de la 018) siguiendo
   `tests/eval/sc-handoff-offer.test.ts`: con `describeCriterion('SC-002', …, { sectors, judge,
   reportAs: 'SC-003 (018)' })`, sobre los tres sectores de `criterion.ts`, una tanda **con** y otra
   **sin** `handoffRoutes`; mensajes del cliente con nombre y teléfono sin que se pidan, solos
@@ -82,9 +82,9 @@ icono, el botón no cambia.
 
 ## Phase 5: Polish & Cross-Cutting Concerns
 
-- [ ] T009 `pnpm lint` y `pnpm typecheck` en verde.
-- [ ] T010 Subir la versión a **0.1.4** en `package.json` (como en 0.1.1–0.1.3).
-- [ ] T011 [P] Documentación:
+- [X] T009 `pnpm lint` y `pnpm typecheck` en verde.
+- [X] T010 Subir la versión a **0.1.4** en `package.json` (como en 0.1.1–0.1.3).
+- [X] T011 [P] Documentación:
   - `docs/operacion-multicliente.md` §2.6 (paso 6, Diseño del chat): el icono propio rellena el
     botón con un borde del color principal desde la 0.1.4.
   - `docs/operacion-multicliente.md` §9.1: fila de la 018 con su fecha.

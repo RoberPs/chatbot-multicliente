@@ -206,9 +206,10 @@ En `https://<dominio>/admin` con la contraseña del operador:
    Para reenviárselos después, el filtro de Gmail de
    [§2.6.1](operacion-multicliente.md#261-reenviar-los-avisos-al-cliente-con-un-filtro-de-gmail)
    (no lo prepares antes de avisarle: Google le manda un código).
-4. **Tono**: además del estilo del negocio, añade al final este párrafo, que evita que el bot diga
-   que ha guardado datos que no ha guardado (pasó en las pruebas de sisu: «He anotado tus datos
-   para que el centro se ponga en contacto contigo», sin derivación detrás):
+4. **Tono**: el estilo del negocio. **Solo con un núcleo anterior a la 0.1.4**, añade al final este
+   párrafo, que evita que el bot diga que ha guardado datos que no ha guardado (pasó en las
+   pruebas de sisu: «He anotado tus datos para que el centro se ponga en contacto contigo», sin
+   derivación detrás). Desde la 0.1.4 (018) esa regla está en el núcleo y no hace falta:
 
    ```
    Nunca digas que has anotado, guardado, registrado o pasado los datos del cliente, ni que el centro le llamará o se pondrá en contacto con él: eso solo lo confirma el sistema cuando avisa de verdad al centro. Si el cliente te da su nombre o su teléfono sin que se los hayas pedido, no comentes nada sobre ellos y remítele al centro.
@@ -217,9 +218,9 @@ En `https://<dominio>/admin` con la contraseña del operador:
 5. Resuelve los avisos críticos y pasa el negocio a **activo**.
 6. **Chat web**: webs permitidas (la del cliente, su `www` si la usa, y la demo), enlace de
    privacidad, topes, y activar.
-7. **Diseño del chat**: si se importó, ya viene. Límite conocido: el icono propio del botón
-   flotante se ve siempre a la mitad del botón (28 px de 56), sin opción para agrandarlo; cambiarlo
-   es una spec del núcleo (borrador en la rama `018-icono-boton-completo`).
+7. **Diseño del chat**: si se importó, ya viene. Desde la 0.1.4 (018) el icono propio rellena
+   todo el botón con un borde fino del color principal: sube como icono un logo cuadrado y con
+   resolución suficiente (con un núcleo anterior se ve a la mitad del botón).
 
 ## 7. Pruebas desde el chat real
 
@@ -301,6 +302,8 @@ Cuando una instancia de prueba pasa a cliente que paga, se reutiliza tal cual:
 - **`INSTANCE_INVENTORY_KEY` sin cargar**: las órdenes del inventario fallan con «falta
   INSTANCE_INVENTORY_KEY». Se carga con `Read-Host -AsSecureString` en la misma ventana.
 - **`--llm-workspace ""` falla**: necesita entre 1 y 200 caracteres.
-- **El bot dijo «he anotado tus datos»** sin derivación: párrafo del tono del paso 6.4.
-- **El icono del botón flotante se ve pequeño** y no se puede agrandar desde el panel ni desde
-  la web (el botón vive dentro del iframe del chat, en otro origen): requiere una spec del núcleo.
+- **El bot dijo «he anotado tus datos»** sin derivación: párrafo del tono del paso 6.4 y, desde
+  la 0.1.4, regla del núcleo (018).
+- **El icono del botón flotante se veía pequeño** y no se podía agrandar desde el panel ni desde
+  la web (el botón vive dentro del iframe del chat, en otro origen): resuelto en el núcleo con la
+  0.1.4 (018).

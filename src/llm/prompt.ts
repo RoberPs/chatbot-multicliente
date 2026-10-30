@@ -73,6 +73,13 @@ const RULES = [
   'Si el cliente pide hablar con una persona, que le llamen o atención humana, marca ' +
     "handoffRequested y responde solo con una frase breve de acuse (por ejemplo, 'De acuerdo.'); " +
     'el sistema se encarga del resto. No pidas datos ni el motivo. No intentes retenerle.',
+  // Datos del cliente (018): el modelo no guarda ni avisa; solo el sistema confirma una
+  // derivación (Principios IV y V).
+  'Datos del cliente: tú no guardas datos ni avisas a nadie. Nunca digas que has anotado, ' +
+    'guardado, registrado o pasado datos del cliente, ni que el negocio le llamará o se pondrá ' +
+    'en contacto con él: eso solo lo confirma el sistema cuando avisa de verdad al negocio. Si el ' +
+    'cliente te da su nombre o su teléfono sin que se los hayas pedido, no comentes nada sobre ' +
+    'ellos, remítele al negocio y marca offerContact.',
   // Quejas (005, US6, FR-003): el sistema las deriva; el cuerpo del modelo se descarta.
   'Si el cliente presenta una queja o reclamación sobre el negocio o un servicio recibido, ' +
     'marca complaint. No la resuelvas, no la justifiques ni des información sobre ella. Un ' +

@@ -231,14 +231,32 @@ body {
   color: #1d2330;
 }
 
-/* Imágenes del diseño (011): tamaño fijo del hueco, sin deformar y sin girar por EXIF (R7). */
+/*
+ * Imágenes del diseño (011): sin deformar y sin girar por EXIF (R7). El icono del botón (018)
+ * cubre todo el botón con su forma, recortando lo que sobra.
+ */
 .toggle .design-icon {
+  position: absolute;
+  inset: 0;
   display: block;
-  width: 28px;
-  height: 28px;
-  margin: auto;
-  object-fit: contain;
+  width: 100%;
+  height: 100%;
+  border-radius: inherit;
+  object-fit: cover;
   image-orientation: none;
+}
+/*
+ * Anillo del color principal encima del borde del icono (018): mismo grosor con las tres formas.
+ * Solo con icono; si la imagen falla, frame.js la quita y el botón queda como sin icono.
+ */
+.toggle:has(.design-icon)::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  box-sizing: border-box;
+  border-radius: inherit;
+  border: 3px solid var(--chat-accent);
+  pointer-events: none;
 }
 /* El emoji solo se oculta si hay icono; si la imagen falla, frame.js la quita y vuelve. */
 .toggle .design-icon + span {

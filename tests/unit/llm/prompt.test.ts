@@ -140,6 +140,19 @@ describe('prompt del modelo: derivación (005)', () => {
     expect(core).not.toContain('se le facilita el contacto');
   });
 
+  it('regla de datos del cliente: no afirma haberlos guardado ni promete contacto (018)', () => {
+    const core = buildPrompt(replyContext()).system[0];
+    expect(core).toContain(
+      'Nunca digas que has anotado, guardado, registrado o pasado datos del cliente, ni que el ' +
+        'negocio le llamará o se pondrá en contacto con él',
+    );
+    expect(core).toContain('eso solo lo confirma el sistema cuando avisa de verdad al negocio');
+    expect(core).toContain(
+      'Si el cliente te da su nombre o su teléfono sin que se los hayas pedido, no comentes nada ' +
+        'sobre ellos, remítele al negocio y marca offerContact.',
+    );
+  });
+
   it('regla de quejas con el contraejemplo del comentario negativo (US6)', () => {
     const core = buildPrompt(replyContext()).system[0];
     expect(core).toContain(

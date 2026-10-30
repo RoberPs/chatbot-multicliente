@@ -395,6 +395,27 @@ describe('diseño del chat web: imágenes (US3)', () => {
     expect(head.indexOf('design-logo')).toBeLessThan(head.indexOf('<h1>'));
   });
 
+  it('el icono rellena el botón y un anillo del color principal marca el contorno (018, FR-001 – FR-005)', async () => {
+    bot = await createTestBot(t, { webChat: WEB_ON });
+    const css = (await bot.app.inject({ method: 'GET', url: '/chat/assets/frame.css' })).body;
+    const rule = (selector: string) => {
+      const start = css.indexOf(`${selector} {`);
+      expect(start, selector).toBeGreaterThan(-1);
+      return css.slice(start, css.indexOf('}', start));
+    };
+    const icon = rule('.toggle .design-icon');
+    expect(icon).toContain('width: 100%;');
+    expect(icon).toContain('height: 100%;');
+    expect(icon).toContain('border-radius: inherit;');
+    expect(icon).toContain('object-fit: cover;');
+    expect(icon).not.toContain('28px');
+    // El anillo solo existe si hay icono: sin él (o con la imagen rota quitada) el botón no cambia.
+    const ring = rule('.toggle:has(.design-icon)::after');
+    expect(ring).toContain('border: 3px solid var(--chat-accent);');
+    expect(ring).toContain('border-radius: inherit;');
+    expect(ring).toContain('pointer-events: none;');
+  });
+
   it('avatar: data-avatar y --chat-avatar en design.css', async () => {
     bot = await createTestBot(t, { webChat: WEB_ON });
     const images = await seedChatDesignWithImages(t.db, { avatar: 'valid.jpg' });
