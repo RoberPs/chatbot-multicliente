@@ -542,6 +542,12 @@ con la versión desplegada, y anótala con `--annotate` ([sección 5](#5-actuali
    **Destino de avisos de derivación**: ponlo a mano con el email (o teléfono) definitivo del
    cliente. Por defecto el fichero de configuración no lo trae, así que tras importar la instancia
    se queda sin destino y las derivaciones no avisan a nadie.
+   El destino admite **un solo** email (`src/handoff/schemas.ts`) y es lo único que envía correo
+   (`src/handoff/routes-provider.ts`): el email del negocio y el canal `email` de derivación son
+   solo texto que el bot da al cliente. En una **instancia de prueba**, o mientras el cliente no
+   sepa que el bot está en marcha, pon **tu** email: así ninguna derivación de prueba le llega.
+   Cuando el cliente quiera recibirlas también, reenvíaselas con un filtro de tu correo
+   ([2.6.1](#261-reenviar-los-avisos-al-cliente-con-un-filtro-de-gmail)) o pon ya su email.
 4. Prueba en "Probar el bot" las preguntas típicas del sector y alguna trampa (precio no
    registrado, "quiero hablar con una persona").
 5. Pasa el negocio a activo.
@@ -558,6 +564,28 @@ con la versión desplegada, y anótala con `--annotate` ([sección 5](#5-actuali
    hora después; los colores y textos se ven al momento.
 7. WhatsApp: registra en Meta el webhook `https://…/webhooks/whatsapp` con el `WHATSAPP_VERIFY_TOKEN`
    y envía un mensaje de prueba.
+
+#### 2.6.1 Reenviar los avisos al cliente con un filtro de Gmail
+
+Para cuando el destino de avisos es tu email y el cliente también debe recibirlos (prueba
+compartida con su personal, o un solo destino para varias personas). **No lo prepares antes de
+que el cliente esté al tanto**: al añadir su dirección de reenvío, Google le envía un correo con
+un código de confirmación («… quiere reenviar correo a esta dirección»).
+
+1. **Dirección de reenvío** (una vez por dirección): Gmail → ⚙️ → *Ver todos los ajustes* →
+   **Reenvío y correo POP/IMAP** → *Añadir una dirección de reenvío* → el email del cliente. El
+   cliente te pasa el código, lo pegas en esa pestaña y pulsas *Verificar*. Deja **desactivado**
+   «Reenviar una copia del correo entrante», que reenviaría todo tu correo.
+2. **Filtro**: busca `from:<SMTP_FROM de la instancia>` (por ejemplo,
+   `from:sisu@automatizacionro.work`) → icono de opciones de búsqueda → *Crear filtro* → marca
+   **Reenviar a** el email del cliente (y, si quieres, *Aplicar la etiqueta* con el nombre de la
+   instancia) → *Crear filtro*.
+3. **Comprobación**: una derivación desde el chat web real (paso 6) tiene que llegar a tu correo
+   y al del cliente.
+
+El filtro va por remitente, y por eso cada instancia necesita su propio `SMTP_FROM`: si dos
+compartieran remitente, el cliente recibiría los avisos del otro. Al pasar a definitiva, pon su
+email en el destino de avisos y borra el filtro, o quedará reenviando una copia.
 
 El **tema del panel** (014) no es configuración del negocio y no hace falta tocarlo en el alta: el
 panel sigue la preferencia de color del sistema y el control **Tema** de la barra superior permite
