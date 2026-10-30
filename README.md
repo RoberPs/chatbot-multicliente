@@ -20,10 +20,11 @@ Estados: especificada → planificada → en implementación → completada (o a
 | 014 | Modo oscuro del panel del operador | Núcleo | Completada | `014-dark-mode-panel` | [spec](specs/014-dark-mode-panel/spec.md) · [plan](specs/014-dark-mode-panel/plan.md) · [tareas](specs/014-dark-mode-panel/tasks.md) | 2026-10-13  |
 | 016 | Resistencia a los cortes de la base de datos y verificación de copias por socket | Núcleo (corrección) | Completada | `016-db-outage-resilience` | [spec](specs/016-db-outage-resilience/spec.md) · [plan](specs/016-db-outage-resilience/plan.md) · [tareas](specs/016-db-outage-resilience/tasks.md) | 2026-10-09  |
 | 017 | Proveedor del modelo configurable por instancia | Núcleo | Completada (solo `anthropic` declarado apto; ver abajo) | `017-proveedor-modelo-configurable` | [spec](specs/017-proveedor-modelo-configurable/spec.md) · [plan](specs/017-proveedor-modelo-configurable/plan.md) · [tareas](specs/017-proveedor-modelo-configurable/tasks.md) | 2026-10-14  |
+| 018 | Icono del botón a tamaño completo y datos que el bot no ha guardado | Núcleo | Completada | `018-icono-boton-completo` | [spec](specs/018-icono-boton-completo/spec.md) · [plan](specs/018-icono-boton-completo/plan.md) · [tareas](specs/018-icono-boton-completo/tasks.md) | 2026-10-30  |
 
 ## Estado del despliegue
 
-En producción desde el 2026-10-08. **Versión 0.1.3** en dos instancias sobre un VPS propio
+En producción desde el 2026-10-08. **Versión 0.1.4** en tres instancias sobre un VPS propio
 (Ubuntu 24.04, Docker, PostgreSQL 16 por socket Unix, Caddy tras Cloudflare), cada una con su
 base de datos y sus secretos.
 

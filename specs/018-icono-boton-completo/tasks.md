@@ -94,12 +94,14 @@ icono, el botón no cambia.
     desde la 0.1.4 (la regla está en el núcleo); el límite del icono del paso 6.7 y de «Lo que
     salió mal» queda resuelto.
   - Avisar al usuario antes de tocar `README.md` si cambia el estado de alguna feature.
-- [ ] T012 Validación manual del quickstart en local (US1 y US2) y entrega para el despliegue de la
+- [X] T012 Validación manual del quickstart en local (US1 y US2) y entrega para el despliegue de la
   0.1.4 por la sección 5 de `docs/operacion-multicliente.md` (lo ejecuta el operador; quickstart,
   «Producción»).
   _Local comprobado (2026-10-30): icono en `/chat/frame` y en la vista previa del panel, tres
   formas, foco y botón sin icono. Si la vista previa no cambia, es el `frame.css` en caché
-  (`max-age=3600`): Ctrl+F5. Falta el despliegue._
+  (`max-age=3600`): Ctrl+F5._
+  _Desplegada como 0.1.4 el 2026-10-30 en sisu, viajes y restaurante, por tandas (sisu primero);
+  las tres en `Correcto`. Registro en `docs/plan-despliegue-produccion.md`._
 
 ---
 

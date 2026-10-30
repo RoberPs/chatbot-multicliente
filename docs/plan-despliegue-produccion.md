@@ -1231,6 +1231,48 @@ a responder.
   `function "org" not defined` porque la shell se come las comillas dobles interiores; la forma que
   funciona es `--format '{{json .Config.Labels}}'`.
 
+#### Despliegue de la 0.1.4 (feature 018), el 2026-10-30
+
+Imagen `ghcr.io/roberps/chatbot-multicliente:0.1.4`, digest
+`sha256:a94880cab25677e84e16581d0648ab74b1be55955fa3dd38f10336d5f392c7d8`, etiqueta Git `v0.1.4`
+(en `origin`). Sin migración: las tres instancias siguen en el esquema `0009_unmeasured_usage`.
+Desplegada **por tandas**: primero `sisu` (`instancia-3`, la única con icono propio), comprobada
+con `instance:versions` y en su demo, y después `viajes` y `restaurante`. Las tres quedan en
+`Correcto`, núcleo `0.1.4`.
+
+**La puerta de seguridad de 5.1 paró la publicación, y con razón.** `pnpm audit --prod` y
+`osv-scanner` encontraron seis vulnerabilidades **altas** en dependencias de producción, todas
+publicadas después de la 0.1.3 (el lockfile no había cambiado): `zod` 4.6.5 y `undici` 8.11.0,
+que llega como *peer* de `openai` 7.32.0. Se corrigieron en la misma 0.1.4, con las medias que
+tocaban rutas públicas: `zod` ^4.6.7, `undici` forzado a ^8.12.3 con `pnpm.overrides` (sin mover
+`openai`), `fastify` ^5.12.7, `@fastify/rate-limit` ^11.2.1 (`ip-address` 10.7.5), `nodemailer`
+^10.3.1 y `fast-uri`. Después, `pnpm audit --prod` sin hallazgos y Trivy
+`HIGH,CRITICAL --ignore-unfixed` sobre la imagen en cero. semgrep (`gcm-no-tag-length` en
+`src/handoff/tokens.ts` y `src/backup/format.ts`) y gitleaks (valores de prueba y el alfabeto de
+`src/provisioning/secrets.ts`) dan **falsos positivos**: la etiqueta GCM sale siempre de un trozo
+fijo de 16 bytes.
+
+**Desviaciones conscientes del guion de §5.1**, por decisión del usuario:
+
+- **`pnpm test:eval` no se pasó**, aunque la 018 toca `src/llm/prompt.ts` (regla nueva de datos
+  del cliente). El comportamiento ya se había comprobado con el modelo real en sisu; la evaluación
+  `tests/eval/sc-unsaved-contact.test.ts` queda escrita para versiones futuras.
+- **`pnpm test` completo no se pasó**: sí `lint`, `typecheck`, `test:unit` (2481) y
+  `test:contract` (438), con las dependencias ya actualizadas.
+- **§5.2 sin instancia de pruebas**, como en la 0.1.3: su papel lo hizo la primera tanda (sisu).
+
+**Lo que salió mal o hay que vigilar** (nada del núcleo):
+
+- **`frame.css` se sirve con `max-age=3600` y sin versión en la URL**: tras desplegar, la vista
+  previa del panel y las webs pueden enseñar el botón antiguo hasta una hora. Se resuelve con
+  Ctrl+F5; si molesta, una versión en la URL del CSS sería una spec aparte.
+- **El paquete de GHCR se descargó en el VPS con el `docker login` fallido** (se pegó el bloque
+  entero y la línea siguiente se tomó como contraseña). O el paquete es **público** o el VPS
+  conserva una credencial que no debería: **revisar la visibilidad** en GitHub → Packages →
+  `chatbot-multicliente`.
+- **El VPS pide reinicio** («System restart required»): actualizaciones del sistema pendientes,
+  ajenas a este despliegue. Programarlo.
+
 ## 6. Qué tienes que traer a la próxima sesión
 
 Actualizado el **2026-10-28**, al cerrar la fase 10. Antes decía que lo siguiente era la spec de
@@ -1250,7 +1292,7 @@ Lo que hay que tener presente:
 - **La IP pública del administrador es dinámica y ya ha cambiado de rango una vez.** Si el VPS deja
   de responder por SSH con *timeout*, lo primero es mirar el origen permitido del puerto 22 en el
   cortafuegos de Hetzner, no suponer que es `fail2ban`.
-- **Defecto conocido, candidato a 0.1.4**: `createCredentialWatcher` no pasa su `log` a
+- **Defecto conocido, sigue pendiente tras la 0.1.4** (no entró en la 018): `createCredentialWatcher` no pasa su `log` a
   `verifyCredential`, así que la línea «El proveedor rechazó la credencial de … (HTTP nnn)» no
   llega al registro. Se descubrió al desplegar la 0.1.3 y obligó a medir con `curl`.
 - **El inventario tiene las dos instancias en estado «en alta», no «activa»**, y por eso
