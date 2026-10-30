@@ -64,6 +64,9 @@ operador y con el repositorio del núcleo: `instance:new` genera el entorno con 
 instancias y un **inventario** local lleva la lista de instancias sin ningún secreto. Contrato de
 las órdenes: [specs/007-instance-provisioning/contracts/instance-commands.md](../specs/007-instance-provisioning/contracts/instance-commands.md).
 
+La receta ejecutable para el VPS actual (órdenes reales, orden de los pasos, web de demostración
+y lo que salió mal con el alta de sisu) está en [alta-cliente-paso-a-paso.md](alta-cliente-paso-a-paso.md).
+
 ### 2.0 Inventario y su clave (una vez)
 
 - **Dónde**: `~/.chatbotasesor/inventory.json` por defecto; otra ruta con `INSTANCE_INVENTORY` o
